@@ -1,0 +1,31 @@
+{
+  "name": "ttrpg-tools-time",
+  "version": "0.0.1",
+  "description": "Fantasy calendar with timeline view.",
+  "main": "main.js",
+  "type": "module",
+  "scripts": {
+    "build": "node esbuild.config.mjs production",
+    "dev": "node esbuild.config.mjs watch",
+    "lint": "eslint src",
+	"lint:fix": "eslint src --fix"
+  },
+  "keywords": [
+    "obsidian",
+    "plugin",
+    "calendar",
+    "fantasy-calendar"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.24",
+    "esbuild": "0.25.5",
+    "eslint": "^10.1.0",
+    "eslint-plugin-obsidianmd": "^0.1.9",
+    "tslib": "^2.6.2",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "obsidian": "latest"
+  }
+}

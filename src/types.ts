@@ -1,0 +1,290 @@
+export type CalendarViewMode = "week" | "month" | "year";
+export type WeatherCondition =
+  | "clear"
+  | "mostly-clear"
+  | "partly-cloudy"
+  | "scattered-clouds"
+  | "broken-clouds"
+  | "overcast"
+  | "mist"
+  | "fog"
+  | "drizzle"
+  | "rain"
+  | "heavy-rain"
+  | "thunderstorm"
+  | "sleet"
+  | "flurries"
+  | "snow"
+  | "blizzard";
+
+export type WeatherSourceType = "pack" | "event" | "manual";
+
+export interface FantasyMonth {
+  id: string;
+  name: string;
+  days: number;
+}
+
+export interface FantasyMoon {
+  id: string;
+  name: string;
+  cycleDays: number;
+  offsetDays: number;
+  color?: string;
+}
+
+export interface FantasyNamedYear {
+  year: number;
+  name: string;
+}
+
+export interface FantasyEra {
+  id: string;
+  name: string;
+  shortName: string;
+  startYear: number;
+  startMonthIndex: number;
+  startDay: number;
+}
+
+export interface FantasyMonthDay {
+  monthIndex: number;
+  day: number;
+}
+
+export interface FantasySeason {
+  id: string;
+  name: string;
+  start: FantasyMonthDay;
+  end: FantasyMonthDay;
+  color: string;
+}
+
+export interface FantasyCalendarDefinition {
+  id: string;
+  name: string;
+  eraLabel: string;
+  weekdays: string[];
+  months: FantasyMonth[];
+  moons: FantasyMoon[];
+  eras: FantasyEra[];
+  yearNames: FantasyNamedYear[];
+  startWeekdayIndex: number;
+  seasons: FantasySeason[];
+}
+
+export interface CalendarFile {
+  version: 1;
+  kind: "calendar";
+  id: string;
+  name: string;
+  definition: FantasyCalendarDefinition;
+  state: CalendarState;
+  linkedTagPackIds: string[];
+  linkedWeatherPackIds: string[];
+  markers: DayMarker[];
+  defaultWeatherPackId?: string;
+  description?: string;
+}
+
+export interface FantasyDate {
+  year: number;
+  monthIndex: number;
+  day: number;
+}
+
+export interface DayMarker {
+  id: string;
+  year: number;
+  monthIndex: number;
+  day: number;
+  tone?: "dark" | "pink" | "gold";
+  label?: string;
+}
+
+export interface CalendarState {
+  activeView: CalendarViewMode;
+  todayDate: FantasyDate;
+  cursorDate: FantasyDate;
+}
+
+export interface TagDefinition {
+  id: string;
+  name: string;
+  color?: string;
+}
+
+export interface TagPackFile {
+  version: 1;
+  kind: "tag-pack";
+  id: string;
+  name: string;
+  tags: TagDefinition[];
+  description?: string;
+}
+
+export interface TtrpgToolsTimeSettings {
+  dataFolder: string;
+  activeCalendarId: string | null;
+  openOnStartup: boolean;
+}
+
+export interface EventPresetFile {
+  version: 1;
+  kind: "event-preset";
+  calendarId: string;
+  id: string;
+  name: string;
+  color?: string;
+  tagRefs: string[];
+  weatherPackId?: string;
+}
+
+export interface CalendarEventDefinition {
+  id: string;
+  calendarId: string;
+  title: string;
+  date: FantasyDate;
+  endDate?: FantasyDate;
+  description?: string;
+  color?: string;
+  tagRefs: string[];
+  weatherPackId?: string;
+  imageRef?: string;
+  noteRef?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EventYearFile {
+  version: 1;
+  kind: "event-year";
+  calendarId: string;
+  year: number;
+  events: CalendarEventDefinition[];
+}
+
+export interface EventIndexEntry {
+  id: string;
+  title: string;
+  color: string;
+}
+
+export interface EventIndexDay {
+  items: EventIndexEntry[];
+}
+
+export interface EventIndexYearFile {
+  version: 1;
+  kind: "event-index-year";
+  calendarId: string;
+  year: number;
+  days: Record<string, EventIndexDay>;
+}
+
+export interface WeatherPackFile {
+  version: 1;
+  kind: "weather-pack";
+  id: string;
+  name: string;
+  description?: string;
+  temperatureMin: number;
+  temperatureMax: number;
+  humidity: number;
+  precipitation: number;
+  storminess: number;
+  cloudiness: number;
+  fogginess: number;
+  windiness: number;
+  seasonality: number;
+  frontFrequency: number;
+  frontStrength: number;
+  volatility: number;
+  stableSpanMin: number;
+  stableSpanMax: number;
+  frontSpanMin: number;
+  frontSpanMax: number;
+  snowTemperature: number;
+  monthProfiles: WeatherPackMonthProfile[];
+}
+
+export interface WeatherPackMonthProfile {
+  monthIndex: number;
+  temperatureOffset: number;
+  humidity: number;
+  precipitation: number;
+  cloudiness: number;
+  fogginess: number;
+  windiness: number;
+  frontBias: number;
+}
+
+export interface WeatherDayEntry {
+  tempLow: number;
+  tempHigh: number;
+  condition: WeatherCondition;
+  windDirection: string;
+  windLabel: string;
+  cloudsLabel: string;
+  precipitationLabel: string;
+  icon: string;
+  note?: string;
+  sourceType: WeatherSourceType;
+  sourceId?: string;
+  sourcePackId?: string;
+  locked?: boolean;
+}
+
+export interface WeatherReferenceYearFile {
+  version: 1;
+  kind: "weather-reference-year";
+  calendarId: string;
+  weatherPackId: string;
+  year: number;
+  generatedAt: string;
+  days: Record<string, WeatherDayEntry>;
+}
+
+export interface WeatherYearFile {
+  version: 1;
+  kind: "weather-day-year";
+  calendarId: string;
+  year: number;
+  baseWeatherPackId: string;
+  generatedAt: string;
+  days: Record<string, WeatherDayEntry>;
+}
+
+export interface WeatherData {
+  date: FantasyDate;
+  tempLow: number;
+  tempHigh: number;
+  condition: WeatherCondition;
+  conditionLabel: string;
+  windDirection: string;
+  windLabel: string;
+  cloudsLabel: string;
+  precipitationLabel: string;
+  icon: string;
+  note?: string;
+  sourceType: WeatherSourceType;
+  sourceId?: string;
+  sourcePackId?: string;
+  locked?: boolean;
+}
+
+export interface MonthGridCell {
+  day: number | null;
+  date: FantasyDate | null;
+  isToday: boolean;
+  isCursor: boolean;
+  markers: DayMarker[];
+  seasonColor?: string;
+}
+
+export interface MonthGrid {
+  monthIndex: number;
+  monthName: string;
+  startWeekdayIndex: number;
+  rows: MonthGridCell[][];
+}
