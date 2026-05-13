@@ -1,6 +1,6 @@
 {
   "name": "ttrpg-tools-time",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Fantasy calendar with timeline view.",
   "main": "main.js",
   "type": "module",
