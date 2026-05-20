@@ -113,13 +113,13 @@ export class TimeEventEditorView extends ItemView {
 
     this.renderField(form, "Preset", (field) => {
       const select = field.createEl("select", { cls: "time-event-editor__input" });
-      const emptyOption = document.createElement("option");
+      const emptyOption = select.ownerDocument.createElement("option");
       emptyOption.value = "";
       emptyOption.text = presets.length > 0 ? "Choose saved preset" : "No saved presets";
       select.add(emptyOption);
 
       presets.forEach((preset) => {
-        const option = document.createElement("option");
+        const option = select.ownerDocument.createElement("option");
         option.value = preset.id;
         option.text = preset.name;
         option.selected = preset.id === this.selectedPresetId;
@@ -156,13 +156,13 @@ export class TimeEventEditorView extends ItemView {
     this.renderField(form, "Weather source", (field) => {
       const select = field.createEl("select", { cls: "time-event-editor__input" });
 
-      const noneOption = document.createElement("option");
+      const noneOption = select.ownerDocument.createElement("option");
       noneOption.value = "";
       noneOption.text = "Do not write weather";
       select.add(noneOption);
 
       weatherPacks.forEach((pack) => {
-        const option = document.createElement("option");
+        const option = select.ownerDocument.createElement("option");
         option.value = pack.id;
         option.text = pack.name;
         option.selected = pack.id === this.selectedWeatherPackId;
@@ -194,7 +194,7 @@ export class TimeEventEditorView extends ItemView {
     this.renderField(startDateGrid, "Month", (field) => {
       const select = field.createEl("select", { cls: "time-event-editor__input" });
       calendar.definition.months.forEach((month, index) => {
-        const option = document.createElement("option");
+        const option = select.ownerDocument.createElement("option");
         option.value = String(index);
         option.text = month.name;
         option.selected = index === this.startMonthIndex;
@@ -234,7 +234,7 @@ export class TimeEventEditorView extends ItemView {
     this.renderField(endDateGrid, "Month", (field) => {
       const select = field.createEl("select", { cls: "time-event-editor__input" });
       calendar.definition.months.forEach((month, index) => {
-        const option = document.createElement("option");
+        const option = select.ownerDocument.createElement("option");
         option.value = String(index);
         option.text = month.name;
         option.selected = index === this.endMonthIndex;

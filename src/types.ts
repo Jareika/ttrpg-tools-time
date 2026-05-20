@@ -25,12 +25,20 @@ export interface FantasyMonth {
   days: number;
 }
 
+export interface MoonPhaseImageDefinition {
+  phaseIndex: number;
+  imageRef: string;
+}
+
 export interface FantasyMoon {
   id: string;
   name: string;
   cycleDays: number;
   offsetDays: number;
   color?: string;
+  phaseCount: number;
+  size: number;
+  phaseImages: MoonPhaseImageDefinition[];
 }
 
 export interface FantasyNamedYear {
@@ -271,6 +279,19 @@ export interface WeatherData {
   sourceId?: string;
   sourcePackId?: string;
   locked?: boolean;
+}
+
+export interface MoonPhaseData {
+  moonId: string;
+  name: string;
+  cycleDays: number;
+  cycleDay: number;
+  phaseCount: number;
+  phaseIndex: number;
+  phaseLabel: string;
+  size: number;
+  color?: string;
+  imageRef?: string;
 }
 
 export interface MonthGridCell {

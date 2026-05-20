@@ -1,14 +1,25 @@
-import { App, Modal, Notice, Setting, setIcon } from "obsidian";
+import {
+  App,
+  FuzzySuggestModal,
+  Modal,
+  Notice,
+  Setting,
+  TFile,
+  setIcon,
+  type FuzzyMatch
+} from "obsidian";
 import {
   buildDefaultSeasons,
   normalizeCalendarFile,
   normalizeTagPackFile,
   slugify
 } from "./calendar";
+import { getMoonPhaseLabel } from "./moons";
 import { WeatherPackPickerModal } from "./weather-pack-modals";
 import type {
   CalendarFile,
   CalendarViewMode,
+  MoonPhaseImageDefinition,
   TagPackFile
 } from "./types";
 import type TtrpgToolsTimePlugin from "./main";
@@ -45,6 +56,9 @@ interface MoonDraft {
   cycleDays: number;
   offsetDays: number;
   color: string;
+  phaseCount: number;
+  size: number;
+  phaseImages: MoonPhaseImageDefinition[];
 }
 
 interface NamedYearDraft {
@@ -133,7 +147,10 @@ export class CalendarEditorModal extends Modal {
     this.months = monthDefaults.map((month) => ({ ...month }));
     this.moons = (definition?.moons ?? []).map((moon) => ({
       ...moon,
-      color: normalizeColor(moon.color)
+      color: normalizeColor(moon.color),
+      phaseCount: Math.max(1, Math.trunc(moon.phaseCount || 8)),
+      size: normalizeMoonSize(moon.size),
+      phaseImages: moon.phaseImages.map((entry) => ({ ...entry }))
     }));
     this.namedYears = (definition?.yearNames ?? []).map((entry) => ({ ...entry }));
     this.startWeekdayIndex = definition?.startWeekdayIndex ?? 0;
@@ -388,7 +405,7 @@ export class CalendarEditorModal extends Modal {
   }
 
   private openMoonEditorModal(): void {
-    new MoonEditorModal(this.app, this.moons, (nextMoons) => {
+    new MoonEditorModal(this.plugin, this.moons, (nextMoons) => {
       this.moons = nextMoons;
       void this.render();
     }).open();
@@ -530,12 +547,16 @@ export class CalendarEditorModal extends Modal {
     const sanitizedMoons = this.moons
       .map((moon, index) => {
         const safeName = moon.name.trim().length > 0 ? moon.name.trim() : `Moon ${index + 1}`;
-        return {
+        const safePhaseCount = Math.max(1, Math.trunc(moon.phaseCount || 8));
+		return {
           id: slugify(moon.id || safeName),
           name: safeName,
           cycleDays: Math.max(1, Math.trunc(moon.cycleDays || 1)),
           offsetDays: Math.trunc(moon.offsetDays || 0),
-          color: normalizeColor(moon.color)
+          color: normalizeColor(moon.color),
+          phaseCount: safePhaseCount,
+          size: normalizeMoonSize(moon.size),
+          phaseImages: sanitizeMoonPhaseImages(moon.phaseImages, safePhaseCount)
         };
       });
 
@@ -678,6 +699,7 @@ class EraEditorModal extends Modal {
       });
 	  
       const startMonthSelect = createMonthSelect(
+        row.ownerDocument,
         this.months.length > 0 ? this.months : [{ id: "month-1", name: "Month 1", days: 30 }],
         era.startMonthIndex,
         "time-collection-editor__input"
@@ -952,11 +974,17 @@ class MonthEditorModal extends Modal {
 }
 
 class MoonEditorModal extends Modal {
+  private readonly plugin: TtrpgToolsTimePlugin;
   private moons: MoonDraft[];
   private readonly onSave: (moons: MoonDraft[]) => void;
 
-  constructor(app: App, moons: MoonDraft[], onSave: (moons: MoonDraft[]) => void) {
-    super(app);
+  constructor(
+    plugin: TtrpgToolsTimePlugin,
+    moons: MoonDraft[],
+    onSave: (moons: MoonDraft[]) => void
+  ) {
+    super(plugin.app);
+    this.plugin = plugin;
     this.moons = moons.map((moon) => ({ ...moon }));
     this.onSave = onSave;
   }
@@ -976,7 +1004,26 @@ class MoonEditorModal extends Modal {
 
     if (this.moons.length === 0) {
       list.createDiv({ cls: "time-collection-editor__empty", text: "No moons defined yet." });
-    }
+    } else {
+      const header = list.createDiv({
+        cls: "time-collection-editor__row time-collection-editor__row--moon time-collection-editor__row--moon-header"
+      });
+      [
+        "Name",
+        "Cycle",
+        "Offset",
+        "Phases",
+        "Size",
+        "Color",
+        "Images",
+        ""
+      ].forEach((label) => {
+        header.createDiv({
+          cls: "time-collection-editor__column-label",
+          text: label
+        });
+      });
+	}
 
     this.moons.forEach((moon, index) => {
       const row = list.createDiv({ cls: "time-collection-editor__row time-collection-editor__row--moon" });
@@ -984,6 +1031,8 @@ class MoonEditorModal extends Modal {
       const nameInput = row.createEl("input", { cls: "time-collection-editor__input" });
       nameInput.type = "text";
       nameInput.placeholder = "Moon name";
+      nameInput.setAttr("aria-label", "Moon name");
+      nameInput.title = "Moon name";
       nameInput.value = moon.name;
       nameInput.addEventListener("input", () => {
         this.moons[index].name = nameInput.value;
@@ -992,6 +1041,9 @@ class MoonEditorModal extends Modal {
       const cycleInput = row.createEl("input", { cls: "time-collection-editor__input" });
       cycleInput.type = "number";
       cycleInput.min = "1";
+      cycleInput.placeholder = "Cycle days";
+      cycleInput.setAttr("aria-label", "Cycle days");
+      cycleInput.title = "Cycle days";
       cycleInput.value = String(moon.cycleDays);
       cycleInput.addEventListener("input", () => {
         this.moons[index].cycleDays = Math.max(1, Math.trunc(Number(cycleInput.value) || 1));
@@ -999,28 +1051,72 @@ class MoonEditorModal extends Modal {
 
       const offsetInput = row.createEl("input", { cls: "time-collection-editor__input" });
       offsetInput.type = "number";
+      offsetInput.placeholder = "Offset";
+      offsetInput.setAttr("aria-label", "Offset days");
+      offsetInput.title = "Offset days";
       offsetInput.value = String(moon.offsetDays);
       offsetInput.addEventListener("input", () => {
         this.moons[index].offsetDays = Math.trunc(Number(offsetInput.value) || 0);
       });
 
+      const phaseCountInput = row.createEl("input", { cls: "time-collection-editor__input" });
+      phaseCountInput.type = "number";
+      phaseCountInput.min = "1";
+      phaseCountInput.placeholder = "Phases";
+      phaseCountInput.setAttr("aria-label", "Visible phase count");
+      phaseCountInput.title = "Visible phase count";
+      phaseCountInput.value = String(moon.phaseCount);
+      phaseCountInput.addEventListener("input", () => {
+        const nextPhaseCount = Math.max(1, Math.trunc(Number(phaseCountInput.value) || 1));
+        this.moons[index].phaseCount = nextPhaseCount;
+        this.moons[index].phaseImages = sanitizeMoonPhaseImages(
+          this.moons[index].phaseImages,
+          nextPhaseCount
+        );
+      });
+
+      const sizeInput = row.createEl("input", { cls: "time-collection-editor__input" });
+      sizeInput.type = "number";
+      sizeInput.min = "12";
+      sizeInput.max = "96";
+      sizeInput.placeholder = "Size";
+      sizeInput.setAttr("aria-label", "Moon size");
+      sizeInput.title = "Moon size";
+      sizeInput.value = String(moon.size);
+      sizeInput.addEventListener("input", () => {
+        this.moons[index].size = normalizeMoonSize(Number(sizeInput.value) || 28);
+      });
+
       const colorInput = row.createEl("input", { cls: "time-season-editor__color" });
       colorInput.type = "color";
+      colorInput.setAttr("aria-label", "Moon color");
+      colorInput.title = "Moon color";
       colorInput.value = normalizeColor(moon.color);
-
-      const colorText = row.createEl("input", { cls: "time-collection-editor__input" });
-      colorText.type = "text";
-      colorText.value = normalizeColor(moon.color);
 
       colorInput.addEventListener("input", () => {
         this.moons[index].color = colorInput.value;
-        colorText.value = colorInput.value;
       });
-      colorText.addEventListener("change", () => {
-        const next = normalizeColor(colorText.value);
-        this.moons[index].color = next;
-        colorInput.value = next;
-        colorText.value = next;
+
+      const phaseImagesButton = row.createEl("button", {
+        cls: "time-manager__button",
+        text: `Images (${this.moons[index].phaseImages.length}/${this.moons[index].phaseCount})`
+      });
+      phaseImagesButton.type = "button";
+      phaseImagesButton.setAttr("aria-label", "Configure moon phase images");
+      phaseImagesButton.title = "Configure moon phase images";
+      phaseImagesButton.addEventListener("click", () => {
+        new MoonPhaseImagesModal(
+          this.plugin.app,
+          this.moons[index].phaseCount,
+          this.moons[index].phaseImages,
+          (nextImages) => {
+            this.moons[index].phaseImages = sanitizeMoonPhaseImages(
+              nextImages,
+              this.moons[index].phaseCount
+            );
+            this.render();
+          }
+        ).open();
       });
 
       createDeleteIconButton(row, () => {
@@ -1036,7 +1132,10 @@ class MoonEditorModal extends Modal {
         name: `Moon ${this.moons.length + 1}`,
         cycleDays: 28,
         offsetDays: 0,
-        color: "#d46b65"
+        color: "#d46b65",
+        phaseCount: 8,
+        size: 28,
+        phaseImages: []
       });
       this.render();
     }, false, true);
@@ -1056,17 +1155,163 @@ class MoonEditorModal extends Modal {
   private submit(): void {
     const sanitized = this.moons.map((moon, index) => {
       const safeName = moon.name.trim().length > 0 ? moon.name.trim() : `Moon ${index + 1}`;
-      return {
+      const safePhaseCount = Math.max(1, Math.trunc(moon.phaseCount || 8));
+	  return {
         id: slugify(moon.id || safeName),
         name: safeName,
         cycleDays: Math.max(1, Math.trunc(moon.cycleDays || 1)),
         offsetDays: Math.trunc(moon.offsetDays || 0),
-        color: normalizeColor(moon.color)
+        color: normalizeColor(moon.color),
+        phaseCount: safePhaseCount,
+        size: normalizeMoonSize(moon.size),
+        phaseImages: sanitizeMoonPhaseImages(moon.phaseImages, safePhaseCount)
       };
     });
 
     this.onSave(sanitized);
     this.close();
+  }
+}
+
+class MoonPhaseImagesModal extends Modal {
+  private phaseCount: number;
+  private phaseImages: MoonPhaseImageDefinition[];
+  private readonly onSave: (phaseImages: MoonPhaseImageDefinition[]) => void;
+
+  constructor(
+    app: App,
+    phaseCount: number,
+    phaseImages: MoonPhaseImageDefinition[],
+    onSave: (phaseImages: MoonPhaseImageDefinition[]) => void
+  ) {
+    super(app);
+    this.phaseCount = Math.max(1, Math.trunc(phaseCount || 1));
+    this.phaseImages = sanitizeMoonPhaseImages(phaseImages, this.phaseCount);
+    this.onSave = onSave;
+  }
+
+  onOpen(): void {
+    prepareFlexibleModal(this);
+    this.render();
+  }
+
+  private render(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("time-modal");
+    contentEl.createEl("h2", { text: "Configure moon phase images" });
+    contentEl.createEl("p", {
+      cls: "setting-item-description",
+      text: `Assign one image per visible moon phase. Current phase count: ${this.phaseCount}.`
+    });
+
+    const list = contentEl.createDiv({ cls: "time-collection-editor__list" });
+
+    for (let phaseIndex = 0; phaseIndex < this.phaseCount; phaseIndex += 1) {
+      const current = this.phaseImages.find((entry) => entry.phaseIndex === phaseIndex);
+      const row = list.createDiv({ cls: "time-moon-phase-editor__row" });
+
+      row.createDiv({
+        cls: "time-moon-phase-editor__label",
+        text: `${phaseIndex + 1}. ${getMoonPhaseLabel(this.phaseCount, phaseIndex)}`
+      });
+
+      const input = row.createEl("input", { cls: "time-collection-editor__input" });
+      input.type = "text";
+      input.readOnly = true;
+      input.placeholder = "No image selected";
+      input.value = current?.imageRef ?? "";
+
+      const browseButton = row.createEl("button", {
+        cls: "time-manager__button",
+        text: "Browse"
+      });
+      browseButton.type = "button";
+      browseButton.addEventListener("click", () => {
+        new VaultImagePickerModal(this.app, (file) => {
+          this.upsertPhaseImage(phaseIndex, file.path);
+          this.render();
+        }).open();
+      });
+
+      const clearButton = row.createEl("button", {
+        cls: "time-manager__button",
+        text: "Clear"
+      });
+      clearButton.type = "button";
+      clearButton.addEventListener("click", () => {
+        this.phaseImages = this.phaseImages.filter((entry) => entry.phaseIndex !== phaseIndex);
+        this.render();
+      });
+    }
+
+    const footer = contentEl.createDiv({ cls: "time-modal__footer" });
+    new Setting(footer).addButton((button) => {
+      button.setButtonText("Save");
+      button.setCta();
+      button.onClick(() => {
+        this.onSave(sanitizeMoonPhaseImages(this.phaseImages, this.phaseCount));
+        this.close();
+      });
+    });
+    new Setting(footer).addButton((button) => {
+      button.setButtonText("Cancel");
+      button.onClick(() => this.close());
+    });
+  }
+
+  private upsertPhaseImage(phaseIndex: number, imageRef: string): void {
+    const next = sanitizeMoonPhaseImages(
+      [
+        ...this.phaseImages.filter((entry) => entry.phaseIndex !== phaseIndex),
+        { phaseIndex, imageRef }
+      ],
+      this.phaseCount
+    );
+    this.phaseImages = next;
+  }
+}
+
+class VaultImagePickerModal extends FuzzySuggestModal<TFile> {
+  private readonly files: TFile[];
+  private readonly onChooseFile: (file: TFile) => void;
+
+  constructor(app: App, onChooseFile: (file: TFile) => void) {
+    super(app);
+    this.files = app.vault
+      .getFiles()
+      .filter((file) => IMAGE_EXTENSIONS.has(file.extension.toLowerCase()))
+      .sort((left, right) =>
+        left.path.localeCompare(right.path, undefined, { sensitivity: "base" })
+      );
+    this.onChooseFile = onChooseFile;
+    this.setPlaceholder("Choose moon phase image");
+  }
+
+  getItems(): TFile[] {
+    return this.files;
+  }
+
+  getItemText(item: TFile): string {
+    return `${item.basename} ${item.path}`;
+  }
+
+  renderSuggestion(match: FuzzyMatch<TFile>, el: HTMLElement): void {
+    const file = match.item;
+    el.empty();
+    el.addClass("time-file-picker__suggestion");
+    el.createDiv({
+      cls: "time-file-picker__title",
+      text: file.basename
+    });
+    el.createDiv({
+      cls: "time-file-picker__path",
+      text: file.path
+    });
+  }
+
+  onChooseItem(item: TFile): void {
+    this.onChooseFile(item);
   }
 }
 
@@ -1208,6 +1453,7 @@ class SeasonEditorModal extends Modal {
       });
 
       const startMonthSelect = createMonthSelect(
+        row.ownerDocument,
         this.months,
         season.startMonthIndex,
         "time-season-editor__input"
@@ -1228,6 +1474,7 @@ class SeasonEditorModal extends Modal {
       });
 
       const endMonthSelect = createMonthSelect(
+        row.ownerDocument,
         this.months,
         season.endMonthIndex,
         "time-season-editor__input"
@@ -1857,16 +2104,17 @@ function sanitizeMonthDay(
 }
 
 function createMonthSelect(
+  doc: Document,
   months: Array<{ id: string; name: string; days: number }>,
   selectedIndex: number,
   className: string
 ): HTMLSelectElement {
-  const select = document.createElement("select");
+  const select = doc.createElement("select");
   if (className.trim().length > 0) {
     select.className = className;
   }
   months.forEach((month, index) => {
-    const option = document.createElement("option");
+    const option = doc.createElement("option");
     option.value = String(index);
     option.text = month.name;
     option.selected = index === selectedIndex;
@@ -1925,6 +2173,39 @@ function prepareFlexibleModal(modal: Modal): void {
 function normalizeColor(value: string | undefined): string {
   return /^#[0-9a-fA-F]{6}$/.test(value ?? "") ? (value as string) : "#d46b65";
 }
+
+function normalizeMoonSize(value: number): number {
+  return clamp(Math.trunc(value || 28), 12, 96);
+}
+
+function sanitizeMoonPhaseImages(
+  phaseImages: MoonPhaseImageDefinition[],
+  phaseCount: number
+): MoonPhaseImageDefinition[] {
+  const deduped = new Map<number, MoonPhaseImageDefinition>();
+
+  phaseImages.forEach((entry) => {
+    const imageRef = entry.imageRef?.trim();
+    if (!imageRef) {
+      return;
+    }
+
+    const phaseIndex = clamp(
+      Math.trunc(entry.phaseIndex || 0),
+      0,
+      Math.max(0, phaseCount - 1)
+    );
+
+    deduped.set(phaseIndex, {
+      phaseIndex,
+      imageRef
+    });
+  });
+
+  return [...deduped.values()].sort((left, right) => left.phaseIndex - right.phaseIndex);
+}
+
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "avif"]);
 
 function createManagerButton(
   parent: HTMLElement,

@@ -675,7 +675,7 @@ export class WeatherPackManagerModal extends Modal {
       });
 
       createManagerButton(actions, "Export", () => {
-        exportWeatherPack(pack);
+        exportWeatherPack(this.contentEl.doc, pack);
       });
 
       createManagerButton(
@@ -766,7 +766,7 @@ export class WeatherPackManagerModal extends Modal {
       true
     );
     createManagerButton(footer, "Import", () => {
-      void importWeatherPackFromDisk(this.plugin, () => {
+      void importWeatherPackFromDisk(this.contentEl.doc, this.plugin, () => {
         void this.render();
       });
     });
@@ -927,10 +927,11 @@ function confirmAction(app: App, options: ConfirmOptions): Promise<boolean> {
 }
 
 async function importWeatherPackFromDisk(
+  doc: Document,
   plugin: TtrpgToolsTimePlugin,
   onImported?: () => void
 ): Promise<void> {
-  const input = document.createElement("input");
+  const input: HTMLInputElement = doc.createElement("input");
   input.type = "file";
   input.accept = ".json,application/json";
 
@@ -942,8 +943,9 @@ async function importWeatherPackFromDisk(
       }
 
       try {
-        const rawText = await file.text();
-        const pack = normalizeWeatherPackFile(JSON.parse(rawText) as unknown);
+        const rawText: string = await file.text();
+        const parsed: unknown = JSON.parse(rawText);
+        const pack = normalizeWeatherPackFile(parsed);
         const exists = await plugin.weatherPackExists(pack.id);
 
         if (exists) {
@@ -972,12 +974,12 @@ async function importWeatherPackFromDisk(
   input.click();
 }
 
-function exportWeatherPack(pack: WeatherPackFile): void {
+function exportWeatherPack(doc: Document, pack: WeatherPackFile): void {
   const blob = new Blob([`${JSON.stringify(pack, null, 2)}\n`], {
     type: "application/json"
   });
   const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
+  const anchor: HTMLAnchorElement = doc.createElement("a");
   anchor.href = url;
   anchor.download = `${slugify(pack.id)}.weather-pack.json`;
   anchor.click();

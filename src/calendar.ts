@@ -13,6 +13,7 @@ import type {
   FantasySeason,
   MonthGrid,
   MonthGridCell,
+  MoonPhaseImageDefinition,
   TagDefinition,
   TagPackFile,
   TtrpgToolsTimeSettings
@@ -28,6 +29,8 @@ const DEFAULT_WEEKDAYS = ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6", 
 
 const DEFAULT_SEASON_NAMES = ["Spring", "Summer", "Autumn", "Winter"];
 const DEFAULT_SEASON_COLORS = ["#a7d36d", "#e2b35d", "#d98859", "#7fa8d8"];
+const DEFAULT_MOON_PHASE_COUNT = 8;
+const DEFAULT_MOON_SIZE = 28;
 
 export const DEFAULT_CALENDAR_DEFINITION: FantasyCalendarDefinition = {
   id: "default-calendar",
@@ -72,7 +75,7 @@ export function normalizeSettings(raw: unknown): TtrpgToolsTimeSettings {
   return {
     dataFolder: readString(record.dataFolder, DEFAULT_SETTINGS.dataFolder),
     activeCalendarId: readOptionalString(record.activeCalendarId),
-	openOnStartup: readBoolean(record.openOnStartup, DEFAULT_SETTINGS.openOnStartup)
+    openOnStartup: readBoolean(record.openOnStartup, DEFAULT_SETTINGS.openOnStartup)
   };
 }
 
@@ -85,7 +88,7 @@ export function normalizeCalendarFile(raw: unknown): CalendarFile {
     eraLabel: readString(rawDefinition.eraLabel, DEFAULT_CALENDAR_FILE.definition.eraLabel),
     weekdays: rawDefinition.weekdays,
     months: rawDefinition.months,
-	eras: rawDefinition.eras,
+    eras: rawDefinition.eras,
     moons: rawDefinition.moons,
     yearNames: rawDefinition.yearNames,
     startWeekdayIndex: rawDefinition.startWeekdayIndex,
@@ -102,7 +105,7 @@ export function normalizeCalendarFile(raw: unknown): CalendarFile {
     definition,
     state,
     linkedTagPackIds: readStringArray(record.linkedTagPackIds),
-	linkedWeatherPackIds: readStringArray(record.linkedWeatherPackIds),
+    linkedWeatherPackIds: readStringArray(record.linkedWeatherPackIds),
     defaultWeatherPackId:
       readOptionalString(record.defaultWeatherPackId) ??
       DEFAULT_CALENDAR_FILE.defaultWeatherPackId,
@@ -149,7 +152,7 @@ function normalizeDefinition(raw: unknown): FantasyCalendarDefinition {
     eraLabel: readString(record.eraLabel, DEFAULT_CALENDAR_DEFINITION.eraLabel),
     weekdays: normalizedWeekdays,
     months: normalizedMonths,
-	eras: readEras(record.eras, readString(record.eraLabel, DEFAULT_CALENDAR_DEFINITION.eraLabel), normalizedMonths),
+    eras: readEras(record.eras, readString(record.eraLabel, DEFAULT_CALENDAR_DEFINITION.eraLabel), normalizedMonths),
     moons: readMoons(record.moons),
     yearNames: readNamedYears(record.yearNames),
     startWeekdayIndex: mod(
@@ -212,15 +215,55 @@ function readMoons(raw: unknown): FantasyMoon[] {
   return raw.map((entry, index) => {
     const record = asRecord(entry);
     const name = readString(record.name, `Mond ${index + 1}`);
+    const phaseCount = Math.max(
+      1,
+      Math.trunc(readNumber(record.phaseCount, DEFAULT_MOON_PHASE_COUNT))
+    );
 
     return {
       id: readString(record.id, slugify(name || `moon-${index + 1}`)),
       name,
       cycleDays: Math.max(1, Math.trunc(readNumber(record.cycleDays, 28))),
       offsetDays: Math.trunc(readNumber(record.offsetDays, 0)),
-      color: readOptionalString(record.color)
+      color: readOptionalString(record.color),
+      phaseCount,
+      size: clampMoonSize(readNumber(record.size, DEFAULT_MOON_SIZE)),
+      phaseImages: readMoonPhaseImages(record.phaseImages, phaseCount)
     };
   });
+}
+
+function readMoonPhaseImages(
+  raw: unknown,
+  phaseCount: number
+): MoonPhaseImageDefinition[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  const deduped = new Map<number, MoonPhaseImageDefinition>();
+
+  raw.forEach((entry) => {
+    const record = asRecord(entry);
+    const imageRef = readOptionalString(record.imageRef);
+
+    if (!imageRef) {
+      return;
+    }
+
+    const phaseIndex = clamp(
+      Math.trunc(readNumber(record.phaseIndex, 0)),
+      0,
+      Math.max(0, phaseCount - 1)
+    );
+
+    deduped.set(phaseIndex, {
+      phaseIndex,
+      imageRef
+    });
+  });
+
+  return [...deduped.values()].sort((left, right) => left.phaseIndex - right.phaseIndex);
 }
 
 function readNamedYears(raw: unknown): FantasyNamedYear[] {
@@ -386,6 +429,14 @@ function mod(value: number, length: number): number {
   return ((value % length) + length) % length;
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(Math.trunc(value), min), max);
+}
+
+function clampMoonSize(value: number): number {
+  return clamp(Math.trunc(value || DEFAULT_MOON_SIZE), 12, 96);
+}
+
 function cloneMonths(months: FantasyMonth[]): FantasyMonth[] {
   return months.map((month) => ({ ...month }));
 }
@@ -405,8 +456,11 @@ export function cloneCalendarDefinition(
     ...definition,
     weekdays: [...definition.weekdays],
     months: cloneMonths(definition.months),
-	eras: definition.eras.map((era) => ({ ...era })),
-    moons: definition.moons.map((moon) => ({ ...moon })),
+    eras: definition.eras.map((era) => ({ ...era })),
+    moons: definition.moons.map((moon) => ({
+      ...moon,
+      phaseImages: moon.phaseImages.map((entry) => ({ ...entry }))
+    })),
     yearNames: definition.yearNames.map((entry) => ({ ...entry })),
     seasons: definition.seasons.map((season) => ({ ...season, start: { ...season.start }, end: { ...season.end } }))
   };
@@ -422,8 +476,8 @@ export function cloneCalendarFile(calendar: CalendarFile): CalendarFile {
       cursorDate: cloneDate(calendar.state.cursorDate)
     },
     linkedTagPackIds: [...calendar.linkedTagPackIds],
-	linkedWeatherPackIds: [...calendar.linkedWeatherPackIds],
-	defaultWeatherPackId: calendar.defaultWeatherPackId,
+    linkedWeatherPackIds: [...calendar.linkedWeatherPackIds],
+    defaultWeatherPackId: calendar.defaultWeatherPackId,
     markers: cloneMarkers(calendar.markers)
   };
 }
@@ -757,7 +811,7 @@ export function buildMonthGrid(
     for (let columnIndex = 0; columnIndex < columns; columnIndex++) {
       const flatIndex = rowIndex * columns + columnIndex;
       const day = flatIndex - startWeekdayIndex + 1;
-	  
+
       const monthStartDate = { year, monthIndex, day: 1 };
       const monthEndDate = { year, monthIndex, day: month.days };
 

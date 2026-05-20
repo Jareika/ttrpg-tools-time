@@ -8,6 +8,7 @@ import {
   shiftDay
 } from "./calendar";
 import { getEventIndexEntriesForDate } from "./events";
+import { resolveMoonsForDate } from "./moons";
 import {
   getWeatherConditionLabel,
   getWeatherDayEntry,
@@ -22,6 +23,7 @@ import type {
   CalendarFile,
   EventYearFile,
   FantasyDate,
+  MoonPhaseData,
   WeatherCondition,
   WeatherDayEntry,
   WeatherYearFile
@@ -85,6 +87,7 @@ export class TimeDayView extends ItemView {
     const markers = getMarkersForDate(calendar.markers, calendar.state.cursorDate);
     const weather = resolveWeatherForDate(calendar, calendar.state.cursorDate, weatherYear);
     const season = getSeasonForDate(calendar.definition, calendar.state.cursorDate);
+    const moons = resolveMoonsForDate(calendar, calendar.state.cursorDate);
 
     const header = panel.createDiv({ cls: "time-day__header" });
     const topbar = header.createDiv({ cls: "time-day__topbar" });
@@ -166,44 +169,87 @@ export class TimeDayView extends ItemView {
         cls: "time-day__empty",
         text: "No entries for this day yet."
       });
-      return;
+    } else {
+      dayEvents.forEach((event) => {
+        const row = events.createDiv({ cls: "time-day__event" });
+        row.title = "Double-click for details";
+
+        const dot = row.createDiv({ cls: "time-day__event-dot" });
+        dot.style.backgroundColor = event.color ?? "#4e3e3e";
+
+        row.addEventListener("dblclick", () => {
+          void this.openEventDetails(calendar, event.id);
+        });
+
+        const body = row.createDiv({ cls: "time-day__event-body" });
+        body.createDiv({
+          cls: "time-day__event-title",
+          text: event.title
+        });
+      });
+
+      markers.forEach((marker) => {
+        const row = events.createDiv({ cls: "time-day__event" });
+
+        const dot = row.createDiv({ cls: "time-day__event-dot" });
+        dot.addClass(`is-${marker.tone ?? "dark"}`);
+
+        const body = row.createDiv({ cls: "time-day__event-body" });
+        body.createDiv({
+          cls: "time-day__event-title",
+          text: marker.label ?? "Unnamed entry"
+        });
+
+        body.createDiv({
+          cls: "time-day__event-description",
+          text: "Marker"
+        });
+      });
     }
 
-    dayEvents.forEach((event) => {
-      const row = events.createDiv({ cls: "time-day__event" });
-      row.title = "Double-click for details";
+    if (moons.length > 0) {
+      this.renderMoonStrip(panel, moons);
+    }
+  }
 
-      const dot = row.createDiv({ cls: "time-day__event-dot" });
-      dot.style.backgroundColor = event.color ?? "#4e3e3e";
+  private renderMoonStrip(parent: HTMLElement, moons: MoonPhaseData[]): void {
+    const wrap = parent.createDiv({ cls: "time-day__moons" });
+    const list = wrap.createDiv({ cls: "time-day__moon-list" });
 
-      row.addEventListener("dblclick", () => {
-        void this.openEventDetails(calendar, event.id);
-      });
+    moons.forEach((moon) => {
+      const item = list.createDiv({ cls: "time-day__moon" });
+      item.style.setProperty("--time-moon-size", `${moon.size}px`);
+      item.setAttr(
+        "aria-label",
+        `${moon.name} — ${moon.phaseLabel} — Day ${moon.cycleDay}/${moon.cycleDays}`
+      );
+      item.title = `${moon.name} • ${moon.phaseLabel} • Day ${moon.cycleDay}/${moon.cycleDays}`;
 
-      const body = row.createDiv({ cls: "time-day__event-body" });
-      body.createDiv({
-        cls: "time-day__event-title",
-        text: event.title
-      });
+      if (moon.imageRef) {
+        const file = this.plugin.resolveStoredFileRef(moon.imageRef);
+
+        if (file) {
+          const image = item.createEl("img", {
+            cls: "time-day__moon-image"
+          });
+          image.src = this.plugin.app.vault.getResourcePath(file);
+          image.alt = `${moon.name} — ${moon.phaseLabel}`;
+          image.draggable = false;
+          return;
+        }
+      }
+
+      this.renderMoonFallback(item, moon);
     });
+  }
 
-    markers.forEach((marker) => {
-      const row = events.createDiv({ cls: "time-day__event" });
+  private renderMoonFallback(parent: HTMLElement, moon: MoonPhaseData): void {
+    const fallback = parent.createDiv({ cls: "time-day__moon-fallback" });
+    fallback.textContent = String(moon.phaseIndex + 1);
 
-      const dot = row.createDiv({ cls: "time-day__event-dot" });
-      dot.addClass(`is-${marker.tone ?? "dark"}`);
-
-      const body = row.createDiv({ cls: "time-day__event-body" });
-      body.createDiv({
-        cls: "time-day__event-title",
-        text: marker.label ?? "Unnamed entry"
-      });
-
-      body.createDiv({
-        cls: "time-day__event-description",
-        text: "Marker"
-      });
-    });
+    if (moon.color) {
+      fallback.style.backgroundColor = moon.color;
+    }
   }
 
   private openDayMenu(
@@ -794,7 +840,7 @@ function renderFantasyDateInputs(
   });
 
   calendar.definition.months.forEach((month, index) => {
-    const option = document.createElement("option");
+    const option = monthSelect.ownerDocument.createElement("option");
     option.value = String(index);
     option.text = month.name;
     monthSelect.add(option);
