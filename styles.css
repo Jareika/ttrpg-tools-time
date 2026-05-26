@@ -1038,6 +1038,26 @@
   border-radius: 12px;
 }
 
+.time-event-detail__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.time-event-detail__header-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.time-event-detail__moon-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 180px;
+}
+
 .time-event-detail__description {
   white-space: pre-wrap;
   line-height: 1.55;
@@ -1046,6 +1066,23 @@
 
 .time-event-detail .time-modal__footer {
   margin-top: 14px;
+}
+
+.time-event-detail__moon-transitions {
+  width: 100%;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--time-muted-text);
+}
+
+.time-event-detail__moon-transitions-title {
+  margin-bottom: 4px;
+  font-weight: 700;
+  color: var(--time-heading-soft);
+}
+
+.time-event-detail__moon-transition + .time-event-detail__moon-transition {
+  margin-top: 2px;
 }
 
 .time-file-picker__suggestion {
@@ -1278,6 +1315,7 @@
     90px
     90px
     54px
+	140px
     140px
     38px;
 }

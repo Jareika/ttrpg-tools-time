@@ -59,6 +59,7 @@ interface MoonDraft {
   phaseCount: number;
   size: number;
   phaseImages: MoonPhaseImageDefinition[];
+  phaseLabels: string[];
 }
 
 interface NamedYearDraft {
@@ -107,6 +108,9 @@ export class CalendarEditorModal extends Modal {
   private todayDay: number;
   private savedActiveView: CalendarViewMode;
   private seasons: SeasonDraft[];
+  private timeEnabled: boolean;
+  private hoursPerDay: number;
+  private minutesPerHour: number;
   private defaultWeatherPackId: string;
   private readonly selectedTagPackIds: Set<string>;
 
@@ -150,7 +154,8 @@ export class CalendarEditorModal extends Modal {
       color: normalizeColor(moon.color),
       phaseCount: Math.max(1, Math.trunc(moon.phaseCount || 8)),
       size: normalizeMoonSize(moon.size),
-      phaseImages: moon.phaseImages.map((entry) => ({ ...entry }))
+      phaseImages: moon.phaseImages.map((entry) => ({ ...entry })),
+      phaseLabels: [...moon.phaseLabels]
     }));
     this.namedYears = (definition?.yearNames ?? []).map((entry) => ({ ...entry }));
     this.startWeekdayIndex = definition?.startWeekdayIndex ?? 0;
@@ -172,6 +177,9 @@ export class CalendarEditorModal extends Modal {
       endDay: season.end.day,
       color: normalizeColor(season.color)
     }));
+    this.timeEnabled = definition?.time.enabled ?? false;
+    this.hoursPerDay = definition?.time.hoursPerDay ?? 24;
+    this.minutesPerHour = definition?.time.minutesPerHour ?? 60;
 
 	this.defaultWeatherPackId = source?.defaultWeatherPackId ?? "general";
     this.selectedTagPackIds = new Set(source?.linkedTagPackIds ?? []);
@@ -308,6 +316,45 @@ export class CalendarEditorModal extends Modal {
         this.todayDay = Math.max(1, value);
       }
     });
+	
+    new Setting(contentEl)
+      .setName("Time system")
+      .setDesc(
+        this.timeEnabled
+          ? `Enabled. Events can optionally store exact time. Day length: ${this.hoursPerDay}h × ${this.minutesPerHour}m.`
+          : "Disabled. Calendar stays purely day-based."
+      )
+      .addToggle((toggle) => {
+        toggle.setValue(this.timeEnabled);
+        toggle.onChange((value) => {
+          this.timeEnabled = value;
+          void this.render();
+        });
+      });
+
+    if (this.timeEnabled) {
+      const timeRow = contentEl.createDiv({
+        cls: "time-inline-fields time-inline-fields--triple"
+      });
+
+      createInlineNumberField(timeRow, {
+        label: "Hours per day",
+        value: String(this.hoursPerDay),
+        min: 1,
+        onChange: (value) => {
+          this.hoursPerDay = Math.max(1, value);
+        }
+      });
+
+      createInlineNumberField(timeRow, {
+        label: "Minutes per hour",
+        value: String(this.minutesPerHour),
+        min: 1,
+        onChange: (value) => {
+          this.minutesPerHour = Math.max(1, value);
+        }
+      });
+    }
 	  
     new Setting(contentEl)
       .setName("Seasons")
@@ -610,7 +657,12 @@ export class CalendarEditorModal extends Modal {
         moons: sanitizedMoons,
         yearNames: sanitizedNamedYears,
         startWeekdayIndex: clamp(this.startWeekdayIndex, 0, sanitizedWeekdays.length - 1),
-        seasons: sanitizedSeasons
+        seasons: sanitizedSeasons,
+        time: {
+          enabled: this.timeEnabled,
+          hoursPerDay: Math.max(1, Math.trunc(this.hoursPerDay)),
+          minutesPerHour: Math.max(1, Math.trunc(this.minutesPerHour))
+        }
       },
       state: {
         activeView: this.savedActiveView,
@@ -1015,6 +1067,7 @@ class MoonEditorModal extends Modal {
         "Phases",
         "Size",
         "Color",
+		"Labels",
         "Images",
         ""
       ].forEach((label) => {
@@ -1096,6 +1149,23 @@ class MoonEditorModal extends Modal {
       colorInput.addEventListener("input", () => {
         this.moons[index].color = colorInput.value;
       });
+	  
+      const phaseLabelsButton = row.createEl("button", {
+        cls: "time-manager__button",
+        text: `Labels (${this.moons[index].phaseLabels.filter((entry) => entry.trim().length > 0).length}/${this.moons[index].phaseCount})`
+      });
+      phaseLabelsButton.type = "button";
+      phaseLabelsButton.addEventListener("click", () => {
+        new MoonPhaseLabelsModal(
+          this.app,
+          this.moons[index].phaseCount,
+          this.moons[index].phaseLabels,
+          (nextLabels) => {
+            this.moons[index].phaseLabels = sanitizeMoonPhaseLabels(nextLabels, this.moons[index].phaseCount);
+            this.render();
+          }
+        ).open();
+      });
 
       const phaseImagesButton = row.createEl("button", {
         cls: "time-manager__button",
@@ -1135,7 +1205,8 @@ class MoonEditorModal extends Modal {
         color: "#d46b65",
         phaseCount: 8,
         size: 28,
-        phaseImages: []
+        phaseImages: [],
+        phaseLabels: []
       });
       this.render();
     }, false, true);
@@ -1164,12 +1235,76 @@ class MoonEditorModal extends Modal {
         color: normalizeColor(moon.color),
         phaseCount: safePhaseCount,
         size: normalizeMoonSize(moon.size),
-        phaseImages: sanitizeMoonPhaseImages(moon.phaseImages, safePhaseCount)
+        phaseImages: sanitizeMoonPhaseImages(moon.phaseImages, safePhaseCount),
+        phaseLabels: sanitizeMoonPhaseLabels(moon.phaseLabels, safePhaseCount)
       };
     });
 
     this.onSave(sanitized);
     this.close();
+  }
+}
+
+class MoonPhaseLabelsModal extends Modal {
+  private phaseCount: number;
+  private phaseLabels: string[];
+  private readonly onSave: (phaseLabels: string[]) => void;
+
+  constructor(
+    app: App,
+    phaseCount: number,
+    phaseLabels: string[],
+    onSave: (phaseLabels: string[]) => void
+  ) {
+    super(app);
+    this.phaseCount = Math.max(1, Math.trunc(phaseCount || 1));
+    this.phaseLabels = sanitizeMoonPhaseLabels(phaseLabels, this.phaseCount);
+    this.onSave = onSave;
+  }
+
+  onOpen(): void {
+    prepareFlexibleModal(this);
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("time-modal");
+    contentEl.createEl("h2", { text: "Configure moon phase labels" });
+    contentEl.createEl("p", {
+      cls: "setting-item-description",
+      text: "Leave a label empty to fall back to the default phase name."
+    });
+
+    const list = contentEl.createDiv({ cls: "time-collection-editor__list" });
+
+    for (let phaseIndex = 0; phaseIndex < this.phaseCount; phaseIndex += 1) {
+      const row = list.createDiv({ cls: "time-moon-phase-editor__row" });
+
+      row.createDiv({
+        cls: "time-moon-phase-editor__label",
+        text: `${phaseIndex + 1}. ${getMoonPhaseLabel(this.phaseCount, phaseIndex)}`
+      });
+
+      const input = row.createEl("input", { cls: "time-collection-editor__input" });
+      input.type = "text";
+      input.placeholder = "Custom label";
+      input.value = this.phaseLabels[phaseIndex] ?? "";
+      input.addEventListener("input", () => {
+        this.phaseLabels[phaseIndex] = input.value;
+      });
+    }
+
+    const footer = contentEl.createDiv({ cls: "time-modal__footer" });
+    new Setting(footer).addButton((button) => {
+      button.setButtonText("Save");
+      button.setCta();
+      button.onClick(() => {
+        this.onSave(sanitizeMoonPhaseLabels(this.phaseLabels, this.phaseCount));
+        this.close();
+      });
+    });
+    new Setting(footer).addButton((button) => {
+      button.setButtonText("Cancel");
+      button.onClick(() => this.close());
+    });
   }
 }
 
@@ -2203,6 +2338,19 @@ function sanitizeMoonPhaseImages(
   });
 
   return [...deduped.values()].sort((left, right) => left.phaseIndex - right.phaseIndex);
+}
+
+function sanitizeMoonPhaseLabels(
+  phaseLabels: string[],
+  phaseCount: number
+): string[] {
+  const next: string[] = [];
+
+  for (let index = 0; index < phaseCount; index += 1) {
+    next.push(typeof phaseLabels[index] === "string" ? phaseLabels[index].trim() : "");
+  }
+
+  return next;
 }
 
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "avif"]);

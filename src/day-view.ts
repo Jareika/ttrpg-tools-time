@@ -8,7 +8,12 @@ import {
   shiftDay
 } from "./calendar";
 import { getEventIndexEntriesForDate } from "./events";
-import { resolveMoonsForDate } from "./moons";
+import {
+  formatFantasyTime,
+  resolveMoonPhaseTransitionsForDate,
+  resolveMoonsForDate,
+  resolveMoonsForMoment
+} from "./moons";
 import {
   getWeatherConditionLabel,
   getWeatherDayEntry,
@@ -21,7 +26,9 @@ import { WeatherPackPickerModal } from "./weather-pack-modals";
 import type {
   CalendarEventDefinition,
   CalendarFile,
+  FantasyTimeOfDay,
   EventYearFile,
+  MoonPhaseTransition,
   FantasyDate,
   MoonPhaseData,
   WeatherCondition,
@@ -159,9 +166,13 @@ export class TimeDayView extends ItemView {
     const events = section.createDiv({ cls: "time-day__events" });
 
     const indexedEvents = getEventIndexEntriesForDate(eventIndexYear, calendar.state.cursorDate);
-    const dayEvents =
+    const eventLookup = new Map((eventYear?.events ?? []).map((event) => [event.id, event] as const));
+	const dayEvents =
       indexedEvents.length > 0
-        ? indexedEvents
+        ? indexedEvents.map((event) => {
+            const detail = eventLookup.get(event.id);
+            return { ...event, startTime: detail?.startTime, endTime: detail?.endTime };
+          })
         : collectFallbackEvents(eventYear, calendar.state.cursorDate);
 
     if (dayEvents.length === 0 && markers.length === 0) {
@@ -186,6 +197,14 @@ export class TimeDayView extends ItemView {
           cls: "time-day__event-title",
           text: event.title
         });
+
+        const timeLabel = buildEventTimeRangeLabel(calendar, event.startTime, event.endTime);
+        if (timeLabel) {
+          body.createDiv({
+            cls: "time-day__event-description",
+            text: timeLabel
+          });
+        }
       });
 
       markers.forEach((marker) => {
@@ -399,7 +418,7 @@ export class TimeDayView extends ItemView {
       return;
     }
 
-    new EventDetailModal(this.plugin, detail).open();
+    new EventDetailModal(this.plugin, calendar, detail).open();
   }
 
   private async navigate(delta: number): Promise<void> {
@@ -725,11 +744,8 @@ class ApplyWeatherPackRangeModal extends Modal {
 class EventDetailModal extends Modal {
   constructor(
     private readonly plugin: TtrpgToolsTimePlugin,
-    private readonly event: Awaited<ReturnType<TtrpgToolsTimePlugin["loadEventById"]>> extends infer T
-      ? T extends null
-        ? never
-        : T
-      : never
+    private readonly calendar: CalendarFile,
+    private readonly event: CalendarEventDefinition
   ) {
     super(plugin.app);
   }
@@ -739,7 +755,56 @@ class EventDetailModal extends Modal {
     contentEl.empty();
     contentEl.addClass("time-modal", "time-event-detail");
 
-    contentEl.createEl("h2", { text: this.event.title });
+    const header = contentEl.createDiv({ cls: "time-event-detail__header" });
+    const main = header.createDiv({ cls: "time-event-detail__header-main" });
+    main.createEl("h2", { text: this.event.title });
+    main.createEl("p", {
+      cls: "time-event-editor__meta",
+      text: buildEventDateRangeLabel(this.calendar, this.event)
+    });
+
+    const timeLabel = buildEventTimeRangeLabel(this.calendar, this.event.startTime, this.event.endTime);
+    if (timeLabel) {
+      main.createEl("p", {
+        cls: "time-event-editor__meta",
+        text: `Time: ${timeLabel}`
+      });
+    }
+
+    const moonPanel = header.createDiv({ cls: "time-event-detail__moon-panel" });
+    const moons = this.event.startTime
+      ? resolveMoonsForMoment(this.calendar, this.event.date, this.event.startTime)
+      : resolveMoonsForDate(this.calendar, this.event.date);
+
+    if (moons.length > 0) {
+      const moonList = moonPanel.createDiv({ cls: "time-day__moon-list" });
+      moons.forEach((moon) => {
+        const item = moonList.createDiv({ cls: "time-day__moon" });
+        item.style.setProperty("--time-moon-size", `${moon.size}px`);
+        item.title = `${moon.name} • ${moon.phaseLabel}${moon.timeLabel ? ` • ${moon.timeLabel}` : ""}`;
+
+        if (moon.imageRef) {
+          const imageFile = this.plugin.resolveStoredFileRef(moon.imageRef);
+          if (imageFile) {
+            const image = item.createEl("img", {
+              cls: "time-day__moon-image"
+            });
+            image.src = this.plugin.app.vault.getResourcePath(imageFile);
+            image.alt = `${moon.name} — ${moon.phaseLabel}`;
+            image.draggable = false;
+          } else {
+            renderMoonFallback(item, moon);
+          }
+        } else {
+          renderMoonFallback(item, moon);
+        }
+      });
+    }
+
+    const transitions = resolveMoonPhaseTransitionsForDate(this.calendar, this.event.date);
+    if (transitions.length > 0) {
+      renderMoonTransitions(moonPanel, transitions);
+    }
 
     if (this.event.imageRef) {
       const imageFile = this.plugin.resolveStoredFileRef(this.event.imageRef);
@@ -784,10 +849,61 @@ class EventDetailModal extends Modal {
   }
 }
 
+function renderMoonFallback(parent: HTMLElement, moon: MoonPhaseData): void {
+  const fallback = parent.createDiv({ cls: "time-day__moon-fallback" });
+  fallback.textContent = String(moon.phaseIndex + 1);
+
+  if (moon.color) {
+    fallback.style.backgroundColor = moon.color;
+  }
+}
+
+function renderMoonTransitions(parent: HTMLElement, transitions: MoonPhaseTransition[]): void {
+  const wrap = parent.createDiv({ cls: "time-event-detail__moon-transitions" });
+  wrap.createDiv({
+    cls: "time-event-detail__moon-transitions-title",
+    text: "Phase changes today"
+  });
+
+  transitions.forEach((transition) => {
+    wrap.createDiv({
+      cls: "time-event-detail__moon-transition",
+      text: `${transition.timeLabel} • ${transition.name}: ${transition.phaseLabel}`
+    });
+  });
+}
+
+function buildEventDateRangeLabel(calendar: CalendarFile, event: CalendarEventDefinition): string {
+  const start = formatLongDate(event.date, calendar.definition);
+
+  if (!event.endDate) {
+    return start;
+  }
+
+  const end = formatLongDate(event.endDate, calendar.definition);
+  return compareFantasyDate(event.date, event.endDate) !== 0
+    ? `${start} → ${end}`
+    : start;
+}
+
+function buildEventTimeRangeLabel(
+  calendar: CalendarFile,
+  startTime?: FantasyTimeOfDay,
+  endTime?: FantasyTimeOfDay
+): string | null {
+  if (!startTime) {
+    return null;
+  }
+
+  const start = formatFantasyTime(startTime, calendar.definition);
+  const end = endTime ? formatFantasyTime(endTime, calendar.definition) : null;
+  return end ? `${start} – ${end}` : start;
+}
+
 function collectFallbackEvents(
   eventYear: EventYearFile | null,
   date: FantasyDate
-): Array<{ id: string; title: string; color: string }> {
+): Array<{ id: string; title: string; color: string; startTime?: FantasyTimeOfDay; endTime?: FantasyTimeOfDay }> {
   if (!eventYear) {
     return [];
   }
@@ -797,7 +913,9 @@ function collectFallbackEvents(
     .map((event) => ({
       id: event.id,
       title: event.title,
-      color: event.color ?? "#4e3e3e"
+      color: event.color ?? "#4e3e3e",
+      startTime: event.startTime,
+      endTime: event.endTime
     }));
 }
 

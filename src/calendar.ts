@@ -4,6 +4,7 @@ import type {
   CalendarViewMode,
   DayMarker,
   FantasyCalendarDefinition,
+  FantasyTimeConfig,
   FantasyMonthDay,
   FantasyEra,
   FantasyDate,
@@ -31,6 +32,11 @@ const DEFAULT_SEASON_NAMES = ["Spring", "Summer", "Autumn", "Winter"];
 const DEFAULT_SEASON_COLORS = ["#a7d36d", "#e2b35d", "#d98859", "#7fa8d8"];
 const DEFAULT_MOON_PHASE_COUNT = 8;
 const DEFAULT_MOON_SIZE = 28;
+const DEFAULT_TIME_CONFIG: FantasyTimeConfig = {
+  enabled: false,
+  hoursPerDay: 24,
+  minutesPerHour: 60
+};
 
 export const DEFAULT_CALENDAR_DEFINITION: FantasyCalendarDefinition = {
   id: "default-calendar",
@@ -42,7 +48,8 @@ export const DEFAULT_CALENDAR_DEFINITION: FantasyCalendarDefinition = {
   eras: buildDefaultEras("Era"),
   yearNames: [],
   startWeekdayIndex: 0,
-  seasons: buildDefaultSeasons(DEFAULT_MONTHS)
+  seasons: buildDefaultSeasons(DEFAULT_MONTHS),
+  time: { ...DEFAULT_TIME_CONFIG }
 };
 
 export const DEFAULT_CALENDAR_FILE: CalendarFile = {
@@ -92,7 +99,8 @@ export function normalizeCalendarFile(raw: unknown): CalendarFile {
     moons: rawDefinition.moons,
     yearNames: rawDefinition.yearNames,
     startWeekdayIndex: rawDefinition.startWeekdayIndex,
-    seasons: rawDefinition.seasons
+    seasons: rawDefinition.seasons,
+	time: rawDefinition.time
   });
 
   const state = normalizeCalendarState(record.state, definition);
@@ -162,6 +170,7 @@ function normalizeDefinition(raw: unknown): FantasyCalendarDefinition {
     seasons: Array.isArray(record.seasons)
       ? readSeasons(record.seasons, normalizedMonths)
       : buildDefaultSeasons(normalizedMonths),
+    time: readTimeConfig(record.time)
   };
 }
 
@@ -228,7 +237,8 @@ function readMoons(raw: unknown): FantasyMoon[] {
       color: readOptionalString(record.color),
       phaseCount,
       size: clampMoonSize(readNumber(record.size, DEFAULT_MOON_SIZE)),
-      phaseImages: readMoonPhaseImages(record.phaseImages, phaseCount)
+      phaseImages: readMoonPhaseImages(record.phaseImages, phaseCount),
+      phaseLabels: readPhaseLabels(record.phaseLabels, phaseCount)
     };
   });
 }
@@ -264,6 +274,30 @@ function readMoonPhaseImages(
   });
 
   return [...deduped.values()].sort((left, right) => left.phaseIndex - right.phaseIndex);
+}
+
+function readPhaseLabels(raw: unknown, phaseCount: number): string[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw
+    .slice(0, phaseCount)
+    .map((entry) => (typeof entry === "string" ? entry.trim() : ""));
+}
+
+function readTimeConfig(raw: unknown): FantasyTimeConfig {
+  const record = asRecord(raw);
+
+  return {
+    enabled: readBoolean(record.enabled, DEFAULT_TIME_CONFIG.enabled),
+    hoursPerDay: clamp(
+      Math.trunc(readNumber(record.hoursPerDay, DEFAULT_TIME_CONFIG.hoursPerDay)),
+      1,
+      240
+    ),
+    minutesPerHour: clamp(Math.trunc(readNumber(record.minutesPerHour, DEFAULT_TIME_CONFIG.minutesPerHour)), 1, 240)
+  };
 }
 
 function readNamedYears(raw: unknown): FantasyNamedYear[] {
@@ -459,10 +493,12 @@ export function cloneCalendarDefinition(
     eras: definition.eras.map((era) => ({ ...era })),
     moons: definition.moons.map((moon) => ({
       ...moon,
-      phaseImages: moon.phaseImages.map((entry) => ({ ...entry }))
+      phaseImages: moon.phaseImages.map((entry) => ({ ...entry })),
+      phaseLabels: [...moon.phaseLabels]
     })),
     yearNames: definition.yearNames.map((entry) => ({ ...entry })),
-    seasons: definition.seasons.map((season) => ({ ...season, start: { ...season.start }, end: { ...season.end } }))
+    seasons: definition.seasons.map((season) => ({ ...season, start: { ...season.start }, end: { ...season.end } })),
+    time: { ...definition.time }
   };
 }
 

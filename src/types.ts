@@ -19,6 +19,17 @@ export type WeatherCondition =
 
 export type WeatherSourceType = "pack" | "event" | "manual";
 
+export interface FantasyTimeConfig {
+  enabled: boolean;
+  hoursPerDay: number;
+  minutesPerHour: number;
+}
+
+export interface FantasyTimeOfDay {
+  hour: number;
+  minute: number;
+}
+
 export interface FantasyMonth {
   id: string;
   name: string;
@@ -39,6 +50,7 @@ export interface FantasyMoon {
   phaseCount: number;
   size: number;
   phaseImages: MoonPhaseImageDefinition[];
+  phaseLabels: string[];
 }
 
 export interface FantasyNamedYear {
@@ -79,6 +91,7 @@ export interface FantasyCalendarDefinition {
   yearNames: FantasyNamedYear[];
   startWeekdayIndex: number;
   seasons: FantasySeason[];
+  time: FantasyTimeConfig;
 }
 
 export interface CalendarFile {
@@ -154,6 +167,8 @@ export interface CalendarEventDefinition {
   title: string;
   date: FantasyDate;
   endDate?: FantasyDate;
+  startTime?: FantasyTimeOfDay;
+  endTime?: FantasyTimeOfDay;
   description?: string;
   color?: string;
   tagRefs: string[];
@@ -292,6 +307,16 @@ export interface MoonPhaseData {
   size: number;
   color?: string;
   imageRef?: string;
+  timeLabel?: string;
+}
+
+export interface MoonPhaseTransition {
+  moonId: string;
+  name: string;
+  phaseIndex: number;
+  phaseLabel: string;
+  minuteOfDay: number;
+  timeLabel: string;
 }
 
 export interface MonthGridCell {
