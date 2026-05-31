@@ -24,6 +24,8 @@ export function normalizeCalendarEventDefinition(raw: unknown): CalendarEventDef
       day: Math.max(1, Math.trunc(readNumber(dateRecord.day, 1)))
     },
 	endDate: readOptionalFantasyDate(record.endDate),
+    startTime: readOptionalFantasyTime(record.startTime),
+    endTime: readOptionalFantasyTime(record.endTime),
     description: readOptionalString(record.description),
     color: readColor(record.color),
     tagRefs: readStringArray(record.tagRefs),
@@ -229,7 +231,20 @@ export function sortEvents(left: CalendarEventDefinition, right: CalendarEventDe
   if (left.date.day !== right.date.day) {
     return left.date.day - right.date.day;
   }
+
+  const timeComparison = compareOptionalTimes(left.startTime, right.startTime);
+  if (timeComparison !== 0) {
+    return timeComparison;
+  }
+
   return left.title.localeCompare(right.title, undefined, { sensitivity: "base" });
+}
+
+function compareOptionalTimes(left?: { hour: number; minute: number }, right?: { hour: number; minute: number }): number {
+  if (left && right) return left.hour !== right.hour ? left.hour - right.hour : left.minute - right.minute;
+  if (left) return -1;
+  if (right) return 1;
+  return 0;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -266,6 +281,21 @@ function readOptionalFantasyDate(value: unknown): FantasyDate | undefined {
     year: Math.trunc(readNumber(record.year, 0)),
     monthIndex: Math.max(0, Math.trunc(readNumber(record.monthIndex, 0))),
     day: Math.max(1, Math.trunc(readNumber(record.day, 1)))
+  };
+}
+
+function readOptionalFantasyTime(
+  value: unknown
+): { hour: number; minute: number } | undefined {
+  const record = asRecord(value);
+
+  if (!("hour" in record) && !("minute" in record)) {
+    return undefined;
+  }
+
+  return {
+    hour: Math.max(0, Math.trunc(readNumber(record.hour, 0))),
+    minute: Math.max(0, Math.trunc(readNumber(record.minute, 0)))
   };
 }
 

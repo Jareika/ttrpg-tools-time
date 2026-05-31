@@ -1,4 +1,97 @@
 /* ==========================================================================
+   Scoped theme variables
+   ========================================================================== */
+
+.workspace-leaf-content[data-type="time-calendar-view"],
+.workspace-leaf-content[data-type="time-day-view"],
+.workspace-leaf-content[data-type="time-event-editor-view"],
+.modal-container .modal.time-flex-modal {
+  --time-accent: #cf655f;
+  --time-accent-strong: #a63831;
+  --time-accent-soft: color-mix(in srgb, var(--time-accent) 12%, transparent);
+  --time-accent-faint: color-mix(in srgb, var(--time-accent) 8%, transparent);
+
+  --time-app-bg: var(--background-primary);
+  --time-panel-bg: var(--background-primary);
+  --time-card-bg: var(--background-primary-alt, var(--background-secondary));
+  --time-soft-bg: var(--background-secondary);
+  --time-button-bg: var(--background-secondary);
+  --time-weather-bg: var(--background-secondary);
+  --time-event-bg: color-mix(in srgb, var(--background-secondary) 88%, var(--time-accent) 12%);
+
+  --time-border: var(--background-modifier-border);
+  --time-shadow: rgba(0, 0, 0, 0.12);
+
+  --time-heading: var(--time-accent-strong);
+  --time-heading-soft: var(--text-muted);
+  --time-strong-text: var(--text-normal);
+  --time-muted-text: var(--text-muted);
+  --time-rail-text: var(--time-accent);
+
+  --time-today-bg: var(--background-modifier-hover);
+  --time-cursor-bg: color-mix(in srgb, var(--background-secondary) 76%, #e6bd74 24%);
+  --time-cursor-outline: #e6bd74;
+
+  --time-weather-pop-bg: var(--background-primary-alt, var(--background-secondary));
+  --time-weather-pop-text: var(--text-normal);
+}
+
+.theme-light .workspace-leaf-content[data-type="time-calendar-view"],
+.theme-light .workspace-leaf-content[data-type="time-day-view"],
+.theme-light .workspace-leaf-content[data-type="time-event-editor-view"],
+.theme-light .modal-container .modal.time-flex-modal {
+  --time-app-bg: var(--background-primary);
+  --time-panel-bg: var(--background-primary);
+  --time-card-bg: var(--background-modifier-form-field);
+  --time-soft-bg: var(--background-secondary);
+  --time-button-bg: color-mix(in srgb, var(--background-primary) 72%, var(--background-secondary) 28%);
+  --time-weather-bg: color-mix(in srgb, var(--background-primary) 72%, var(--background-secondary) 28%);
+  --time-event-bg: color-mix(in srgb, var(--background-primary) 84%, var(--time-accent) 16%);
+
+  --time-shadow: rgba(0, 0, 0, 0.08);
+  --time-heading: var(--time-accent-strong);
+  --time-heading-soft: var(--text-muted);
+  --time-strong-text: var(--text-normal);
+  --time-muted-text: var(--text-muted);
+  --time-rail-text: var(--time-accent);
+
+  --time-today-bg: var(--background-modifier-hover);
+  --time-cursor-bg: color-mix(in srgb, var(--background-primary) 78%, #e6bd74 22%);
+  --time-cursor-outline: #d7b36b;
+
+  --time-weather-pop-bg: var(--background-primary);
+  --time-weather-pop-text: var(--text-normal);
+}
+
+.theme-dark .workspace-leaf-content[data-type="time-calendar-view"],
+.theme-dark .workspace-leaf-content[data-type="time-day-view"],
+.theme-dark .workspace-leaf-content[data-type="time-event-editor-view"],
+.theme-dark .modal-container .modal.time-flex-modal {
+  --time-accent: #df8f88;
+  --time-accent-strong: #f0b6b0;
+  --time-accent-soft: rgba(223, 143, 136, 0.16);
+  --time-accent-faint: rgba(223, 143, 136, 0.1);
+
+  --time-app-bg: var(--background-primary);
+  --time-panel-bg: var(--background-primary);
+  --time-card-bg: var(--background-primary-alt, var(--background-secondary));
+  --time-soft-bg: var(--background-secondary);
+  --time-button-bg: var(--background-primary-alt, var(--background-secondary));
+  --time-weather-bg: var(--background-primary-alt, var(--background-secondary));
+  --time-event-bg: rgba(255, 255, 255, 0.04);
+
+  --time-shadow: rgba(0, 0, 0, 0.28);
+  --time-heading: var(--time-accent-strong);
+  --time-heading-soft: var(--text-muted);
+  --time-strong-text: var(--text-normal);
+  --time-muted-text: var(--text-muted);
+  --time-rail-text: var(--time-accent-strong);
+
+  --time-weather-pop-bg: var(--background-secondary);
+  --time-weather-pop-text: var(--text-normal);
+}
+
+/* ==========================================================================
    View roots
    ========================================================================== */
 
@@ -20,10 +113,8 @@
 .time-event-editor {
   min-height: 100%;
   height: 100%;
-  color: var(--text-normal);
-  background:
-    radial-gradient(circle at top, rgba(255, 239, 204, 0.8), transparent 45%),
-    linear-gradient(180deg, #fbf1dd 0%, #f6ead1 100%);
+  color: var(--time-strong-text);
+  background: var(--time-app-bg);
 }
 
 .time-calendar {
@@ -49,10 +140,9 @@
 .time-day__panel,
 .time-event-editor__panel,
 .time-calendar__empty {
-  background:
-    linear-gradient(180deg, rgba(255, 250, 239, 0.96), rgba(249, 240, 218, 0.96));
+  background: var(--time-panel-bg);
   box-shadow:
-    0 10px 30px rgba(97, 62, 36, 0.08),
+    0 10px 30px var(--time-shadow),
     inset 0 0 0 1px rgba(207, 101, 95, 0.12);
 }
 
@@ -103,19 +193,19 @@
   place-items: center;
   border: 0;
   border-radius: 10px;
-  background: rgba(255, 241, 214, 0.9);
-  color: var(--text-normal);
+  background: var(--time-button-bg);
+  color: var(--time-strong-text);
   cursor: pointer;
 }
 
 .time-icon-button:hover,
 .time-calendar__mode-button:hover,
 .time-calendar__today-button:hover {
-  background: rgba(207, 101, 95, 0.08);
+  background: var(--time-accent-faint);
 }
 
 .time-calendar__mode-button.is-active {
-  background: #d46b65;
+  background: var(--time-accent);
   color: #fff8ef;
 }
 
@@ -131,8 +221,8 @@
 .time-season-editor__delete {
   border: 1px solid rgba(207, 101, 95, 0.2);
   border-radius: 10px;
-  background: rgba(255, 241, 214, 0.9);
-  color: var(--text-normal);
+  background: var(--time-button-bg);
+  color: var(--time-strong-text);
   cursor: pointer;
 }
 
@@ -144,7 +234,7 @@
 .time-tag-editor__delete:hover,
 .time-season-editor__delete:hover,
 .time-collection-editor__delete:hover:not(:disabled) {
-  background: rgba(207, 101, 95, 0.08);
+  background: var(--time-accent-faint);
   transform: translateY(-1px);
 }
 
@@ -159,14 +249,14 @@
   height: 26px;
   border: 1px solid rgba(207, 101, 95, 0.7);
   border-radius: 6px;
-  background: rgba(255, 248, 233, 0.9);
-  color: #a63831;
+  background: var(--time-button-bg);
+  color: var(--time-accent-strong);
   font-weight: 700;
   cursor: pointer;
 }
 
 .time-manager__toggle.is-selected {
-  background: #d46b65;
+  background: var(--time-accent);
   color: #fff8ef;
 }
 
@@ -210,8 +300,8 @@
   place-items: center;
   border: 1px solid var(--background-modifier-border);
   border-radius: 8px;
-  background: rgba(255, 241, 214, 0.9);
-  color: var(--text-normal);
+  background: var(--time-button-bg);
+  color: var(--time-strong-text);
   cursor: pointer;
 }
 
@@ -264,9 +354,9 @@
   gap: 6px;
   box-sizing: border-box;
   padding: 18px 10px;
-  border-left: 10px solid #cf655f;
+  border-left: 10px solid var(--time-accent);
   border-radius: 12px;
-  background: linear-gradient(180deg, rgba(207, 101, 95, 0.16), rgba(207, 101, 95, 0.05));
+  background: linear-gradient(180deg, var(--time-accent-soft), transparent);
   box-shadow: inset 0 0 0 1px rgba(207, 101, 95, 0.08);
 }
 
@@ -276,7 +366,7 @@
   line-height: 0.95;
   font-weight: 700;
   text-align: center;
-  color: #d96563;
+  color: var(--time-rail-text);
 }
 
 .time-calendar__rail-era {
@@ -285,7 +375,7 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   text-align: center;
-  color: #d96563;
+  color: var(--time-rail-text);
 }
 
 .time-calendar__rail-divider {
@@ -303,7 +393,7 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   text-align: center;
-  color: var(--text-muted);
+  color: var(--time-muted-text);
 }
 
 .time-calendar__rail-year {
@@ -311,7 +401,7 @@
   font-size: clamp(0.95rem, 4.2cqi, 1.1rem);
   font-weight: 700;
   text-align: center;
-  color: #8f4f4c;
+  color: var(--time-heading-soft);
 }
 
 .time-calendar__panel {
@@ -326,7 +416,7 @@
 
 .time-calendar__header {
   padding: 14px 16px 12px;
-  border-bottom: 1px solid rgba(207, 101, 95, 0.12);
+  border-bottom: 1px solid var(--time-border);
 }
 
 .time-calendar__brand {
@@ -336,7 +426,7 @@
   font-weight: 700;
   letter-spacing: 0.02em;
   text-transform: uppercase;
-  color: #a63831;
+  color: var(--time-heading);
   overflow-wrap: anywhere;
 }
 
@@ -376,12 +466,12 @@
   line-height: 1.1;
   font-weight: 700;
   text-transform: uppercase;
-  color: #b04039;
+  color: var(--time-heading);
 }
 
 .time-view-meta {
   font-size: 0.95rem;
-  color: var(--text-muted);
+  color: var(--time-muted-text);
 }
 
 .time-month-section {
@@ -401,12 +491,12 @@
   line-height: 1.1;
   font-weight: 700;
   text-transform: uppercase;
-  color: #b04039;
+  color: var(--time-heading);
 }
 
 .time-month-section__meta {
   font-size: 0.9rem;
-  color: var(--text-muted);
+  color: var(--time-muted-text);
 }
 
 .time-weekday-row,
@@ -429,7 +519,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: clip;
-  color: #7f6e67;
+  color: var(--time-muted-text);
 }
 
 .time-month-grid--week {
@@ -446,7 +536,8 @@
   padding: 8px 8px 6px;
   border-top: 2px solid var(--time-season-color, #a7d36d);
   border-radius: 12px;
-  background: rgba(255, 253, 247, 0.32);
+  background: var(--time-card-bg);
+  color: var(--time-strong-text);
   cursor: pointer;
   transition:
     background-color 120ms ease,
@@ -455,7 +546,7 @@
 }
 
 .time-day-cell:hover {
-  background: rgba(213, 107, 101, 0.07);
+  background: color-mix(in srgb, var(--time-card-bg) 90%, var(--time-accent) 10%);
   transform: translateY(-1px);
 }
 
@@ -473,18 +564,18 @@
 }
 
 .time-day-cell.is-today {
-  background: rgba(216, 101, 128, 0.08);
+  background: var(--time-today-bg);
 }
 
 .time-day-cell.is-cursor {
-  background: rgba(255, 235, 188, 0.28);
-  box-shadow: inset 0 0 0 2px #e6bd74;
+  background: var(--time-cursor-bg);
+  box-shadow: inset 0 0 0 2px var(--time-cursor-outline);
 }
 
 .time-day-cell__number {
   font-size: clamp(1rem, 5.8cqi, 1.55rem);
   line-height: 1;
-  color: #4a403c;
+  color: var(--time-strong-text);
 }
 
 .time-day-cell__markers {
@@ -542,8 +633,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  column-gap: 6px;
-  row-gap: 4px;
+  gap: 4px 6px;
 }
 
 .time-day__date-nav {
@@ -581,7 +671,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: #b04039;
+  color: var(--time-heading);
 }
 
 .time-day__season-bar {
@@ -610,8 +700,8 @@
   padding: 5px 8px;
   border-radius: 9px;
   white-space: nowrap;
-  color: #4b2f24;
-  background: rgba(255, 245, 223, 0.92);
+  color: var(--time-strong-text);
+  background: var(--time-weather-bg);
   cursor: default;
 }
 
@@ -645,8 +735,8 @@
   box-sizing: border-box;
   padding: 8px 10px;
   border-radius: 10px;
-  color: #fff7ef;
-  background: #cc685f;
+  color: var(--time-weather-pop-text);
+  background: var(--time-weather-pop-bg);
   box-shadow: 0 10px 30px rgba(97, 62, 36, 0.18);
 }
 
@@ -687,7 +777,7 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #8f4f4c;
+  color: var(--time-heading-soft);
 }
 
 .time-day__events {
@@ -706,7 +796,7 @@
   gap: 8px;
   padding: 6px 8px;
   border-radius: 8px;
-  background: rgba(216, 190, 205, 0.32);
+  background: var(--time-event-bg);
 }
 
 .time-day__event-dot {
@@ -742,12 +832,12 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: #2f2622;
+  color: var(--time-strong-text);
 }
 
 .time-day__event-description,
 .time-day__empty {
-  color: var(--text-muted);
+  color: var(--time-muted-text);
 }
 
 .time-day__event-description {
@@ -757,6 +847,54 @@
 
 .time-day__empty {
   padding: 8px 0;
+}
+
+.time-day__moons {
+  display: flex;
+  justify-content: center;
+  padding-top: 8px;
+  border-top: 1px solid var(--time-border);
+}
+
+.time-day__moon-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 10px;
+  max-width: 100%;
+}
+
+.time-day__moon {
+  width: var(--time-moon-size, 28px);
+  height: var(--time-moon-size, 28px);
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--time-weather-bg);
+  box-shadow:
+    inset 0 0 0 1px rgba(207, 101, 95, 0.16),
+    0 4px 10px rgba(97, 62, 36, 0.08);
+}
+
+.time-day__moon-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+.time-day__moon-fallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  font-size: clamp(0.62rem, 2.6cqi, 0.82rem);
+  font-weight: 700;
+  color: #fff8ef;
+  background: var(--time-accent);
 }
 
 /* ==========================================================================
@@ -786,12 +924,12 @@
   line-height: 1.1;
   font-weight: 700;
   text-transform: uppercase;
-  color: #b04039;
+  color: var(--time-heading);
 }
 
 .time-event-editor__meta {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--time-muted-text);
 }
 
 .time-event-editor__form {
@@ -806,7 +944,7 @@
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #8f4f4c;
+  color: var(--time-heading-soft);
 }
 
 .time-event-editor__grid {
@@ -823,7 +961,7 @@
 
 .time-event-editor__label {
   font-size: 0.95rem;
-  color: var(--text-muted);
+  color: var(--time-muted-text);
 }
 
 .time-event-editor__picker-row {
@@ -854,7 +992,7 @@
 .time-event-editor__tag-pack-title {
   font-size: 0.98rem;
   font-weight: 700;
-  color: #6b4a3b;
+  color: var(--time-strong-text);
 }
 
 .time-event-editor__tag-list {
@@ -867,8 +1005,8 @@
   border: 1px solid rgba(207, 101, 95, 0.24);
   border-radius: 999px;
   padding: 6px 12px;
-  background: rgba(255, 241, 214, 0.92);
-  color: var(--text-normal);
+  background: var(--time-button-bg);
+  color: var(--time-strong-text);
   cursor: pointer;
   transition:
     background-color 120ms ease,
@@ -879,7 +1017,7 @@
 
 .time-event-editor__tag-button:hover {
   transform: translateY(-1px);
-  background: rgba(207, 101, 95, 0.08);
+  background: var(--time-accent-faint);
 }
 
 .time-event-editor__tag-button.is-selected {
@@ -900,6 +1038,26 @@
   border-radius: 12px;
 }
 
+.time-event-detail__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.time-event-detail__header-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.time-event-detail__moon-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 180px;
+}
+
 .time-event-detail__description {
   white-space: pre-wrap;
   line-height: 1.55;
@@ -908,6 +1066,23 @@
 
 .time-event-detail .time-modal__footer {
   margin-top: 14px;
+}
+
+.time-event-detail__moon-transitions {
+  width: 100%;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--time-muted-text);
+}
+
+.time-event-detail__moon-transitions-title {
+  margin-bottom: 4px;
+  font-weight: 700;
+  color: var(--time-heading-soft);
+}
+
+.time-event-detail__moon-transition + .time-event-detail__moon-transition {
+  margin-top: 2px;
 }
 
 .time-file-picker__suggestion {
@@ -956,16 +1131,16 @@
   margin-bottom: 0;
 }
 
-.modal.time-flex-modal {
-  width: auto !important;
-  max-width: min(96vw, 1400px) !important;
-  display: inline-flex !important;
+.modal-container .modal.time-flex-modal {
+  width: auto;
+  max-width: min(96vw, 1400px);
+  display: inline-flex;
 }
 
-.time-flex-modal__content {
+.modal-container .modal.time-flex-modal .time-flex-modal__content {
   display: inline-flex;
   flex-direction: column;
-  width: auto !important;
+  width: auto;
   max-width: min(92vw, 1200px);
 }
 
@@ -1063,14 +1238,14 @@
   font-size: 1.45rem;
   line-height: 1.1;
   font-weight: 700;
-  color: #4b2f24;
+  color: var(--time-strong-text);
 }
 
 .time-manager__meta,
 .time-manager__empty,
 .time-collection-editor__empty,
 .time-season-editor__empty {
-  color: var(--text-muted);
+  color: var(--time-muted-text);
 }
 
 .time-manager__meta {
@@ -1133,7 +1308,44 @@
 }
 
 .time-collection-editor__row--moon {
-  grid-template-columns: minmax(180px, 1fr) 110px 110px 54px 110px 38px;
+  grid-template-columns:
+    minmax(170px, 1fr)
+    100px
+    100px
+    90px
+    90px
+    54px
+	140px
+    140px
+    38px;
+}
+
+.time-collection-editor__row--moon-header {
+  margin-bottom: 2px;
+}
+
+.time-collection-editor__column-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--time-heading-soft);
+}
+
+.time-collection-editor__row--moon-header .time-collection-editor__column-label:last-child {
+  visibility: hidden;
+}
+
+.time-moon-phase-editor__row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(260px, 1.4fr) auto auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.time-moon-phase-editor__label {
+  font-size: 0.95rem;
+  color: var(--text-normal);
 }
 
 .time-season-editor__row {
@@ -1186,12 +1398,12 @@
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #8f4f4c;
+  color: var(--time-heading-soft);
 }
 
 .time-weather-pack-months__label {
   font-weight: 700;
-  color: #4b2f24;
+  color: var(--time-strong-text);
 }
 
 /* ==========================================================================
@@ -1304,8 +1516,7 @@
   }
 
   .time-day__topbar {
-    column-gap: 4px;
-    row-gap: 3px;
+    gap: 3px 4px;
   }
 
   .time-day__nav-button,
@@ -1348,8 +1559,7 @@
 
 @container (max-width: 380px) {
   .time-day__topbar {
-    column-gap: 3px;
-    row-gap: 3px;
+    gap: 3px;
   }
 
   .time-day__date-nav {
@@ -1386,6 +1596,7 @@
   .time-event-editor__grid,
   .time-inline-fields--triple,
   .time-tag-editor__row,
+  .time-moon-phase-editor__row,
   .time-weather-pack-months__header,
   .time-weather-pack-months__row,
   .time-collection-editor__row--weekday,
@@ -1393,6 +1604,7 @@
   .time-collection-editor__row--named-year,
   .time-collection-editor__row--era,
   .time-collection-editor__row--moon,
+  .time-collection-editor__row--moon-header,
   .time-season-editor__row {
     grid-template-columns: minmax(0, 1fr);
   }

@@ -1,4 +1,4 @@
-# TTRPG Tools: Time
+# TTRPG Tools - Time
 
 ## This is a early release build
 

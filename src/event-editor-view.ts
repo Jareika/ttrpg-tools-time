@@ -2,6 +2,7 @@ import { App, FuzzySuggestModal, ItemView, Notice, TFile, WorkspaceLeaf, type Fu
 import type TtrpgToolsTimePlugin from "./main";
 import { clampDate, slugify } from "./calendar";
 import { createEventId } from "./events";
+import { clampTimeOfDay } from "./moons";
 import type { CalendarFile, FantasyDate } from "./types";
 
 export const EVENT_EDITOR_VIEW_TYPE = "time-event-editor-view";
@@ -17,6 +18,11 @@ export class TimeEventEditorView extends ItemView {
   private description = "";
   private color = DEFAULT_EVENT_COLOR;
   private startYear = 1;
+  private isTimedEvent = false;
+  private startHour = 8;
+  private startMinute = 0;
+  private endHour = 9;
+  private endMinute = 0;
   private startMonthIndex = 0;
   private startDay = 1;
   private noteRef = "";
@@ -113,13 +119,13 @@ export class TimeEventEditorView extends ItemView {
 
     this.renderField(form, "Preset", (field) => {
       const select = field.createEl("select", { cls: "time-event-editor__input" });
-      const emptyOption = document.createElement("option");
+      const emptyOption = select.ownerDocument.createElement("option");
       emptyOption.value = "";
       emptyOption.text = presets.length > 0 ? "Choose saved preset" : "No saved presets";
       select.add(emptyOption);
 
       presets.forEach((preset) => {
-        const option = document.createElement("option");
+        const option = select.ownerDocument.createElement("option");
         option.value = preset.id;
         option.text = preset.name;
         option.selected = preset.id === this.selectedPresetId;
@@ -156,13 +162,13 @@ export class TimeEventEditorView extends ItemView {
     this.renderField(form, "Weather source", (field) => {
       const select = field.createEl("select", { cls: "time-event-editor__input" });
 
-      const noneOption = document.createElement("option");
+      const noneOption = select.ownerDocument.createElement("option");
       noneOption.value = "";
       noneOption.text = "Do not write weather";
       select.add(noneOption);
 
       weatherPacks.forEach((pack) => {
-        const option = document.createElement("option");
+        const option = select.ownerDocument.createElement("option");
         option.value = pack.id;
         option.text = pack.name;
         option.selected = pack.id === this.selectedWeatherPackId;
@@ -194,7 +200,7 @@ export class TimeEventEditorView extends ItemView {
     this.renderField(startDateGrid, "Month", (field) => {
       const select = field.createEl("select", { cls: "time-event-editor__input" });
       calendar.definition.months.forEach((month, index) => {
-        const option = document.createElement("option");
+        const option = select.ownerDocument.createElement("option");
         option.value = String(index);
         option.text = month.name;
         option.selected = index === this.startMonthIndex;
@@ -234,7 +240,7 @@ export class TimeEventEditorView extends ItemView {
     this.renderField(endDateGrid, "Month", (field) => {
       const select = field.createEl("select", { cls: "time-event-editor__input" });
       calendar.definition.months.forEach((month, index) => {
-        const option = document.createElement("option");
+        const option = select.ownerDocument.createElement("option");
         option.value = String(index);
         option.text = month.name;
         option.selected = index === this.endMonthIndex;
@@ -254,6 +260,69 @@ export class TimeEventEditorView extends ItemView {
         this.endDay = Math.max(1, Math.trunc(Number(input.value) || 1));
       });
     });
+	
+    if (calendar.definition.time.enabled) {
+      this.renderField(form, "Timed event", (field) => {
+        const toggle = field.createEl("input");
+        toggle.type = "checkbox";
+        toggle.checked = this.isTimedEvent;
+        toggle.addEventListener("change", () => {
+          this.isTimedEvent = toggle.checked;
+          this.refresh();
+        });
+      });
+
+      if (this.isTimedEvent) {
+        form.createEl("h3", {
+          cls: "time-event-editor__section-title",
+          text: "Time"
+        });
+
+        const timeGrid = form.createDiv({ cls: "time-event-editor__grid" });
+
+        this.renderField(timeGrid, "Start hour", (field) => {
+          const input = field.createEl("input", { cls: "time-event-editor__input" });
+          input.type = "number";
+          input.min = "0";
+          input.value = String(this.startHour);
+          input.addEventListener("input", () => {
+            this.startHour = Math.max(0, Math.trunc(Number(input.value) || 0));
+          });
+        });
+
+        this.renderField(timeGrid, "Start minute", (field) => {
+          const input = field.createEl("input", { cls: "time-event-editor__input" });
+          input.type = "number";
+          input.min = "0";
+          input.value = String(this.startMinute);
+          input.addEventListener("input", () => {
+            this.startMinute = Math.max(0, Math.trunc(Number(input.value) || 0));
+          });
+        });
+
+        this.renderField(timeGrid, "End hour", (field) => {
+          const input = field.createEl("input", { cls: "time-event-editor__input" });
+          input.type = "number";
+          input.min = "0";
+          input.value = String(this.endHour);
+          input.addEventListener("input", () => {
+            this.endHour = Math.max(0, Math.trunc(Number(input.value) || 0));
+          });
+        });
+
+        this.renderField(timeGrid, "End minute", (field) => {
+          const input = field.createEl("input", { cls: "time-event-editor__input" });
+          input.type = "number";
+          input.min = "0";
+          input.value = String(this.endMinute);
+          input.addEventListener("input", () => {
+            this.endMinute = Math.max(0, Math.trunc(Number(input.value) || 0));
+          });
+        });
+      }
+    } else {
+      this.isTimedEvent = false;
+    }
 
     this.renderField(form, "Dot color", (field) => {
       const row = field.createDiv({ cls: "time-event-editor__color-row" });
@@ -451,6 +520,9 @@ export class TimeEventEditorView extends ItemView {
     this.selectedPresetId = "";
 	this.selectedWeatherPackId = "";
     this.title = "";
+    this.isTimedEvent = false;
+    this.startHour = 8;
+    this.startMinute = 0;
     this.description = "";
     this.color = DEFAULT_EVENT_COLOR;
     this.noteRef = "";
@@ -458,6 +530,8 @@ export class TimeEventEditorView extends ItemView {
     this.saveAsPresetName = "";
     this.selectedTagRefs = new Set<string>();
     this.applyCurrentCalendarDateRange(date);
+    this.endHour = 9;
+    this.endMinute = 0;
     this.initialized = true;
   }
 
@@ -482,6 +556,25 @@ export class TimeEventEditorView extends ItemView {
       return;
     }
 
+    const normalizedStartTime =
+      calendar.definition.time.enabled && this.isTimedEvent
+        ? clampTimeOfDay({ hour: this.startHour, minute: this.startMinute }, calendar.definition)
+        : undefined;
+    const normalizedEndTime =
+      calendar.definition.time.enabled && this.isTimedEvent
+        ? clampTimeOfDay({ hour: this.endHour, minute: this.endMinute }, calendar.definition)
+        : undefined;
+
+    if (
+      normalizedStartTime &&
+      normalizedEndTime &&
+      sameFantasyDate(normalizedStartDate, normalizedEndDate) &&
+      compareTimes(normalizedEndTime, normalizedStartTime) < 0
+    ) {
+      new Notice("For same-day timed events, the end time must not be before the start time.");
+      return;
+    }
+
     const eventId = createEventId(title);
 
     await this.plugin.saveEvent({
@@ -492,6 +585,8 @@ export class TimeEventEditorView extends ItemView {
       endDate: sameFantasyDate(normalizedStartDate, normalizedEndDate)
         ? undefined
         : normalizedEndDate,
+      startTime: normalizedStartTime,
+      endTime: normalizedEndTime,
       description: this.description.trim().length > 0 ? this.description.trim() : undefined,
       imageRef: this.imageRef.trim().length > 0 ? this.imageRef.trim() : undefined,
       noteRef: this.noteRef.trim().length > 0 ? this.noteRef.trim() : undefined,
@@ -574,6 +669,10 @@ function sameFantasyDate(left: FantasyDate, right: FantasyDate): boolean {
     left.monthIndex === right.monthIndex &&
     left.day === right.day
   );
+}
+
+function compareTimes(left: { hour: number; minute: number }, right: { hour: number; minute: number }): number {
+  return left.hour !== right.hour ? left.hour - right.hour : left.minute - right.minute;
 }
 
 function buildTagRef(packId: string, tagId: string): string {
