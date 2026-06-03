@@ -97,7 +97,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
 
     this.addCommand({
       id: "open-calendar-side-pane",
-      name: "Time: open side pane",
+      name: "Open side pane",
       callback: () => {
         void this.activateView();
       }
@@ -105,7 +105,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
 
     this.addCommand({
       id: "open-day-side-pane",
-      name: "Time: open day pane",
+      name: "Open day pane",
       callback: () => {
         void this.activateDayView();
       }
@@ -113,7 +113,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
 
     this.addCommand({
       id: "open-event-editor-tab",
-      name: "Time: open event editor",
+      name: "Open event editor",
       callback: () => {
         void this.activateEventEditorView();
       }
@@ -121,7 +121,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
 
     this.addCommand({
       id: "jump-to-today",
-      name: "Time: jump to today",
+      name: "Jump to today",
       callback: () => {
         void this.jumpToToday();
       }
@@ -129,7 +129,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
 
     this.addCommand({
       id: "create-calendar-json",
-      name: "Time: create calendar JSON",
+      name: "Create calendar JSON",
       callback: () => {
         this.openCreateCalendarModal();
       }
@@ -137,7 +137,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
 
     this.addCommand({
       id: "edit-active-calendar-json",
-      name: "Time: edit active calendar JSON",
+      name: "Edit active calendar JSON",
       callback: () => {
         this.openEditActiveCalendarModal();
       }
@@ -145,7 +145,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
 
     this.addCommand({
       id: "create-tag-pack-json",
-      name: "Time: create tag pack JSON",
+      name: "Create tag pack JSON",
       callback: () => {
         this.openCreateTagPackModal();
       }
@@ -153,7 +153,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
 	
     this.addCommand({
       id: "create-weather-pack-json",
-      name: "Time: create weather pack JSON",
+      name: "Create weather pack JSON",
       callback: () => {
         this.openCreateWeatherPackModal();
       }
@@ -161,7 +161,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
 
     this.addCommand({
       id: "manage-calendars",
-      name: "Time: manage calendars",
+      name: "Manage calendars",
       callback: () => {
         this.openManageCalendarsModal();
       }
@@ -169,7 +169,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
 
     this.addCommand({
       id: "manage-tag-packs",
-      name: "Time: manage tag packs",
+      name: "Manage tag packs",
       callback: () => {
         this.openManageTagPacksModal();
       }
@@ -177,7 +177,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
 	
     this.addCommand({
       id: "manage-weather-packs",
-      name: "Time: manage weather packs",
+      name: "Manage weather packs",
       callback: () => {
         this.openManageWeatherPacksModal();
       }
@@ -185,7 +185,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
 
     this.addCommand({
       id: "reload-time-data",
-      name: "Time: reload JSON data",
+      name: "Reload JSON data",
       callback: () => {
         void this.reloadDataFromDisk();
       }

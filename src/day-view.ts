@@ -1,6 +1,7 @@
 import { ItemView, Menu, Modal, Notice, Setting, WorkspaceLeaf, setIcon } from "obsidian";
 import type TtrpgToolsTimePlugin from "./main";
 import {
+  formatDateWithPattern,
   formatLongDate,
   formatShortDate,
   getMarkersForDate,
@@ -109,7 +110,11 @@ export class TimeDayView extends ItemView {
 
     dateBlock.createDiv({
       cls: "time-day__date-main",
-      text: formatShortDate(calendar.state.cursorDate)
+      text: formatDateWithPattern(
+        calendar.state.cursorDate,
+        calendar.definition,
+        this.plugin.settings.dayViewDateFormat
+      )
     });
     dateBlock.setAttr("title", formatLongDate(calendar.state.cursorDate, calendar.definition));
 

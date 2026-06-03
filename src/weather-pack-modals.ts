@@ -62,7 +62,7 @@ export class WeatherPackEditorModal extends Modal {
     this.plugin = plugin;
     this.existing = existing ?? null;
     this.onSaved = onSaved;
-    this.months = plugin.activeCalendar?.definition.months.map((month) => ({ ...month })) ?? FALLBACK_MONTHS;
+    this.months = buildWeatherEditorMonths(plugin, this.existing);
 
     const source = existing ?? DEFAULT_WEATHER_PACK;
 
@@ -104,8 +104,8 @@ export class WeatherPackEditorModal extends Modal {
     });
 
     const monthSourceText = this.plugin.activeCalendar
-      ? `Month profiles are aligned to the active calendar: ${this.plugin.activeCalendar.name}.`
-      : "No active calendar found. Month profiles use a 12-month fallback.";
+      ? `Month profiles are aligned to the active calendar: ${this.plugin.activeCalendar.name} (${this.months.length} rows).`
+      : `No active calendar found. Editor uses ${this.months.length} generic month rows.`;
 
     contentEl.createEl("p", {
       cls: "setting-item-description",
@@ -1061,6 +1061,31 @@ function createManagerButton(
 function prepareFlexibleModal(modal: Modal): void {
   modal.modalEl.addClass("time-flex-modal");
   modal.contentEl.addClass("time-flex-modal__content");
+}
+
+function buildWeatherEditorMonths(
+  plugin: TtrpgToolsTimePlugin,
+  existing: WeatherPackFile | null
+): FantasyMonth[] {
+  const activeMonths = plugin.activeCalendar?.definition.months.map((month) => ({ ...month })) ?? [];
+  const existingProfileCount = existing?.monthProfiles.length ?? 0;
+
+  if (activeMonths.length > 0 && existingProfileCount <= activeMonths.length) {
+    return activeMonths;
+  }
+
+  const targetCount = Math.max(
+    activeMonths.length,
+    existingProfileCount,
+    activeMonths.length > 0 ? 0 : FALLBACK_MONTHS.length
+  );
+
+  return Array.from({ length: Math.max(1, targetCount) }, (_, index) => {
+    const existingMonth = activeMonths[index] ?? FALLBACK_MONTHS[index];
+    return existingMonth
+      ? { ...existingMonth }
+      : { id: `month-${index + 1}`, name: `Month ${index + 1}`, days: 30 };
+  });
 }
 
 function clamp(value: number, min: number, max: number): number {

@@ -73,7 +73,9 @@ export const DEFAULT_CALENDAR_FILE: CalendarFile = {
 export const DEFAULT_SETTINGS: TtrpgToolsTimeSettings = {
   dataFolder: "TTRPG/Time",
   activeCalendarId: DEFAULT_CALENDAR_FILE.id,
-  openOnStartup: true
+  openOnStartup: true,
+  dayViewDateFormat: "D-M-YYYY",
+  showCalendarWeekNumbers: false
 };
 
 export function normalizeSettings(raw: unknown): TtrpgToolsTimeSettings {
@@ -82,7 +84,9 @@ export function normalizeSettings(raw: unknown): TtrpgToolsTimeSettings {
   return {
     dataFolder: readString(record.dataFolder, DEFAULT_SETTINGS.dataFolder),
     activeCalendarId: readOptionalString(record.activeCalendarId),
-    openOnStartup: readBoolean(record.openOnStartup, DEFAULT_SETTINGS.openOnStartup)
+    openOnStartup: readBoolean(record.openOnStartup, DEFAULT_SETTINGS.openOnStartup),
+    dayViewDateFormat: readString(record.dayViewDateFormat, DEFAULT_SETTINGS.dayViewDateFormat),
+    showCalendarWeekNumbers: readBoolean(record.showCalendarWeekNumbers, DEFAULT_SETTINGS.showCalendarWeekNumbers)
   };
 }
 
@@ -742,6 +746,17 @@ export function getWeekIndexInMonth(
   return Math.floor((monthStartIndex + date.day - 1) / definition.weekdays.length);
 }
 
+export function getWeekNumberInMonth(
+  definition: FantasyCalendarDefinition,
+  date: FantasyDate
+): number {
+  return getWeekIndexInMonth(definition, date) + 1;
+}
+
+export function getWeekOfYear(definition: FantasyCalendarDefinition, date: FantasyDate): number {
+  return Math.floor((definition.startWeekdayIndex + getDayOfYear(definition, date) - 1) / definition.weekdays.length) + 1;
+}
+
 export function shiftDay(
   date: FantasyDate,
   delta: number,
@@ -942,6 +957,55 @@ export function formatLongDate(
   definition: FantasyCalendarDefinition
 ): string {
   return `${date.day}. ${getMonth(definition, date.monthIndex).name} ${formatYearLabel(definition, date.year)} ${getEraShortLabel(definition, date)}`;
+}
+
+export function formatDateWithPattern(
+  date: FantasyDate,
+  definition: FantasyCalendarDefinition,
+  pattern: string
+): string {
+  const normalized = clampDate(date, definition);
+  const month = getMonth(definition, normalized.monthIndex);
+  const weekdayIndex = getWeekdayIndex(definition, normalized);
+  const weekdayName = definition.weekdays[weekdayIndex] ?? `Day ${weekdayIndex + 1}`;
+  const monthShort = month.name.slice(0, Math.min(3, month.name.length));
+  const weekdayShort = weekdayName.slice(0, Math.min(3, weekdayName.length));
+  const weekInMonth = getWeekNumberInMonth(definition, normalized);
+  const weekInYear = getWeekOfYear(definition, normalized);
+  const template = pattern.trim().length > 0 ? pattern : DEFAULT_SETTINGS.dayViewDateFormat;
+
+  const replacements: Array<[string, string]> = [
+    ["WeekdayName", weekdayName],
+    ["WeekdayShort", weekdayShort],
+    ["MonthName", month.name],
+    ["MonthShort", monthShort],
+    ["YYYY", String(normalized.year)],
+    ["YY", String(normalized.year).slice(-2)],
+    ["MM", String(normalized.monthIndex + 1).padStart(2, "0")],
+    ["DD", String(normalized.day).padStart(2, "0")],
+    ["YW", String(weekInYear).padStart(2, "0")],
+    ["WW", String(weekInMonth).padStart(2, "0")],
+    ["ERA", getEraShortLabel(definition, normalized)],
+    ["M", String(normalized.monthIndex + 1)],
+    ["D", String(normalized.day)]
+  ];
+
+  let result = template;
+  const placeholders = new Map<string, string>();
+
+  replacements.forEach(([token, value], index) => {
+    const placeholder = `\u0000time-format-${index}\u0000`;
+    if (result.includes(token)) {
+      result = result.split(token).join(placeholder);
+      placeholders.set(placeholder, value);
+    }
+  });
+
+  placeholders.forEach((value, placeholder) => {
+    result = result.split(placeholder).join(value);
+  });
+
+  return result;
 }
 
 export function buildDefaultSeasons(months: FantasyMonth[]): FantasySeason[] {

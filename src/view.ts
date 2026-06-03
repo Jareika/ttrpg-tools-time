@@ -7,6 +7,7 @@ import {
   getMonth,
   getSeasonForDate,
   getWeekIndexInMonth,
+  getWeekOfYear,
   getWeekRow,
   getYearLength,
   shiftDay,
@@ -274,11 +275,15 @@ export class TimeCalendarView extends ItemView {
     });
 
     this.renderWeekdayHeader(container, calendar);
+	const showWeekNumbers = this.shouldShowWeekNumbers();
 
     const weekGrid = container.createDiv({
       cls: "time-month-grid time-month-grid--week"
     });
-    weekGrid.style.setProperty("--time-columns", String(definition.weekdays.length));
+    weekGrid.style.setProperty(
+      "--time-columns",
+      String(definition.weekdays.length + (showWeekNumbers ? 1 : 0))
+    );
 
     const weekRow = getWeekRow(
       definition,
@@ -287,6 +292,10 @@ export class TimeCalendarView extends ItemView {
       state.todayDate,
       markers
     );
+	
+    if (showWeekNumbers) {
+      this.renderWeekNumberCell(weekGrid, getWeekOfYear(definition, state.cursorDate));
+    }
 
     weekRow.forEach((cell) =>
       this.renderDayCell(weekGrid, cell, calendar, weatherYear, eventIndexYear)
@@ -398,10 +407,24 @@ export class TimeCalendarView extends ItemView {
 
     this.renderWeekdayHeader(monthSection, calendar);
 
+    const showWeekNumbers = this.shouldShowWeekNumbers();
     const grid = monthSection.createDiv({ cls: "time-month-grid" });
-    grid.style.setProperty("--time-columns", String(definition.weekdays.length));
+    grid.style.setProperty(
+      "--time-columns",
+      String(definition.weekdays.length + (showWeekNumbers ? 1 : 0))
+    );
 
     gridData.rows.forEach((row) => {
+      if (showWeekNumbers) {
+        this.renderWeekNumberCell(
+          grid,
+          this.getWeekNumberForRow(
+            row,
+            calendar,
+            { year, monthIndex, day: 1 }
+          )
+        );
+      }
       row.forEach((cell) =>
         this.renderDayCell(grid, cell, calendar, weatherYear, eventIndexYear)
       );
@@ -412,14 +435,25 @@ export class TimeCalendarView extends ItemView {
     const { definition } = calendar;
 
     const weekdayRow = parent.createDiv({ cls: "time-weekday-row" });
-    weekdayRow.style.setProperty("--time-columns", String(definition.weekdays.length));
+    const showWeekNumbers = this.shouldShowWeekNumbers();
+    weekdayRow.style.setProperty(
+      "--time-columns",
+      String(definition.weekdays.length + (showWeekNumbers ? 1 : 0))
+    );
 
     const availableWidth = this.contentEl.clientWidth || parent.clientWidth || 0;
+    const weekdayWidth = showWeekNumbers
+      ? Math.max(0, availableWidth - 48)
+      : availableWidth;
+
+    if (showWeekNumbers) {
+      weekdayRow.createDiv({ cls: "time-weekday-cell time-weekday-cell--week-number", text: "#" });
+    }
 
     definition.weekdays.forEach((weekday, index) => {
       const label = this.getWeekdayDisplayLabel(
         weekday,
-        availableWidth,
+        weekdayWidth,
         definition.weekdays.length
       );
 
@@ -622,6 +656,25 @@ export class TimeCalendarView extends ItemView {
     });
   }
 
+  private renderWeekNumberCell(parent: HTMLElement, weekNumber: number): void {
+    const cell = parent.createDiv({
+      cls: "time-week-number-cell",
+      text: String(weekNumber).padStart(2, "0")
+    });
+    cell.title = `Week ${weekNumber}`;
+  }
+
+  private getWeekNumberForRow(
+    row: MonthGridCell[],
+    calendar: CalendarFile,
+    fallbackDate: FantasyDate
+  ): number {
+    const representativeDate =
+      row.find((cell) => cell.date !== null)?.date ?? fallbackDate;
+
+    return getWeekOfYear(calendar.definition, representativeDate);
+  }
+  
   private getWeekdayDisplayLabel(
     weekday: string,
     availableWidth: number,
@@ -638,6 +691,10 @@ export class TimeCalendarView extends ItemView {
     }
 
     return weekday;
+  }
+
+  private shouldShowWeekNumbers(): boolean {
+    return this.plugin.settings.showCalendarWeekNumbers;
   }
 
   private getActiveCalendar(): CalendarFile | null {

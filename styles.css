@@ -522,6 +522,27 @@
   color: var(--time-muted-text);
 }
 
+.time-weekday-cell--week-number,
+.time-week-number-cell {
+  text-align: center;
+}
+
+.time-weekday-cell--week-number {
+  font-weight: 700;
+  color: var(--time-heading-soft);
+}
+
+.time-week-number-cell {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: var(--time-accent-faint);
+  color: var(--time-heading-soft);
+  font-weight: 700;
+}
+
 .time-month-grid--week {
   margin-bottom: 16px;
 }
@@ -1428,6 +1449,10 @@
     min-height: 50px;
     padding: 6px 6px 4px;
   }
+
+  .time-week-number-cell {
+    min-height: 50px;
+  }
 }
 
 @container (max-width: 430px) {
@@ -1472,6 +1497,10 @@
   }
 
   .time-day-cell {
+    min-height: 44px;
+  }
+
+  .time-week-number-cell {
     min-height: 44px;
   }
 }

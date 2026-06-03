@@ -148,6 +148,8 @@ export interface TtrpgToolsTimeSettings {
   dataFolder: string;
   activeCalendarId: string | null;
   openOnStartup: boolean;
+  dayViewDateFormat: string;
+  showCalendarWeekNumbers: boolean;
 }
 
 export interface EventPresetFile {

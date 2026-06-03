@@ -103,7 +103,30 @@ export class TimeSettingTab extends PluginSettingTab {
           void this.updateOpenOnStartup(value);
         })
       );
+	  
+    new Setting(containerEl)
+      .setName("Day view date format")
+      .setDesc(
+	  // eslint-disable-next-line obsidianmd/ui/sentence-case
+        "Custom format for the date in day view. Tokens: YYYY, YY, MM, M, DD, D, MonthName, MonthShort, WW, YW, ERA, WeekdayName, WeekdayShort"
+      )
+      .addText((text) =>
+        text
+		  // eslint-disable-next-line obsidianmd/ui/sentence-case
+          .setPlaceholder("D-MonthName-YYYY")
+          .setValue(this.plugin.settings.dayViewDateFormat)
+          .onChange((value) => {
+            void this.updateDayViewDateFormat(value);
+          })
+      );
 
+    new Setting(containerEl)
+      .setName("Show calendar week numbers")
+      .setDesc("Show an optional week-number column in calendar month/week/year views.")
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.showCalendarWeekNumbers).onChange((value) => {
+          void this.updateShowCalendarWeekNumbers(value);
+        }))
     new Setting(containerEl).setName("Overview").setHeading();
 
     const calendarInfo = containerEl.createDiv({ cls: "time-settings-note" });
@@ -205,5 +228,21 @@ export class TimeSettingTab extends PluginSettingTab {
       ...this.plugin.settings,
       openOnStartup: value
     });
+  }
+
+  private async updateDayViewDateFormat(value: string): Promise<void> {
+    await this.plugin.replaceSettings({
+      ...this.plugin.settings,
+      dayViewDateFormat: value.trim().length > 0 ? value.trim() : "D-M-YYYY"
+    });
+    this.plugin.refreshOpenViews();
+  }
+
+  private async updateShowCalendarWeekNumbers(value: boolean): Promise<void> {
+    await this.plugin.replaceSettings({
+      ...this.plugin.settings,
+      showCalendarWeekNumbers: value
+    });
+    this.plugin.refreshOpenViews();
   }
 }
