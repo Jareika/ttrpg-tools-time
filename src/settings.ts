@@ -107,12 +107,10 @@ export class TimeSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Day view date format")
       .setDesc(
-	  // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI text requires specific capitalization for tokens
         "Custom format for the date in day view. Tokens: YYYY, YY, MM, M, DD, D, MonthName, MonthShort, WW, YW, ERA, WeekdayName, WeekdayShort"
       )
       .addText((text) =>
         text
-		  // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI text requires specific capitalization for tokens
           .setPlaceholder("D-MonthName-YYYY")
           .setValue(this.plugin.settings.dayViewDateFormat)
           .onChange((value) => {
