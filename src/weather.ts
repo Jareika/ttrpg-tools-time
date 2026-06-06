@@ -1,7 +1,9 @@
 import {
   clampDate,
+  getMonthsForYear,
   dayOfYearToMonthDay,
-  getYearLength
+  getYearLength,
+  getWeatherProfileDayOfYearForDate
 } from "./calendar";
 import type {
   CalendarFile,
@@ -295,34 +297,82 @@ export function resolveWeatherPackMonthProfiles(
   );
 }
 
+export function getWeatherProfileMonths(
+  calendar: CalendarFile,
+  pack?: WeatherPackFile,
+  year = calendar.state.cursorDate.year
+): FantasyMonth[] {
+  const mapping = calendar.definition.weatherProfile;
+
+  if (mapping.mode !== "absolute-day-cycle") {
+    return getMonthsForYear(calendar.definition, year);
+  }
+
+  const climateYearLength = Math.max(1, Math.trunc(mapping.climateYearLength || 1));
+  const requestedMonthCount = Math.max(
+    1,
+    pack?.monthProfiles.length ?? 0,
+    calendar.definition.months.length,
+    12
+  );
+  const monthCount = Math.min(requestedMonthCount, climateYearLength);
+  const baseDays = Math.floor(climateYearLength / monthCount);
+  const remainder = climateYearLength % monthCount;
+
+  return Array.from({ length: monthCount }, (_, index) => ({
+    id: `climate-month-${index + 1}`,
+    name: `Climate Month ${index + 1}`,
+    days: baseDays + (index < remainder ? 1 : 0)
+  }));
+}
+
 export function createWeatherReferenceYear(
   calendar: CalendarFile,
   pack: WeatherPackFile,
   year: number
 ): WeatherReferenceYearFile {
   const definition = calendar.definition;
-  const yearLength = getYearLength(definition);
+  const yearLength = getYearLength(definition, year);
   const seed = hashString(`${calendar.id}:${pack.id}:${year}`);
   const rng = createRng(seed);
   const days: Record<string, WeatherDayEntry> = {};
-  const monthProfiles = resolveWeatherPackMonthProfiles(pack, definition.months);
+  const weatherProfileMonths = getWeatherProfileMonths(calendar, pack, year);
+  const weatherProfileYearLength = weatherProfileMonths.reduce(
+    (sum, month) => sum + month.days,
+    0
+  );
+  const monthProfiles = resolveWeatherPackMonthProfiles(pack, weatherProfileMonths);
   const hasExplicitMonthlyTemperature = hasExplicitMonthTemperatureProfiles(monthProfiles);
 
   let dayOfYear = 1;
   let previousPhase: WeatherPhaseKind | null = null;
 
   while (dayOfYear <= yearLength) {
-    const monthDay = dayOfYearToMonthDay(definition, dayOfYear);
-    const monthClimate = getInterpolatedMonthProfile(definition.months, monthProfiles, {
+    const monthDay = dayOfYearToMonthDay(definition, year, dayOfYear);
+    const date: FantasyDate = {
       year,
       monthIndex: monthDay.monthIndex,
       day: monthDay.day
+    };
+    const weatherProfileDayOfYear = resolveWeatherProfileDayOfYear(
+      calendar,
+      date,
+      dayOfYear
+    );
+    const weatherProfileMonthDay = dayOfYearToMonthDayForMonths(
+      weatherProfileMonths,
+      weatherProfileDayOfYear
+    );
+    const monthClimate = getInterpolatedMonthProfile(weatherProfileMonths, monthProfiles, {
+      year,
+      monthIndex: weatherProfileMonthDay.monthIndex,
+      day: weatherProfileMonthDay.day
     });
 
     const referenceTemperature = getReferenceTemperature(
       pack,
-      dayOfYear,
-      yearLength,
+      weatherProfileDayOfYear,
+      weatherProfileYearLength,
       monthClimate,
       hasExplicitMonthlyTemperature
     );
@@ -332,19 +382,36 @@ export function createWeatherReferenceYear(
     const intensity = 0.35 + rng() * 0.65;
 
     for (let offset = 0; offset < phaseLength && dayOfYear <= yearLength; offset += 1, dayOfYear += 1) {
-      const currentMonthDay = dayOfYearToMonthDay(definition, dayOfYear);
+      const currentMonthDay = dayOfYearToMonthDay(definition, year, dayOfYear);
       const date: FantasyDate = {
         year,
         monthIndex: currentMonthDay.monthIndex,
         day: currentMonthDay.day
       };
+      const currentWeatherProfileDayOfYear = resolveWeatherProfileDayOfYear(
+        calendar,
+        date,
+        dayOfYear
+      );
+      const currentWeatherProfileMonthDay = dayOfYearToMonthDayForMonths(
+        weatherProfileMonths,
+        currentWeatherProfileDayOfYear
+      );	
       const progress = phaseLength <= 1 ? 1 : offset / (phaseLength - 1);
-      const currentMonthClimate = getInterpolatedMonthProfile(definition.months, monthProfiles, date);
+      const currentMonthClimate = getInterpolatedMonthProfile(
+        weatherProfileMonths,
+        monthProfiles,
+        {
+          year,
+          monthIndex: currentWeatherProfileMonthDay.monthIndex,
+          day: currentWeatherProfileMonthDay.day
+        }
+      );
 
       days[weatherDayKey(date)] = createEntryForPhase(
         pack,
-        dayOfYear,
-        yearLength,
+        currentWeatherProfileDayOfYear,
+        weatherProfileYearLength,
         currentMonthClimate,
         hasExplicitMonthlyTemperature,
         phase,
@@ -1014,8 +1081,50 @@ function clampNumber(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+function resolveWeatherProfileDayOfYear(
+  calendar: CalendarFile,
+  date: FantasyDate,
+  fallbackDayOfYear: number
+): number {
+  return getWeatherProfileDayOfYearForDate(
+    calendar.definition,
+    date,
+    fallbackDayOfYear
+  );
+}
+
+function dayOfYearToMonthDayForMonths(
+  months: FantasyMonth[],
+  dayOfYear: number
+): { monthIndex: number; day: number } {
+  const yearLength = Math.max(1, months.reduce((sum, month) => sum + month.days, 0));
+  let remaining = mod(Math.trunc(dayOfYear) - 1, yearLength) + 1;
+
+  for (let monthIndex = 0; monthIndex < months.length; monthIndex += 1) {
+    const month = months[monthIndex];
+
+    if (month && remaining <= month.days) {
+      return {
+        monthIndex,
+        day: remaining
+      };
+    }
+
+    remaining -= month?.days ?? 0;
+  }
+
+  return {
+    monthIndex: Math.max(0, months.length - 1),
+    day: months[months.length - 1]?.days ?? 1
+  };
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(Math.trunc(value), min), max);
+}
+
+function mod(value: number, length: number): number {
+  return ((value % length) + length) % length;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

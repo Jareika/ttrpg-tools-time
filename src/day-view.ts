@@ -4,6 +4,7 @@ import {
   formatDateWithPattern,
   formatLongDate,
   formatShortDate,
+  getMonthsForYear,
   getMarkersForDate,
   getSeasonForDate,
   shiftDay
@@ -196,6 +197,11 @@ export class TimeDayView extends ItemView {
         row.addEventListener("dblclick", () => {
           void this.openEventDetails(calendar, event.id);
         });
+		
+        row.addEventListener("contextmenu", (mouseEvent) => {
+          mouseEvent.preventDefault();
+          this.openEventContextMenu(mouseEvent, calendar, event.id);
+        });
 
         const body = row.createDiv({ cls: "time-day__event-body" });
         body.createDiv({
@@ -370,6 +376,32 @@ export class TimeDayView extends ItemView {
     menu.addItem((item) =>
       item.setTitle("Jump to today").setIcon("crosshair").onClick(() => {
         void this.plugin.jumpToToday();
+      })
+    );
+
+    menu.showAtMouseEvent(event);
+  }
+  
+  private openEventContextMenu(
+    event: MouseEvent,
+    calendar: CalendarFile,
+    eventId: string
+  ): void {
+    const menu = new Menu();
+
+    menu.addItem((item) =>
+      item.setTitle("Open details").setIcon("info").onClick(() => {
+        void this.openEventDetails(calendar, eventId);
+      })
+    );
+
+    menu.addItem((item) =>
+      item.setTitle("Edit event").setIcon("pencil").onClick(() => {
+        void this.plugin.activateEventEditorForEvent(
+          calendar.id,
+          calendar.state.cursorDate.year,
+          eventId
+        );
       })
     );
 
@@ -962,7 +994,7 @@ function renderFantasyDateInputs(
     cls: "time-inline-field__input"
   });
 
-  calendar.definition.months.forEach((month, index) => {
+  getMonthsForYear(calendar.definition, date.year).forEach((month, index) => {
     const option = monthSelect.ownerDocument.createElement("option");
     option.value = String(index);
     option.text = month.name;
@@ -1012,10 +1044,11 @@ function createNumberField(
 }
 
 function getYearEndDate(calendar: CalendarFile, year: number): FantasyDate {
-  const lastMonthIndex = Math.max(0, calendar.definition.months.length - 1);
+  const months = getMonthsForYear(calendar.definition, year);
+  const lastMonthIndex = Math.max(0, months.length - 1);
   return {
     year,
     monthIndex: lastMonthIndex,
-    day: calendar.definition.months[lastMonthIndex]?.days ?? 1
+    day: months[lastMonthIndex]?.days ?? 1
   };
 }

@@ -18,6 +18,8 @@ export type WeatherCondition =
   | "blizzard";
 
 export type WeatherSourceType = "pack" | "event" | "manual";
+export type WeatherProfileCycleReset = "none" | "intercalation-cycle";
+export type MoonCycleAnchor = "absolute" | "month";
 
 export interface FantasyTimeConfig {
   enabled: boolean;
@@ -36,6 +38,31 @@ export interface FantasyMonth {
   days: number;
 }
 
+export interface FantasyLeapMonthRule {
+  id: string;
+  name: string;
+  insertAfterMonthIndex: number;
+  month: FantasyMonth;
+  cycleYears: number;
+  leapYearPositions: number[];
+}
+
+export interface FantasyLeapDayRule {
+  id: string;
+  name: string;
+  insertAfterMonthIndex: number;
+  days: number;
+  cycleYears: number;
+  leapYearPositions: number[];
+}
+
+export interface FantasyWeatherProfileMapping {
+  mode: "calendar" | "absolute-day-cycle";
+  climateYearLength: number;
+  baseOffsetDays: number;
+  cycleReset: WeatherProfileCycleReset;
+}
+
 export interface MoonPhaseImageDefinition {
   phaseIndex: number;
   imageRef: string;
@@ -46,6 +73,7 @@ export interface FantasyMoon {
   name: string;
   cycleDays: number;
   offsetDays: number;
+  cycleAnchor: MoonCycleAnchor;
   color?: string;
   phaseCount: number;
   size: number;
@@ -75,8 +103,8 @@ export interface FantasyMonthDay {
 export interface FantasySeason {
   id: string;
   name: string;
-  start: FantasyMonthDay;
-  end: FantasyMonthDay;
+  startDay: number;
+  endDay: number;
   color: string;
 }
 
@@ -86,6 +114,9 @@ export interface FantasyCalendarDefinition {
   eraLabel: string;
   weekdays: string[];
   months: FantasyMonth[];
+  leapMonths: FantasyLeapMonthRule[];
+  leapDays: FantasyLeapDayRule[];
+  weatherProfile: FantasyWeatherProfileMapping;
   moons: FantasyMoon[];
   eras: FantasyEra[];
   yearNames: FantasyNamedYear[];

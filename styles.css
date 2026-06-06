@@ -1333,12 +1333,31 @@
     minmax(170px, 1fr)
     100px
     100px
+	130px
     90px
     90px
     54px
 	140px
     140px
     38px;
+}
+
+.time-collection-editor__row--leap-rule {
+  grid-template-columns:
+    minmax(170px, 1.2fr)
+    minmax(170px, 1fr)
+    80px
+    90px
+    minmax(140px, 1fr)
+    38px;
+}
+
+.time-collection-editor__row--leap-rule-header {
+  margin-bottom: 2px;
+}
+
+.time-collection-editor__row--leap-rule-header .time-collection-editor__column-label:last-child {
+  visibility: hidden;
 }
 
 .time-collection-editor__row--moon-header {
@@ -1372,11 +1391,9 @@
 .time-season-editor__row {
   display: grid;
   grid-template-columns:
-    minmax(140px, 1.3fr)
-    minmax(120px, 1fr)
-    72px
-    minmax(120px, 1fr)
-    72px
+    minmax(160px, 1.4fr)
+    96px
+    96px
     54px
     96px
     auto;
@@ -1633,6 +1650,7 @@
   .time-collection-editor__row--named-year,
   .time-collection-editor__row--era,
   .time-collection-editor__row--moon,
+  .time-collection-editor__row--leap-rule,
   .time-collection-editor__row--moon-header,
   .time-season-editor__row {
     grid-template-columns: minmax(0, 1fr);

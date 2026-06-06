@@ -10,6 +10,7 @@ import {
 } from "obsidian";
 import {
   buildDefaultSeasons,
+  DEFAULT_WEATHER_PROFILE,
   normalizeCalendarFile,
   normalizeTagPackFile,
   slugify
@@ -19,6 +20,10 @@ import { WeatherPackPickerModal } from "./weather-pack-modals";
 import type {
   CalendarFile,
   CalendarViewMode,
+  FantasyLeapDayRule,
+  FantasyLeapMonthRule,
+  FantasyWeatherProfileMapping,
+  MoonCycleAnchor,
   MoonPhaseImageDefinition,
   TagPackFile
 } from "./types";
@@ -55,6 +60,7 @@ interface MoonDraft {
   name: string;
   cycleDays: number;
   offsetDays: number;
+  cycleAnchor: MoonCycleAnchor;
   color: string;
   phaseCount: number;
   size: number;
@@ -70,10 +76,8 @@ interface NamedYearDraft {
 interface SeasonDraft {
   id: string;
   name: string;
-  startMonthIndex: number;
-  startDay: number;
-  endMonthIndex: number;
   endDay: number;
+  startDay: number;
   color: string;
 }
 
@@ -111,6 +115,9 @@ export class CalendarEditorModal extends Modal {
   private timeEnabled: boolean;
   private hoursPerDay: number;
   private minutesPerHour: number;
+  private leapMonths: FantasyLeapMonthRule[];
+  private leapDays: FantasyLeapDayRule[];
+  private weatherProfile: FantasyWeatherProfileMapping;
   private defaultWeatherPackId: string;
   private readonly selectedTagPackIds: Set<string>;
 
@@ -134,24 +141,24 @@ export class CalendarEditorModal extends Modal {
     this.name = definition?.name ?? "New Calendar";
     this.id = existing?.id ?? slugify(this.name);
     this.description = source?.description ?? "";
-    this.eras =
-      definition?.eras?.length
-        ? definition.eras.map((era) => ({ ...era }))
-        : [
-            {
-              id: slugify(definition?.eraLabel ?? "NV"),
-              name: "Era 1",
-              shortName: definition?.eraLabel ?? "NV",
-              startYear: 0,
-              startMonthIndex: 0,
-              startDay: 1
-            }
-          ];
+    this.eras = definition
+      ? definition.eras.map((era) => ({ ...era }))
+      : [
+          {
+            id: slugify("ERA"),
+            name: "Era 1",
+            shortName: "ERA",
+            startYear: 0,
+            startMonthIndex: 0,
+            startDay: 1
+          }
+        ];
     this.weekdays = [...(definition?.weekdays ?? ["RAU", "ZAR", "VEL", "KRA", "LUM"])];
     this.months = monthDefaults.map((month) => ({ ...month }));
     this.moons = (definition?.moons ?? []).map((moon) => ({
       ...moon,
       color: normalizeColor(moon.color),
+	  cycleAnchor: moon.cycleAnchor === "month" ? "month" : "absolute",
       phaseCount: Math.max(1, Math.trunc(moon.phaseCount || 8)),
       size: normalizeMoonSize(moon.size),
       phaseImages: moon.phaseImages.map((entry) => ({ ...entry })),
@@ -171,15 +178,25 @@ export class CalendarEditorModal extends Modal {
     this.seasons = seasons.map((season) => ({
       id: season.id,
       name: season.name,
-      startMonthIndex: season.start.monthIndex,
-      startDay: season.start.day,
-      endMonthIndex: season.end.monthIndex,
-      endDay: season.end.day,
+      startDay: season.startDay,
+      endDay: season.endDay,
       color: normalizeColor(season.color)
     }));
     this.timeEnabled = definition?.time.enabled ?? false;
     this.hoursPerDay = definition?.time.hoursPerDay ?? 24;
     this.minutesPerHour = definition?.time.minutesPerHour ?? 60;
+    this.leapMonths = (definition?.leapMonths ?? []).map((rule) => ({
+      ...rule,
+      month: { ...rule.month },
+      leapYearPositions: [...rule.leapYearPositions]
+    }));
+    this.leapDays = (definition?.leapDays ?? []).map((rule) => ({
+      ...rule,
+      leapYearPositions: [...rule.leapYearPositions]
+    }));
+    this.weatherProfile = definition?.weatherProfile
+      ? { ...definition.weatherProfile }
+      : { ...DEFAULT_WEATHER_PROFILE };
 
 	this.defaultWeatherPackId = source?.defaultWeatherPackId ?? "general";
     this.selectedTagPackIds = new Set(source?.linkedTagPackIds ?? []);
@@ -264,6 +281,16 @@ export class CalendarEditorModal extends Modal {
         button.setButtonText("Configure");
         button.onClick(() => {
           this.openMonthEditorModal();
+        });
+      });
+	  
+    new Setting(contentEl)
+      .setName("Leap & weather cycle")
+      .setDesc(this.getLeapSettingsSummary())
+      .addButton((button) => {
+        button.setButtonText("Configure");
+        button.onClick(() => {
+          this.openLeapSettingsModal();
         });
       });
 
@@ -424,6 +451,47 @@ export class CalendarEditorModal extends Modal {
     });
   }
   
+  private getSeasonCycleLength(): number {
+  return getSeasonCycleLengthForDraft(this.weatherProfile, this.months);
+  }
+  
+  private getLeapSettingsSummary(): string {
+    const weatherSummary =
+      this.weatherProfile.mode === "absolute-day-cycle"
+        ? `fixed ${this.weatherProfile.climateYearLength}-day climate cycle`
+        : "calendar year mapping";
+
+    const resetSummary =
+      this.weatherProfile.mode === "absolute-day-cycle"
+        ? this.weatherProfile.cycleReset === "none"
+          ? "no climate reset"
+          : "resets at intercalation cycle"
+        : null;
+
+    return [
+      `${this.leapMonths.length} leap month rule${this.leapMonths.length === 1 ? "" : "s"}`,
+      `${this.leapDays.length} leap day rule${this.leapDays.length === 1 ? "" : "s"}`,
+      weatherSummary,
+      resetSummary
+    ].filter((entry): entry is string => Boolean(entry)).join(" • ");
+  }
+
+  private openLeapSettingsModal(): void {
+    new LeapSettingsModal(
+      this.app,
+      this.months,
+      this.leapMonths,
+      this.leapDays,
+      this.weatherProfile,
+      (nextSettings) => {
+        this.leapMonths = cloneLeapMonthRules(nextSettings.leapMonths);
+        this.leapDays = cloneLeapDayRules(nextSettings.leapDays);
+        this.weatherProfile = { ...nextSettings.weatherProfile };
+        void this.render();
+      }
+    ).open();
+  }
+  
   private openEraEditorModal(): void {
     new EraEditorModal(this.app, this.months, this.eras, (nextEras) => {
       this.eras = nextEras;
@@ -450,7 +518,7 @@ export class CalendarEditorModal extends Modal {
       void this.render();
     }).open();
   }
-
+  
   private openMoonEditorModal(): void {
     new MoonEditorModal(this.plugin, this.moons, (nextMoons) => {
       this.moons = nextMoons;
@@ -476,19 +544,13 @@ export class CalendarEditorModal extends Modal {
   private openSeasonEditorModal(): void {
     new SeasonEditorModal(
       this.app,
-      this.getMonthOptions(),
+      this.getSeasonCycleLength(),
       this.seasons,
       (nextSeasons) => {
         this.seasons = nextSeasons;
         void this.render();
       }
     ).open();
-  }
-
-  private getMonthOptions(): Array<{ id: string; name: string; days: number }> {
-    return this.months.length > 0
-      ? this.months.map((month) => ({ ...month }))
-      : [{ id: "month-1", name: "Month 1", days: 30 }];
   }
 
   private renderPackSelector(
@@ -540,14 +602,7 @@ export class CalendarEditorModal extends Modal {
       };
     });
 
-    const sanitizedEras = (this.eras.length > 0 ? this.eras : [{
-      id: "era",
-      name: "Era 1",
-      shortName: "ERA",
-      startYear: 0,
-      startMonthIndex: 0,
-      startDay: 1
-    }])
+    const sanitizedEras = this.eras
       .map((era, index) => {
         const safeShortName = era.shortName.trim().length > 0 ? era.shortName.trim() : `ERA${index + 1}`;
         const safeName = era.name.trim().length > 0 ? era.name.trim() : `Era ${index + 1}`;
@@ -598,12 +653,14 @@ export class CalendarEditorModal extends Modal {
 		return {
           id: slugify(moon.id || safeName),
           name: safeName,
-          cycleDays: Math.max(1, Math.trunc(moon.cycleDays || 1)),
-          offsetDays: Math.trunc(moon.offsetDays || 0),
+          cycleDays: normalizePositiveDecimal(moon.cycleDays, 1),
+          offsetDays: normalizeFiniteDecimal(moon.offsetDays, 0),
+          cycleAnchor: normalizeMoonCycleAnchor(moon.cycleAnchor),
           color: normalizeColor(moon.color),
           phaseCount: safePhaseCount,
           size: normalizeMoonSize(moon.size),
-          phaseImages: sanitizeMoonPhaseImages(moon.phaseImages, safePhaseCount)
+          phaseImages: sanitizeMoonPhaseImages(moon.phaseImages, safePhaseCount),
+          phaseLabels: sanitizeMoonPhaseLabels(moon.phaseLabels, safePhaseCount)
         };
       });
 
@@ -615,24 +672,55 @@ export class CalendarEditorModal extends Modal {
       .filter((entry) => entry.name.length > 0);
 
     const sanitizedSeasons = this.seasons.map((season, index) => {
-      const safeStartMonthIndex = clamp(season.startMonthIndex, 0, sanitizedMonths.length - 1);
-      const safeEndMonthIndex = clamp(season.endMonthIndex, 0, sanitizedMonths.length - 1);
-      const safeStartDay = clamp(season.startDay, 1, sanitizedMonths[safeStartMonthIndex]?.days ?? 1);
-      const safeEndDay = clamp(season.endDay, 1, sanitizedMonths[safeEndMonthIndex]?.days ?? 1);
+      const seasonCycleLength = getSeasonCycleLengthForDraft(this.weatherProfile, sanitizedMonths);
       const safeName = season.name.trim().length > 0 ? season.name.trim() : `Season ${index + 1}`;
 
       return {
         id: slugify(season.id || safeName),
         name: safeName,
-        start: {
-          monthIndex: safeStartMonthIndex,
-          day: safeStartDay
-        },
-        end: {
-          monthIndex: safeEndMonthIndex,
-          day: safeEndDay
-        },
+        startDay: clamp(season.startDay, 1, seasonCycleLength),
+        endDay: clamp(season.endDay, 1, seasonCycleLength),
         color: normalizeColor(season.color)
+      };
+    });
+	
+    const sanitizedLeapMonths = this.leapMonths.map((rule, index) => {
+      const safeName = rule.name.trim().length > 0 ? rule.name.trim() : `Leap Month ${index + 1}`;
+      const cycleYears = Math.max(1, Math.trunc(rule.cycleYears || 1));
+
+      return {
+        id: slugify(rule.id || safeName),
+        name: safeName,
+        insertAfterMonthIndex: clamp(
+          rule.insertAfterMonthIndex,
+          -1,
+          Math.max(-1, sanitizedMonths.length - 1)
+        ),
+        month: {
+          id: slugify(rule.month.id || safeName),
+          name: rule.month.name.trim().length > 0 ? rule.month.name.trim() : safeName,
+          days: Math.max(1, Math.trunc(rule.month.days || 1))
+        },
+        cycleYears,
+        leapYearPositions: sanitizeLeapYearPositions(rule.leapYearPositions, cycleYears)
+      };
+    });
+
+    const sanitizedLeapDays = this.leapDays.map((rule, index) => {
+      const safeName = rule.name.trim().length > 0 ? rule.name.trim() : `Leap Day ${index + 1}`;
+      const cycleYears = Math.max(1, Math.trunc(rule.cycleYears || 1));
+
+      return {
+        id: slugify(rule.id || safeName),
+        name: safeName,
+        insertAfterMonthIndex: clamp(
+          rule.insertAfterMonthIndex,
+          -1,
+          Math.max(-1, sanitizedMonths.length - 1)
+        ),
+        days: Math.max(1, Math.trunc(rule.days || 1)),
+        cycleYears,
+        leapYearPositions: sanitizeLeapYearPositions(rule.leapYearPositions, cycleYears)
       };
     });
 
@@ -650,10 +738,13 @@ export class CalendarEditorModal extends Modal {
       definition: {
         id,
         name,
-        eraLabel: sanitizedEras[0]?.shortName ?? "ERA",
+        eraLabel: sanitizedEras[0]?.shortName ?? "",
         eras: sanitizedEras,
         weekdays: sanitizedWeekdays,
         months: sanitizedMonths,
+        leapMonths: sanitizedLeapMonths,
+        leapDays: sanitizedLeapDays,
+        weatherProfile: this.weatherProfile,
         moons: sanitizedMoons,
         yearNames: sanitizedNamedYears,
         startWeekdayIndex: clamp(this.startWeekdayIndex, 0, sanitizedWeekdays.length - 1),
@@ -1025,6 +1116,500 @@ class MonthEditorModal extends Modal {
   }
 }
 
+class LeapMonthEditorModal extends Modal {
+  private readonly months: MonthDraft[];
+  private rules: FantasyLeapMonthRule[];
+  private readonly onSave: (rules: FantasyLeapMonthRule[]) => void;
+
+  constructor(
+    app: App,
+    months: MonthDraft[],
+    rules: FantasyLeapMonthRule[],
+    onSave: (rules: FantasyLeapMonthRule[]) => void
+  ) {
+    super(app);
+    this.months = months.map((month) => ({ ...month }));
+    this.rules = rules.map((rule) => ({
+      ...rule,
+      month: { ...rule.month },
+      leapYearPositions: [...rule.leapYearPositions]
+    }));
+    this.onSave = onSave;
+  }
+
+  onOpen(): void {
+    prepareFlexibleModal(this);
+    this.render();
+  }
+
+  private render(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("time-modal");
+
+    contentEl.createEl("h2", { text: "Configure leap months" });
+    contentEl.createEl("p", {
+      cls: "setting-item-description",
+      text: "Leap months are inserted as additional months in matching years."
+    });
+
+    const list = contentEl.createDiv({ cls: "time-collection-editor__list" });
+
+    if (this.rules.length === 0) {
+      list.createDiv({
+        cls: "time-collection-editor__empty",
+        text: "No leap month rules defined yet."
+      });
+    }
+	
+    if (this.rules.length > 0) {
+      const header = list.createDiv({
+        cls: "time-collection-editor__row time-collection-editor__row--leap-rule time-collection-editor__row--leap-rule-header"
+      });
+
+      ["Name", "Insert after", "Days", "Cycle", "Year Positions", ""].forEach((label) => {
+        header.createDiv({
+          cls: "time-collection-editor__column-label",
+          text: label
+        });
+      });
+    }
+
+    this.rules.forEach((rule, index) => {
+      const row = list.createDiv({
+        cls: "time-collection-editor__row time-collection-editor__row--leap-rule"
+      });
+
+      const nameInput = row.createEl("input", { cls: "time-collection-editor__input" });
+      nameInput.type = "text";
+      nameInput.placeholder = "Leap month name";
+      nameInput.value = rule.name;
+      nameInput.addEventListener("input", () => {
+        this.rules[index].name = nameInput.value;
+        this.rules[index].month.name = nameInput.value;
+      });
+
+      const insertSelect = createMonthInsertionSelect(
+        row.ownerDocument,
+        this.months,
+        rule.insertAfterMonthIndex,
+        "time-collection-editor__input"
+      );
+      insertSelect.addEventListener("change", () => {
+        this.rules[index].insertAfterMonthIndex = Math.trunc(Number(insertSelect.value) || 0);
+      });
+      row.appendChild(insertSelect);
+
+      const daysInput = row.createEl("input", { cls: "time-collection-editor__input" });
+      daysInput.type = "number";
+      daysInput.min = "1";
+      daysInput.placeholder = "Days";
+      daysInput.value = String(rule.month.days);
+      daysInput.addEventListener("input", () => {
+        this.rules[index].month.days = Math.max(1, Math.trunc(Number(daysInput.value) || 1));
+      });
+
+      const cycleInput = row.createEl("input", { cls: "time-collection-editor__input" });
+      cycleInput.type = "number";
+      cycleInput.min = "1";
+      cycleInput.placeholder = "Cycle";
+      cycleInput.value = String(rule.cycleYears);
+      cycleInput.addEventListener("input", () => {
+        const cycleYears = Math.max(1, Math.trunc(Number(cycleInput.value) || 1));
+        this.rules[index].cycleYears = cycleYears;
+        this.rules[index].leapYearPositions = sanitizeLeapYearPositions(
+          this.rules[index].leapYearPositions,
+          cycleYears
+        );
+      });
+
+      const positionsInput = row.createEl("input", { cls: "time-collection-editor__input" });
+      positionsInput.type = "text";
+      positionsInput.placeholder = "Positions, e.g. 4";
+      positionsInput.value = formatLeapYearPositions(rule.leapYearPositions);
+      positionsInput.addEventListener("change", () => {
+        this.rules[index].leapYearPositions = parseLeapYearPositions(
+          positionsInput.value,
+          this.rules[index].cycleYears
+        );
+        positionsInput.value = formatLeapYearPositions(this.rules[index].leapYearPositions);
+      });
+
+      createDeleteIconButton(row, () => {
+        this.rules.splice(index, 1);
+        this.render();
+      });
+    });
+
+    const toolbar = contentEl.createDiv({ cls: "time-collection-editor__toolbar" });
+    createManagerButton(toolbar, "Add leap month", () => {
+      const name = `Leap Month ${this.rules.length + 1}`;
+      this.rules.push({
+        id: slugify(name),
+        name,
+        insertAfterMonthIndex: Math.max(0, this.months.length - 1),
+        month: {
+          id: slugify(name),
+          name,
+          days: 30
+        },
+        cycleYears: 4,
+        leapYearPositions: [4]
+      });
+      this.render();
+    }, false, true);
+
+    const footer = contentEl.createDiv({ cls: "time-modal__footer" });
+    new Setting(footer).addButton((button) => {
+      button.setButtonText("Save");
+      button.setCta();
+      button.onClick(() => this.submit());
+    });
+    new Setting(footer).addButton((button) => {
+      button.setButtonText("Cancel");
+      button.onClick(() => this.close());
+    });
+  }
+
+  private submit(): void {
+    this.onSave(this.rules);
+    this.close();
+  }
+}
+
+class LeapDayEditorModal extends Modal {
+  private readonly months: MonthDraft[];
+  private rules: FantasyLeapDayRule[];
+  private readonly onSave: (rules: FantasyLeapDayRule[]) => void;
+
+  constructor(
+    app: App,
+    months: MonthDraft[],
+    rules: FantasyLeapDayRule[],
+    onSave: (rules: FantasyLeapDayRule[]) => void
+  ) {
+    super(app);
+    this.months = months.map((month) => ({ ...month }));
+    this.rules = rules.map((rule) => ({
+      ...rule,
+      leapYearPositions: [...rule.leapYearPositions]
+    }));
+    this.onSave = onSave;
+  }
+
+  onOpen(): void {
+    prepareFlexibleModal(this);
+    this.render();
+  }
+
+  private render(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("time-modal");
+
+    contentEl.createEl("h2", { text: "Configure leap days" });
+    contentEl.createEl("p", {
+      cls: "setting-item-description",
+      text: "Leap days are inserted as intercalary day blocks."
+    });
+
+    const list = contentEl.createDiv({ cls: "time-collection-editor__list" });
+
+    if (this.rules.length === 0) {
+      list.createDiv({
+        cls: "time-collection-editor__empty",
+        text: "No leap day rules defined yet."
+      });
+    }
+	
+    if (this.rules.length > 0) {
+      const header = list.createDiv({
+        cls: "time-collection-editor__row time-collection-editor__row--leap-rule time-collection-editor__row--leap-rule-header"
+      });
+
+      ["Name", "Insert after", "Days", "Cycle", "Year Positions", ""].forEach((label) => {
+        header.createDiv({
+          cls: "time-collection-editor__column-label",
+          text: label
+        });
+      });
+    }
+
+    this.rules.forEach((rule, index) => {
+      const row = list.createDiv({
+        cls: "time-collection-editor__row time-collection-editor__row--leap-rule"
+      });
+
+      const nameInput = row.createEl("input", { cls: "time-collection-editor__input" });
+      nameInput.type = "text";
+      nameInput.placeholder = "Leap day name";
+      nameInput.value = rule.name;
+      nameInput.addEventListener("input", () => {
+        this.rules[index].name = nameInput.value;
+      });
+
+      const insertSelect = createMonthInsertionSelect(
+        row.ownerDocument,
+        this.months,
+        rule.insertAfterMonthIndex,
+        "time-collection-editor__input"
+      );
+      insertSelect.addEventListener("change", () => {
+        this.rules[index].insertAfterMonthIndex = Math.trunc(Number(insertSelect.value) || 0);
+      });
+      row.appendChild(insertSelect);
+
+      const daysInput = row.createEl("input", { cls: "time-collection-editor__input" });
+      daysInput.type = "number";
+      daysInput.min = "1";
+      daysInput.placeholder = "Days";
+      daysInput.value = String(rule.days);
+      daysInput.addEventListener("input", () => {
+        this.rules[index].days = Math.max(1, Math.trunc(Number(daysInput.value) || 1));
+      });
+
+      const cycleInput = row.createEl("input", { cls: "time-collection-editor__input" });
+      cycleInput.type = "number";
+      cycleInput.min = "1";
+      cycleInput.placeholder = "Cycle";
+      cycleInput.value = String(rule.cycleYears);
+      cycleInput.addEventListener("input", () => {
+        const cycleYears = Math.max(1, Math.trunc(Number(cycleInput.value) || 1));
+        this.rules[index].cycleYears = cycleYears;
+        this.rules[index].leapYearPositions = sanitizeLeapYearPositions(
+          this.rules[index].leapYearPositions,
+          cycleYears
+        );
+      });
+
+      const positionsInput = row.createEl("input", { cls: "time-collection-editor__input" });
+      positionsInput.type = "text";
+      positionsInput.placeholder = "Positions, e.g. 4";
+      positionsInput.value = formatLeapYearPositions(rule.leapYearPositions);
+      positionsInput.addEventListener("change", () => {
+        this.rules[index].leapYearPositions = parseLeapYearPositions(
+          positionsInput.value,
+          this.rules[index].cycleYears
+        );
+        positionsInput.value = formatLeapYearPositions(this.rules[index].leapYearPositions);
+      });
+
+      createDeleteIconButton(row, () => {
+        this.rules.splice(index, 1);
+        this.render();
+      });
+    });
+
+    const toolbar = contentEl.createDiv({ cls: "time-collection-editor__toolbar" });
+    createManagerButton(toolbar, "Add leap day", () => {
+      const name = `Leap Day ${this.rules.length + 1}`;
+      this.rules.push({
+        id: slugify(name),
+        name,
+        insertAfterMonthIndex: Math.max(0, this.months.length - 1),
+        days: 1,
+        cycleYears: 4,
+        leapYearPositions: [4]
+      });
+      this.render();
+    }, false, true);
+
+    const footer = contentEl.createDiv({ cls: "time-modal__footer" });
+    new Setting(footer).addButton((button) => {
+      button.setButtonText("Save");
+      button.setCta();
+      button.onClick(() => this.submit());
+    });
+    new Setting(footer).addButton((button) => {
+      button.setButtonText("Cancel");
+      button.onClick(() => this.close());
+    });
+  }
+
+  private submit(): void {
+    this.onSave(this.rules);
+    this.close();
+  }
+}
+
+interface LeapSettingsModalResult {
+  leapMonths: FantasyLeapMonthRule[];
+  leapDays: FantasyLeapDayRule[];
+  weatherProfile: FantasyWeatherProfileMapping;
+}
+
+class LeapSettingsModal extends Modal {
+  private readonly months: MonthDraft[];
+  private leapMonths: FantasyLeapMonthRule[];
+  private leapDays: FantasyLeapDayRule[];
+  private weatherProfile: FantasyWeatherProfileMapping;
+  private readonly onSave: (result: LeapSettingsModalResult) => void;
+
+  constructor(
+    app: App,
+    months: MonthDraft[],
+    leapMonths: FantasyLeapMonthRule[],
+    leapDays: FantasyLeapDayRule[],
+    weatherProfile: FantasyWeatherProfileMapping,
+    onSave: (result: LeapSettingsModalResult) => void
+  ) {
+    super(app);
+    this.months = months.map((month) => ({ ...month }));
+    this.leapMonths = cloneLeapMonthRules(leapMonths);
+    this.leapDays = cloneLeapDayRules(leapDays);
+    this.weatherProfile = { ...weatherProfile };
+    this.onSave = onSave;
+  }
+
+  onOpen(): void {
+    prepareFlexibleModal(this);
+    this.render();
+  }
+
+  private render(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("time-modal");
+
+    contentEl.createEl("h2", {
+      text: "Configure leap & weather cycle"
+    });
+
+    contentEl.createEl("p", {
+      cls: "setting-item-description",
+      text: "Leap rules change the calendar year length. Weather mapping controls how seasons/weather follow those calendar changes."
+    });
+
+    contentEl.createEl("h3", {
+      text: "Leap rules"
+    });
+
+    new Setting(contentEl)
+      .setName("Leap months")
+      .setDesc(`${this.leapMonths.length} leap month rule${this.leapMonths.length === 1 ? "" : "s"} defined.`)
+      .addButton((button) => {
+        button.setButtonText("Configure");
+        button.onClick(() => {
+          new LeapMonthEditorModal(
+            this.app,
+            this.months,
+            this.leapMonths,
+            (nextRules) => {
+              this.leapMonths = cloneLeapMonthRules(nextRules);
+              this.render();
+            }
+          ).open();
+        });
+      });
+
+    new Setting(contentEl)
+      .setName("Leap days")
+      .setDesc(`${this.leapDays.length} leap day rule${this.leapDays.length === 1 ? "" : "s"} defined.`)
+      .addButton((button) => {
+        button.setButtonText("Configure");
+        button.onClick(() => {
+          new LeapDayEditorModal(
+            this.app,
+            this.months,
+            this.leapDays,
+            (nextRules) => {
+              this.leapDays = cloneLeapDayRules(nextRules);
+              this.render();
+            }
+          ).open();
+        });
+      });
+
+    contentEl.createEl("h3", {
+      text: "Weather cycle"
+    });
+
+    new Setting(contentEl)
+      .setName("Weather year mapping")
+      .setDesc(
+        this.weatherProfile.mode === "absolute-day-cycle"
+          ? `Weather and seasons use a fixed ${this.weatherProfile.climateYearLength}-day climate cycle.`
+          : "Weather and seasons follow the actual calendar year, including leap months/days."
+      )
+      .addDropdown((dropdown) => {
+        dropdown.addOption("calendar", "Calendar year/months");
+        dropdown.addOption("absolute-day-cycle", "Fixed climate cycle");
+        dropdown.setValue(this.weatherProfile.mode);
+        dropdown.onChange((value) => {
+          this.weatherProfile = {
+            ...this.weatherProfile,
+            mode: value === "absolute-day-cycle" ? "absolute-day-cycle" : "calendar"
+          };
+          this.render();
+        });
+      });
+
+    if (this.weatherProfile.mode === "absolute-day-cycle") {
+      const weatherCycleRow = contentEl.createDiv({
+        cls: "time-inline-fields time-inline-fields--triple"
+      });
+
+      createInlineNumberField(weatherCycleRow, {
+        label: "Climate year length",
+        value: String(this.weatherProfile.climateYearLength),
+        min: 1,
+        onChange: (value) => {
+          this.weatherProfile = {
+            ...this.weatherProfile,
+            climateYearLength: Math.max(1, value)
+          };
+        }
+      });
+
+      createInlineNumberField(weatherCycleRow, {
+        label: "Base offset days",
+        value: String(this.weatherProfile.baseOffsetDays),
+        onChange: (value) => {
+          this.weatherProfile = {
+            ...this.weatherProfile,
+            baseOffsetDays: value
+          };
+        }
+      });
+
+      new Setting(contentEl)
+        .setName("Climate cycle reset")
+        .setDesc("Controls whether the climate cycle restarts with the calendar intercalation cycle.")
+        .addDropdown((dropdown) => {
+          dropdown.addOption("intercalation-cycle", "Reset at intercalation cycle");
+          dropdown.addOption("none", "Never reset");
+          dropdown.setValue(this.weatherProfile.cycleReset);
+          dropdown.onChange((value) => {
+            this.weatherProfile = {
+              ...this.weatherProfile,
+              cycleReset: value === "none" ? "none" : "intercalation-cycle"
+            };
+          });
+        });
+    }
+
+    const footer = contentEl.createDiv({ cls: "time-modal__footer" });
+
+    new Setting(footer).addButton((button) => {
+      button.setButtonText("Save");
+      button.setCta();
+      button.onClick(() => {
+        this.onSave({
+          leapMonths: cloneLeapMonthRules(this.leapMonths),
+          leapDays: cloneLeapDayRules(this.leapDays),
+          weatherProfile: { ...this.weatherProfile }
+        });
+        this.close();
+      });
+    });
+
+    new Setting(footer).addButton((button) => {
+      button.setButtonText("Cancel");
+      button.onClick(() => this.close());
+    });
+  }
+}
+
 class MoonEditorModal extends Modal {
   private readonly plugin: TtrpgToolsTimePlugin;
   private moons: MoonDraft[];
@@ -1064,6 +1649,7 @@ class MoonEditorModal extends Modal {
         "Name",
         "Cycle",
         "Offset",
+		"Anchor",
         "Phases",
         "Size",
         "Color",
@@ -1094,22 +1680,45 @@ class MoonEditorModal extends Modal {
       const cycleInput = row.createEl("input", { cls: "time-collection-editor__input" });
       cycleInput.type = "number";
       cycleInput.min = "1";
+	  cycleInput.step = "any";
       cycleInput.placeholder = "Cycle days";
       cycleInput.setAttr("aria-label", "Cycle days");
       cycleInput.title = "Cycle days";
       cycleInput.value = String(moon.cycleDays);
       cycleInput.addEventListener("input", () => {
-        this.moons[index].cycleDays = Math.max(1, Math.trunc(Number(cycleInput.value) || 1));
+        const next = Number(cycleInput.value);
+        this.moons[index].cycleDays = Number.isFinite(next) && next > 0 ? next : 1;
       });
 
       const offsetInput = row.createEl("input", { cls: "time-collection-editor__input" });
       offsetInput.type = "number";
+	  offsetInput.step = "any";
       offsetInput.placeholder = "Offset";
       offsetInput.setAttr("aria-label", "Offset days");
       offsetInput.title = "Offset days";
       offsetInput.value = String(moon.offsetDays);
       offsetInput.addEventListener("input", () => {
-        this.moons[index].offsetDays = Math.trunc(Number(offsetInput.value) || 0);
+        const next = Number(offsetInput.value);
+        this.moons[index].offsetDays = Number.isFinite(next) ? next : 0;
+      });
+	  
+      const anchorSelect = row.createEl("select", { cls: "time-collection-editor__input" });
+      anchorSelect.setAttr("aria-label", "Moon cycle anchor");
+      anchorSelect.title = "Moon cycle anchor";
+
+      const absoluteOption = row.ownerDocument.createElement("option");
+      absoluteOption.value = "absolute";
+      absoluteOption.text = "Continuous";
+      anchorSelect.add(absoluteOption);
+
+      const monthOption = row.ownerDocument.createElement("option");
+      monthOption.value = "month";
+      monthOption.text = "Month reset";
+      anchorSelect.add(monthOption);
+
+      anchorSelect.value = moon.cycleAnchor;
+      anchorSelect.addEventListener("change", () => {
+        this.moons[index].cycleAnchor = normalizeMoonCycleAnchor(anchorSelect.value);
       });
 
       const phaseCountInput = row.createEl("input", { cls: "time-collection-editor__input" });
@@ -1202,6 +1811,7 @@ class MoonEditorModal extends Modal {
         name: `Moon ${this.moons.length + 1}`,
         cycleDays: 28,
         offsetDays: 0,
+		cycleAnchor: "absolute",
         color: "#d46b65",
         phaseCount: 8,
         size: 28,
@@ -1230,8 +1840,9 @@ class MoonEditorModal extends Modal {
 	  return {
         id: slugify(moon.id || safeName),
         name: safeName,
-        cycleDays: Math.max(1, Math.trunc(moon.cycleDays || 1)),
-        offsetDays: Math.trunc(moon.offsetDays || 0),
+        cycleDays: normalizePositiveDecimal(moon.cycleDays, 1),
+        offsetDays: normalizeFiniteDecimal(moon.offsetDays, 0),
+        cycleAnchor: normalizeMoonCycleAnchor(moon.cycleAnchor),
         color: normalizeColor(moon.color),
         phaseCount: safePhaseCount,
         size: normalizeMoonSize(moon.size),
@@ -1533,18 +2144,18 @@ class NamedYearEditorModal extends Modal {
 }
 
 class SeasonEditorModal extends Modal {
-  private readonly months: Array<{ id: string; name: string; days: number }>;
+  private readonly cycleLength: number;
   private seasons: SeasonDraft[];
   private readonly onSave: (seasons: SeasonDraft[]) => void;
 
   constructor(
     app: App,
-    months: Array<{ id: string; name: string; days: number }>,
+    cycleLength: number,
     seasons: SeasonDraft[],
     onSave: (seasons: SeasonDraft[]) => void
   ) {
     super(app);
-    this.months = months;
+    this.cycleLength = cycleLength;
     this.seasons = seasons.map((season) => ({ ...season }));
     this.onSave = onSave;
   }
@@ -1574,94 +2185,83 @@ class SeasonEditorModal extends Modal {
       });
     }
 
-    this.seasons.forEach((season, index) => {
-      const row = list.createDiv({ cls: "time-season-editor__row" });
+	this.seasons.forEach((season, index) => {
+	  const row = list.createDiv({ cls: "time-season-editor__row" });
 
-      const nameInput = row.createEl("input", {
-        cls: "time-season-editor__input time-season-editor__name"
-      });
-      nameInput.type = "text";
-      nameInput.placeholder = "Season name";
-      nameInput.value = season.name;
-      nameInput.addEventListener("input", () => {
-        this.seasons[index].name = nameInput.value;
-      });
+	  const nameInput = row.createEl("input", {
+		cls: "time-season-editor__input time-season-editor__name"
+	  });
+	  nameInput.type = "text";
+	  nameInput.placeholder = "Season name";
+	  nameInput.value = season.name;
+	  nameInput.addEventListener("input", () => {
+		this.seasons[index].name = nameInput.value;
+	  });
 
-      const startMonthSelect = createMonthSelect(
-        row.ownerDocument,
-        this.months,
-        season.startMonthIndex,
-        "time-season-editor__input"
-      );
-      startMonthSelect.addEventListener("change", () => {
-        this.seasons[index].startMonthIndex = Number(startMonthSelect.value);
-      });
-      row.appendChild(startMonthSelect);
+	  const startDayInput = row.createEl("input", {
+		cls: "time-season-editor__input time-season-editor__day"
+	  });
+	  startDayInput.type = "number";
+	  startDayInput.min = "1";
+	  startDayInput.max = String(this.cycleLength);
+	  startDayInput.value = String(season.startDay);
+	  startDayInput.addEventListener("input", () => {
+		this.seasons[index].startDay = clamp(
+		  Number(startDayInput.value) || 1,
+		  1,
+		  this.cycleLength
+		);
+	  });
 
-      const startDayInput = row.createEl("input", {
-        cls: "time-season-editor__input time-season-editor__day"
-      });
-      startDayInput.type = "number";
-      startDayInput.min = "1";
-      startDayInput.value = String(season.startDay);
-      startDayInput.addEventListener("input", () => {
-        this.seasons[index].startDay = Math.max(1, Math.trunc(Number(startDayInput.value) || 1));
-      });
+	  const endDayInput = row.createEl("input", {
+		cls: "time-season-editor__input time-season-editor__day"
+	  });
+	  endDayInput.type = "number";
+	  endDayInput.min = "1";
+	  endDayInput.max = String(this.cycleLength);
+	  endDayInput.value = String(season.endDay);
+	  endDayInput.addEventListener("input", () => {
+		this.seasons[index].endDay = clamp(
+		  Number(endDayInput.value) || 1,
+		  1,
+		  this.cycleLength
+		);
+	  });
 
-      const endMonthSelect = createMonthSelect(
-        row.ownerDocument,
-        this.months,
-        season.endMonthIndex,
-        "time-season-editor__input"
-      );
-      endMonthSelect.addEventListener("change", () => {
-        this.seasons[index].endMonthIndex = Number(endMonthSelect.value);
-      });
-      row.appendChild(endMonthSelect);
+	  const colorInput = row.createEl("input", {
+		cls: "time-season-editor__color"
+	  });
+	  colorInput.type = "color";
+	  colorInput.value = normalizeColor(season.color);
 
-      const endDayInput = row.createEl("input", {
-        cls: "time-season-editor__input time-season-editor__day"
-      });
-      endDayInput.type = "number";
-      endDayInput.min = "1";
-      endDayInput.value = String(season.endDay);
-      endDayInput.addEventListener("input", () => {
-        this.seasons[index].endDay = Math.max(1, Math.trunc(Number(endDayInput.value) || 1));
-      });
+	  const colorText = row.createEl("input", {
+		cls: "time-season-editor__input time-season-editor__hex"
+	  });
+	  colorText.type = "text";
+	  colorText.value = normalizeColor(season.color);
 
-      const colorInput = row.createEl("input", {
-        cls: "time-season-editor__color"
-      });
-      colorInput.type = "color";
-      colorInput.value = normalizeColor(season.color);
+	  colorInput.addEventListener("input", () => {
+		this.seasons[index].color = colorInput.value;
+		colorText.value = colorInput.value;
+	  });
 
-      const colorText = row.createEl("input", {
-        cls: "time-season-editor__input time-season-editor__hex"
-      });
-      colorText.type = "text";
-      colorText.value = normalizeColor(season.color);
+	  colorText.addEventListener("change", () => {
+		const next = normalizeColor(colorText.value);
+		this.seasons[index].color = next;
+		colorInput.value = next;
+		colorText.value = next;
+	  });
 
-      colorInput.addEventListener("input", () => {
-        this.seasons[index].color = colorInput.value;
-        colorText.value = colorInput.value;
-      });
-      colorText.addEventListener("change", () => {
-        const next = normalizeColor(colorText.value);
-        this.seasons[index].color = next;
-        colorInput.value = next;
-        colorText.value = next;
-      });
-
-      const deleteButton = row.createEl("button", {
-        cls: "time-season-editor__delete",
-        text: "Delete"
-      });
-      deleteButton.type = "button";
-      deleteButton.addEventListener("click", () => {
-        this.seasons.splice(index, 1);
-        this.render();
-      });
-    });
+	  const deleteButton = row.createEl("button", {
+		cls: "time-season-editor__delete",
+		text: "Delete"
+	  });
+	  deleteButton.type = "button";
+	  deleteButton.addEventListener("click", () => {
+		this.seasons.splice(index, 1);
+		this.render();
+	  });
+	});
 
     const toolbar = contentEl.createDiv({ cls: "time-season-editor__toolbar" });
     createManagerButton(
@@ -1671,10 +2271,8 @@ class SeasonEditorModal extends Modal {
         this.seasons.push({
           id: "",
           name: `Season ${this.seasons.length + 1}`,
-          startMonthIndex: 0,
           startDay: 1,
-          endMonthIndex: Math.max(0, this.months.length - 1),
-          endDay: this.months[this.months.length - 1]?.days ?? 30,
+          endDay: this.cycleLength,
           color: "#a7d36d"
         });
         this.render();
@@ -1707,16 +2305,12 @@ class SeasonEditorModal extends Modal {
 
     const sanitized = this.seasons.map((season, index) => {
       const safeName = season.name.trim().length > 0 ? season.name.trim() : `Season ${index + 1}`;
-      const safeStart = sanitizeMonthDay(season.startMonthIndex, season.startDay, this.months);
-      const safeEnd = sanitizeMonthDay(season.endMonthIndex, season.endDay, this.months);
 
       return {
         id: slugify(season.id || safeName),
         name: safeName,
-        startMonthIndex: safeStart.monthIndex,
-        startDay: safeStart.day,
-        endMonthIndex: safeEnd.monthIndex,
-        endDay: safeEnd.day,
+        startDay: clamp(season.startDay, 1, this.cycleLength),
+        endDay: clamp(season.endDay, 1, this.cycleLength),
         color: normalizeColor(season.color)
       };
     });
@@ -2226,16 +2820,68 @@ function parseMonthLines(value: string): Array<{ id: string; name: string; days:
     });
 }
 
-function sanitizeMonthDay(
-  monthIndex: number,
-  day: number,
-  months: Array<{ id: string; name: string; days: number }>
-): { monthIndex: number; day: number } {
-  const safeMonthIndex = clamp(monthIndex, 0, months.length - 1);
-  return {
-    monthIndex: safeMonthIndex,
-    day: clamp(day, 1, months[safeMonthIndex]?.days ?? 1)
-  };
+function createMonthInsertionSelect(
+  doc: Document,
+  months: Array<{ id: string; name: string; days: number }>,
+  selectedIndex: number,
+  className: string
+): HTMLSelectElement {
+  const select = doc.createElement("select");
+
+  if (className.trim().length > 0) {
+    select.className = className;
+  }
+
+  const beforeOption = doc.createElement("option");
+  beforeOption.value = "-1";
+  beforeOption.text = "Before first month";
+  beforeOption.selected = selectedIndex === -1;
+  select.add(beforeOption);
+
+  months.forEach((month, index) => {
+    const option = doc.createElement("option");
+    option.value = String(index);
+    option.text = `After ${month.name}`;
+    option.selected = index === selectedIndex;
+    select.add(option);
+  });
+
+  return select;
+}
+
+function parseLeapYearPositions(value: string, cycleYears: number): number[] {
+  const parsed = value
+    .split(/[,\s]+/g)
+    .map((entry) => Math.trunc(Number(entry)))
+    .filter((entry) => Number.isFinite(entry))
+    .filter((entry) => entry >= 1 && entry <= cycleYears);
+
+  return sanitizeLeapYearPositions(parsed, cycleYears);
+}
+
+function sanitizeLeapYearPositions(values: number[], cycleYears: number): number[] {
+  const sanitized = [...new Set(
+    values
+      .map((value) => Math.trunc(value))
+      .filter((value) => value >= 1 && value <= cycleYears)
+  )].sort((left, right) => left - right);
+
+  return sanitized.length > 0 ? sanitized : [cycleYears];
+}
+
+function formatLeapYearPositions(values: number[]): string {
+  return values.join(", ");
+}
+
+function getSeasonCycleLengthForDraft(
+  weatherProfile: FantasyWeatherProfileMapping,
+  months: Array<{ days: number }>
+): number {
+  if (weatherProfile.mode === "absolute-day-cycle") {
+    return Math.max(1, Math.trunc(weatherProfile.climateYearLength || 1));
+  }
+
+  return Math.max(1, months.reduce((sum, month) => sum + Math.max(1, Math.trunc(month.days || 1)), 0));
 }
 
 function createMonthSelect(
@@ -2256,6 +2902,21 @@ function createMonthSelect(
     select.add(option);
   });
   return select;
+}
+
+function cloneLeapMonthRules(rules: FantasyLeapMonthRule[]): FantasyLeapMonthRule[] {
+  return rules.map((rule) => ({
+    ...rule,
+    month: { ...rule.month },
+    leapYearPositions: [...rule.leapYearPositions]
+  }));
+}
+
+function cloneLeapDayRules(rules: FantasyLeapDayRule[]): FantasyLeapDayRule[] {
+  return rules.map((rule) => ({
+    ...rule,
+    leapYearPositions: [...rule.leapYearPositions]
+  }));
 }
 
 function createInlineNumberField(
@@ -2311,6 +2972,18 @@ function normalizeColor(value: string | undefined): string {
 
 function normalizeMoonSize(value: number): number {
   return clamp(Math.trunc(value || 28), 12, 96);
+}
+
+function normalizePositiveDecimal(value: number, fallback: number): number {
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function normalizeFiniteDecimal(value: number, fallback: number): number {
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function normalizeMoonCycleAnchor(value: string | undefined): MoonCycleAnchor {
+  return value === "month" ? "month" : "absolute";
 }
 
 function sanitizeMoonPhaseImages(

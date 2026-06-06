@@ -8,6 +8,7 @@ import type {
 } from "./types";
 import {
   DEFAULT_WEATHER_PACK,
+  getWeatherProfileMonths,
   normalizeWeatherPackFile,
   resolveWeatherPackMonthProfiles
 } from "./weather";
@@ -1067,7 +1068,14 @@ function buildWeatherEditorMonths(
   plugin: TtrpgToolsTimePlugin,
   existing: WeatherPackFile | null
 ): FantasyMonth[] {
-  const activeMonths = plugin.activeCalendar?.definition.months.map((month) => ({ ...month })) ?? [];
+  const activeCalendar = plugin.activeCalendar;
+  const activeMonths = activeCalendar
+    ? getWeatherProfileMonths(
+        activeCalendar,
+        existing ?? undefined,
+        activeCalendar.state.cursorDate.year
+      )
+    : [];
   const existingProfileCount = existing?.monthProfiles.length ?? 0;
 
   if (activeMonths.length > 0 && existingProfileCount <= activeMonths.length) {

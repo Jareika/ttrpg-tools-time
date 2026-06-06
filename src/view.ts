@@ -5,6 +5,7 @@ import {
   formatLongDate,
   getEraShortLabel,
   getMonth,
+  getMonthsForYear,
   getSeasonForDate,
   getWeekIndexInMonth,
   getWeekOfYear,
@@ -120,7 +121,7 @@ export class TimeCalendarView extends ItemView {
     rail.createDiv({ cls: "time-calendar__rail-divider" });
     rail.createDiv({
       cls: "time-calendar__rail-month",
-      text: getMonth(definition, state.cursorDate.monthIndex).name
+      text: getMonth(definition, state.cursorDate.monthIndex, state.cursorDate.year).name
     });
     rail.createDiv({
       cls: "time-calendar__rail-year",
@@ -262,7 +263,7 @@ export class TimeCalendarView extends ItemView {
     eventIndexYear: EventIndexYearFile | null
   ): void {
     const { definition, state, markers } = calendar;
-    const month = getMonth(definition, state.cursorDate.monthIndex);
+    const month = getMonth(definition, state.cursorDate.monthIndex, state.cursorDate.year);
 
     const intro = container.createDiv({ cls: "time-view-frame time-view-frame--intro" });
     intro.createDiv({
@@ -271,7 +272,7 @@ export class TimeCalendarView extends ItemView {
     });
     intro.createDiv({
       cls: "time-view-meta",
-      text: `Week ${getWeekIndexInMonth(definition, state.cursorDate) + 1} • ${state.cursorDate.year} ${getEraShortLabel(definition, state.cursorDate)}`
+      text: `Week ${getWeekIndexInMonth(definition, state.cursorDate) + 1} • ${state.cursorDate.year}${formatEraSuffix(definition, state.cursorDate)}`
     });
 
     this.renderWeekdayHeader(container, calendar);
@@ -309,7 +310,7 @@ export class TimeCalendarView extends ItemView {
     eventIndexYear: EventIndexYearFile | null
   ): void {
     const { definition, state } = calendar;
-    const month = getMonth(definition, state.cursorDate.monthIndex);
+    const month = getMonth(definition, state.cursorDate.monthIndex, state.cursorDate.year);
 
     const intro = container.createDiv({ cls: "time-view-frame time-view-frame--intro" });
     intro.createDiv({
@@ -318,7 +319,7 @@ export class TimeCalendarView extends ItemView {
     });
     intro.createDiv({
       cls: "time-view-meta",
-      text: `${state.cursorDate.year} ${getEraShortLabel(definition, state.cursorDate)} • ${month.days} days`
+      text: `${state.cursorDate.year}${formatEraSuffix(definition, state.cursorDate)} • ${month.days} days`
     });
 
     this.renderMonthSection(
@@ -350,10 +351,14 @@ export class TimeCalendarView extends ItemView {
     });
     intro.createDiv({
       cls: "time-view-meta",
-      text: `${getYearLength(definition)} days • ${definition.months.length} months • ${getEraShortLabel(definition, state.cursorDate)}`
+      text: [
+        `${getYearLength(definition, state.cursorDate.year)} days`,
+        `${getMonthsForYear(definition, state.cursorDate.year).length} months`,
+        getEraShortLabel(definition, state.cursorDate)
+      ].filter((entry) => entry.length > 0).join(" • ")
     });
 
-    definition.months.forEach((_month, monthIndex) => {
+    getMonthsForYear(definition, state.cursorDate.year).forEach((_month, monthIndex) => {
       this.renderMonthSection(
         container,
         state.cursorDate.year,
@@ -400,7 +405,7 @@ export class TimeCalendarView extends ItemView {
       if (options.showMeta) {
         heading.createDiv({
           cls: "time-month-section__meta",
-          text: `${year} ${getEraShortLabel(definition, { year, monthIndex, day: 1 })}`
+          text: `${year}${formatEraSuffix(definition, { year, monthIndex, day: 1 })}`
         });
       }
     }
@@ -711,4 +716,12 @@ function abbreviateWeekday(label: string, maxChars: number): string {
   }
 
   return compact.slice(0, maxChars);
+}
+
+function formatEraSuffix(
+  definition: CalendarFile["definition"],
+  date: FantasyDate
+): string {
+  const eraLabel = getEraShortLabel(definition, date);
+  return eraLabel ? ` ${eraLabel}` : "";
 }

@@ -394,7 +394,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     await this.app.workspace.revealLeaf(leaf);
   }
 
-  async activateEventEditorView(): Promise<void> {
+  async activateEventEditorView(eventToEdit?: CalendarEventDefinition): Promise<void> {
     let leaf = this.app.workspace.getLeavesOfType(EVENT_EDITOR_VIEW_TYPE)[0];
 
     if (!leaf) {
@@ -409,6 +409,26 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     });
 
     await this.app.workspace.revealLeaf(leaf);
+
+    if (eventToEdit) {
+      const candidate = leaf.view as { editEvent?: (event: CalendarEventDefinition) => void };
+      candidate.editEvent?.(eventToEdit);
+    }
+  }
+
+  async activateEventEditorForEvent(
+    calendarId: string,
+    year: number,
+    eventId: string
+  ): Promise<void> {
+    const detail = await this.loadEventById(calendarId, year, eventId);
+
+    if (!detail) {
+      new Notice("Could not load event for editing.");
+      return;
+    }
+
+    await this.activateEventEditorView(detail);
   }
 
   async loadSettings(): Promise<void> {
@@ -726,12 +746,19 @@ export default class TtrpgToolsTimePlugin extends Plugin {
       null;
   }
 
-  async saveEvent(event: CalendarEventDefinition): Promise<void> {
+  async saveEvent(
+    event: CalendarEventDefinition,
+    previousEvent?: CalendarEventDefinition
+  ): Promise<void> {
     const normalized = normalizeCalendarEventDefinition(event);
     const calendarDefinition =
       (this.activeCalendar?.id === normalized.calendarId
         ? this.activeCalendar
         : await this.dataStore.loadCalendarById(normalized.calendarId))?.definition;
+		
+    if (previousEvent) {
+      await this.removeEventCopies(previousEvent, calendarDefinition);
+    }
 
     const startYear = Math.min(normalized.date.year, normalized.endDate?.year ?? normalized.date.year);
     const endYear = Math.max(normalized.date.year, normalized.endDate?.year ?? normalized.date.year);
@@ -763,6 +790,36 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     }
 
     this.refreshOpenViews();
+  }
+  
+  private async removeEventCopies(
+    event: CalendarEventDefinition,
+    calendarDefinition: CalendarFile["definition"] | undefined
+  ): Promise<void> {
+    const startYear = Math.min(event.date.year, event.endDate?.year ?? event.date.year);
+    const endYear = Math.max(event.date.year, event.endDate?.year ?? event.date.year);
+
+    for (let year = startYear; year <= endYear; year += 1) {
+      const file = await this.dataStore.loadEventYear(event.calendarId, year);
+
+      if (!file) {
+        continue;
+      }
+
+      const nextEvents = file.events.filter((entry) => entry.id !== event.id);
+
+      if (nextEvents.length === file.events.length) {
+        continue;
+      }
+
+      const nextFile: EventYearFile = {
+        ...file,
+        events: nextEvents.sort(sortEvents)
+      };
+
+      await this.dataStore.saveEventYear(nextFile);
+      await this.dataStore.saveEventIndexYear(buildEventIndexYearFile(nextFile, calendarDefinition));
+    }
   }
 
   async openStoredNoteRef(ref: string): Promise<boolean> {

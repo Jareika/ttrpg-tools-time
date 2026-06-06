@@ -1,4 +1,7 @@
-import { clampDate, getDayOfYear, getYearLength } from "./calendar";
+import {
+  clampDate,
+  getAbsoluteDay as getCalendarAbsoluteDay
+} from "./calendar";
 import type {
   CalendarFile,
   FantasyCalendarDefinition,
@@ -58,20 +61,20 @@ export function resolveMoonPhase(
   time?: FantasyTimeOfDay
 ): MoonPhaseData {
   const normalizedDate = clampDate(date, definition);
-  const cycleDays = Math.max(1, Math.trunc(moon.cycleDays || 1));
+  const cycleDays = getPositiveNumber(moon.cycleDays, 1);
   const phaseCount = Math.max(1, Math.trunc(moon.phaseCount ?? DEFAULT_MOON_PHASE_COUNT));
   const minutesPerDay = getMinutesPerDay(definition);
-  const absoluteMinute = getAbsoluteMinute(definition, normalizedDate, time);
+  const cycleMinute = getMoonCycleMinute(definition, moon, normalizedDate, time);
   const cycleMinutes = cycleDays * minutesPerDay;
-  const offsetMinutes = Math.trunc(moon.offsetDays || 0) * minutesPerDay;
-  const moonMinute = mod(absoluteMinute + offsetMinutes, cycleMinutes);
+  const offsetMinutes = getFiniteNumber(moon.offsetDays, 0) * minutesPerDay;
+  const moonMinute = mod(cycleMinute + offsetMinutes, cycleMinutes);
   const phaseIndex = Math.min(
     phaseCount - 1,
     Math.floor((moonMinute / cycleMinutes) * phaseCount)
   );
   const imageRef =
     moon.phaseImages.find((entry) => entry.phaseIndex === phaseIndex)?.imageRef;
-  const minuteOfDay = mod(absoluteMinute, minutesPerDay);
+  const minuteOfDay = getMinuteOfDay(definition, time);
 
   return {
     moonId: moon.id,
@@ -144,29 +147,29 @@ export function resolveMoonPhaseTransitionsForDate(
   const definition = calendar.definition;
   const normalizedDate = clampDate(date, definition);
   const minutesPerDay = getMinutesPerDay(definition);
-  const dayStartMinute = getAbsoluteDay(definition, normalizedDate) * minutesPerDay;
-  const dayEndMinute = dayStartMinute + minutesPerDay;
   const transitions: MoonPhaseTransition[] = [];
 
   definition.moons.forEach((moon) => {
+    const dayStartMinute = getMoonCycleDayStartMinute(definition, moon, normalizedDate);
+    const dayEndMinute = dayStartMinute + minutesPerDay;
     const phaseCount = Math.max(1, Math.trunc(moon.phaseCount ?? DEFAULT_MOON_PHASE_COUNT));
-    const cycleMinutes = Math.max(1, Math.trunc(moon.cycleDays || 1)) * minutesPerDay;
-    const offsetMinutes = Math.trunc(moon.offsetDays || 0) * minutesPerDay;
+    const cycleMinutes = getPositiveNumber(moon.cycleDays, 1) * minutesPerDay;
+    const offsetMinutes = getFiniteNumber(moon.offsetDays, 0) * minutesPerDay;
     const phaseDuration = cycleMinutes / phaseCount;
     const startBoundaryIndex = Math.floor((dayStartMinute + offsetMinutes) / phaseDuration) - 1;
 
     for (let boundaryIndex = startBoundaryIndex; boundaryIndex < startBoundaryIndex + phaseCount + 4; boundaryIndex += 1) {
-      const absoluteBoundaryMinute = boundaryIndex * phaseDuration - offsetMinutes;
+      const boundaryMinute = boundaryIndex * phaseDuration - offsetMinutes;
 
-      if (absoluteBoundaryMinute >= dayEndMinute) {
+      if (boundaryMinute >= dayEndMinute) {
         break;
       }
 
-      if (absoluteBoundaryMinute < dayStartMinute) {
+      if (boundaryMinute < dayStartMinute) {
         continue;
       }
 
-      const minuteOfDay = clamp(Math.round(absoluteBoundaryMinute - dayStartMinute), 0, minutesPerDay - 1);
+      const minuteOfDay = clamp(Math.round(boundaryMinute - dayStartMinute), 0, minutesPerDay - 1);
       const phaseIndex = mod(boundaryIndex, phaseCount);
 
       if (
@@ -198,19 +201,45 @@ export function getAbsoluteDay(
   definition: FantasyCalendarDefinition,
   date: FantasyDate
 ): number {
-  const normalizedDate = clampDate(date, definition);
-  return normalizedDate.year * getYearLength(definition) + getDayOfYear(definition, normalizedDate) - 1;
+  return getCalendarAbsoluteDay(definition, date);
 }
 
-function getAbsoluteMinute(
+function getMoonCycleMinute(
   definition: FantasyCalendarDefinition,
+  moon: FantasyMoon,
   date: FantasyDate,
   time?: FantasyTimeOfDay
 ): number {
   const normalizedTime = clampTimeOfDay(time ?? { hour: 0, minute: 0 }, definition);
-  return getAbsoluteDay(definition, date) * getMinutesPerDay(definition) +
+  const minuteOfDay =
     normalizedTime.hour * getMinutesPerHour(definition) +
     normalizedTime.minute;
+
+  if (moon.cycleAnchor === "month") {
+    return (date.day - 1) * getMinutesPerDay(definition) + minuteOfDay;
+  }
+
+  return getAbsoluteDay(definition, date) * getMinutesPerDay(definition) + minuteOfDay;
+}
+
+function getMoonCycleDayStartMinute(
+  definition: FantasyCalendarDefinition,
+  moon: FantasyMoon,
+  date: FantasyDate
+): number {
+  if (moon.cycleAnchor === "month") {
+    return (date.day - 1) * getMinutesPerDay(definition);
+  }
+
+  return getAbsoluteDay(definition, date) * getMinutesPerDay(definition);
+}
+
+function getMinuteOfDay(
+  definition: FantasyCalendarDefinition,
+  time?: FantasyTimeOfDay
+): number {
+  const normalizedTime = clampTimeOfDay(time ?? { hour: 0, minute: 0 }, definition);
+  return normalizedTime.hour * getMinutesPerHour(definition) + normalizedTime.minute;
 }
 
 function formatFantasyTimeFromMinuteOfDay(
@@ -233,6 +262,14 @@ function getMinutesPerHour(definition: FantasyCalendarDefinition): number {
 
 function getMinutesPerDay(definition: FantasyCalendarDefinition): number {
   return getHoursPerDay(definition) * getMinutesPerHour(definition);
+}
+
+function getPositiveNumber(value: number, fallback: number): number {
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function getFiniteNumber(value: number, fallback: number): number {
+  return Number.isFinite(value) ? value : fallback;
 }
 
 function clampSize(value: number): number {

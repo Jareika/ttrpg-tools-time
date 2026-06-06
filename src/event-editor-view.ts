@@ -1,9 +1,9 @@
 import { App, FuzzySuggestModal, ItemView, Notice, TFile, WorkspaceLeaf, type FuzzyMatch } from "obsidian";
 import type TtrpgToolsTimePlugin from "./main";
-import { clampDate, slugify } from "./calendar";
+import { clampDate, getMonthsForYear, slugify } from "./calendar";
 import { createEventId } from "./events";
 import { clampTimeOfDay } from "./moons";
-import type { CalendarFile, FantasyDate } from "./types";
+import type { CalendarEventDefinition, CalendarFile, FantasyDate } from "./types";
 
 export const EVENT_EDITOR_VIEW_TYPE = "time-event-editor-view";
 const DEFAULT_EVENT_COLOR = "#4e3e3e";
@@ -32,6 +32,7 @@ export class TimeEventEditorView extends ItemView {
   private endMonthIndex = 0;
   private endDay = 1;
   private selectedTagRefs = new Set<string>();
+  private editingOriginalEvent: CalendarEventDefinition | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: TtrpgToolsTimePlugin) {
     super(leaf);
@@ -62,6 +63,32 @@ export class TimeEventEditorView extends ItemView {
     this.contentEl.empty();
     this.contentEl.addClass("time-event-editor-view");
     void this.render();
+  }
+  
+  editEvent(event: CalendarEventDefinition): void {
+    const endDate = event.endDate ?? event.date;
+    const startTime = event.startTime;
+    const endTime = event.endTime ?? event.startTime;
+
+    this.editingOriginalEvent = cloneCalendarEvent(event);
+    this.initialized = true;
+    this.selectedPresetId = "";
+    this.selectedWeatherPackId = event.weatherPackId ?? "";
+    this.title = event.title;
+    this.description = event.description ?? "";
+    this.color = normalizeColor(event.color ?? DEFAULT_EVENT_COLOR);
+    this.noteRef = event.noteRef ?? "";
+    this.imageRef = event.imageRef ?? "";
+    this.saveAsPresetName = "";
+    this.selectedTagRefs = new Set(event.tagRefs);
+    this.applyStartDate(event.date);
+    this.applyEndDate(endDate);
+    this.isTimedEvent = Boolean(startTime || endTime);
+    this.startHour = startTime?.hour ?? 8;
+    this.startMinute = startTime?.minute ?? 0;
+    this.endHour = endTime?.hour ?? this.startHour;
+    this.endMinute = endTime?.minute ?? this.startMinute;
+    this.refresh();
   }
 
   private async render(): Promise<void> {
@@ -108,11 +135,13 @@ export class TimeEventEditorView extends ItemView {
     const header = panel.createDiv({ cls: "time-event-editor__header" });
     header.createEl("h1", {
       cls: "time-event-editor__title",
-      text: "Create event"
+      text: this.editingOriginalEvent ? "Edit event" : "Create event"
     });
     header.createEl("p", {
       cls: "time-event-editor__meta",
-      text: `Calendar: ${calendar.name}`
+      text: this.editingOriginalEvent
+        ? `Editing: ${this.editingOriginalEvent.title} • Calendar: ${calendar.name}`
+        : `Calendar: ${calendar.name}`
     });
 
     const form = panel.createDiv({ cls: "time-event-editor__form" });
@@ -199,7 +228,7 @@ export class TimeEventEditorView extends ItemView {
 
     this.renderField(startDateGrid, "Month", (field) => {
       const select = field.createEl("select", { cls: "time-event-editor__input" });
-      calendar.definition.months.forEach((month, index) => {
+      getMonthsForYear(calendar.definition, this.startYear).forEach((month, index) => {
         const option = select.ownerDocument.createElement("option");
         option.value = String(index);
         option.text = month.name;
@@ -239,7 +268,7 @@ export class TimeEventEditorView extends ItemView {
 
     this.renderField(endDateGrid, "Month", (field) => {
       const select = field.createEl("select", { cls: "time-event-editor__input" });
-      calendar.definition.months.forEach((month, index) => {
+      getMonthsForYear(calendar.definition, this.endYear).forEach((month, index) => {
         const option = select.ownerDocument.createElement("option");
         option.value = String(index);
         option.text = month.name;
@@ -421,6 +450,18 @@ export class TimeEventEditorView extends ItemView {
     });
 
     const actions = panel.createDiv({ cls: "time-event-editor__actions" });
+	
+    if (this.editingOriginalEvent) {
+      const cancelEditButton = actions.createEl("button", {
+        cls: "time-manager__button",
+        text: "Cancel edit"
+      });
+      cancelEditButton.type = "button";
+      cancelEditButton.addEventListener("click", () => {
+        this.resetForm(calendar);
+        this.refresh();
+      });
+    }
 
     const selectedDayButton = actions.createEl("button", {
       cls: "time-manager__button",
@@ -434,7 +475,7 @@ export class TimeEventEditorView extends ItemView {
 
     const saveButton = actions.createEl("button", {
       cls: "time-manager__button mod-cta",
-      text: "Save event"
+      text: this.editingOriginalEvent ? "Update event" : "Save event"
     });
     saveButton.type = "button";
     saveButton.addEventListener("click", () => {
@@ -519,6 +560,7 @@ export class TimeEventEditorView extends ItemView {
 
     this.selectedPresetId = "";
 	this.selectedWeatherPackId = "";
+	this.editingOriginalEvent = null;
     this.title = "";
     this.isTimedEvent = false;
     this.startHour = 8;
@@ -575,7 +617,8 @@ export class TimeEventEditorView extends ItemView {
       return;
     }
 
-    const eventId = createEventId(title);
+    const eventId = this.editingOriginalEvent?.id ?? createEventId(title);
+    const now = new Date().toISOString();
 
     await this.plugin.saveEvent({
       id: eventId,
@@ -595,9 +638,9 @@ export class TimeEventEditorView extends ItemView {
       tagRefs: [...this.selectedTagRefs].sort((left, right) =>
         left.localeCompare(right, undefined, { sensitivity: "base" })
       ),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    });
+      createdAt: this.editingOriginalEvent?.createdAt ?? now,
+      updatedAt: now
+    }, this.editingOriginalEvent ?? undefined);
 
     const presetName = this.saveAsPresetName.trim();
     if (presetName.length > 0) {
@@ -616,13 +659,14 @@ export class TimeEventEditorView extends ItemView {
       });
     }
 
+    const wasEditing = Boolean(this.editingOriginalEvent);
 	this.resetForm(calendar, normalizedStartDate);
 
     await this.plugin.updateActiveCalendarState({
       cursorDate: { ...normalizedStartDate }
     });
 
-    new Notice(`Saved event "${title}".`);
+    new Notice(`${wasEditing ? "Updated" : "Saved"} event "${title}".`);
     this.refresh();
   }
 
@@ -673,6 +717,17 @@ function sameFantasyDate(left: FantasyDate, right: FantasyDate): boolean {
 
 function compareTimes(left: { hour: number; minute: number }, right: { hour: number; minute: number }): number {
   return left.hour !== right.hour ? left.hour - right.hour : left.minute - right.minute;
+}
+
+function cloneCalendarEvent(event: CalendarEventDefinition): CalendarEventDefinition {
+  return {
+    ...event,
+    date: { ...event.date },
+    endDate: event.endDate ? { ...event.endDate } : undefined,
+    startTime: event.startTime ? { ...event.startTime } : undefined,
+    endTime: event.endTime ? { ...event.endTime } : undefined,
+    tagRefs: [...event.tagRefs]
+  };
 }
 
 function buildTagRef(packId: string, tagId: string): string {
