@@ -430,7 +430,7 @@ export class TimeDayView extends ItemView {
   }
 
   private async openEventDetails(calendar: CalendarFile, eventId: string): Promise<void> {
-    const detail = await this.plugin.loadEventById(
+    const detail = await this.plugin.loadEventOccurrenceById(
       calendar.id,
       calendar.state.cursorDate.year,
       eventId
@@ -799,6 +799,14 @@ class EventDetailModal extends Modal {
       cls: "time-event-editor__meta",
       text: buildEventDateRangeLabel(this.calendar, this.event)
     });
+	
+    const recurrenceLabel = buildEventRecurrenceLabel(this.event);
+    if (recurrenceLabel) {
+      main.createEl("p", {
+        cls: "time-event-editor__meta",
+        text: `Repeat: ${recurrenceLabel}`
+      });
+    }
 
     const timeLabel = buildEventTimeRangeLabel(this.calendar, this.event.startTime, this.event.endTime);
     if (timeLabel) {
@@ -935,6 +943,36 @@ function buildEventTimeRangeLabel(
   const start = formatFantasyTime(startTime, calendar.definition);
   const end = endTime ? formatFantasyTime(endTime, calendar.definition) : null;
   return end ? `${start} – ${end}` : start;
+}
+
+function buildEventRecurrenceLabel(event: CalendarEventDefinition): string | null {
+  const recurrence = event.recurrence;
+
+  if (!recurrence) {
+    return null;
+  }
+
+  const unit = recurrence.frequency === "daily"
+    ? "day"
+    : recurrence.frequency === "weekly"
+      ? "week"
+      : recurrence.frequency === "monthly"
+        ? "month"
+        : "year";
+
+  const base = recurrence.interval === 1
+    ? `Every ${unit}`
+    : `Every ${recurrence.interval} ${unit}s`;
+
+  if (recurrence.endMode === "count" && recurrence.count) {
+    return `${base} • ${recurrence.count} occurrence${recurrence.count === 1 ? "" : "s"}`;
+  }
+
+  if (recurrence.endMode === "until" && recurrence.until) {
+    return `${base} • until ${formatShortDate(recurrence.until)}`;
+  }
+
+  return base;
 }
 
 function collectFallbackEvents(

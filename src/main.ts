@@ -6,6 +6,7 @@ import {
 import { CALENDAR_DAY_VIEW_TYPE, TimeDayView } from "./day-view";
 import { EVENT_EDITOR_VIEW_TYPE, TimeEventEditorView } from "./event-editor-view";
 import {
+  expandRecurringEventForYear,
   buildEventIndexYearFile,
   findEventById,
   normalizeCalendarEventDefinition,
@@ -232,6 +233,10 @@ export default class TtrpgToolsTimePlugin extends Plugin {
         : null) ?? calendars[0];
 
     this.activeCalendar = active;
+	
+    if (active) {
+      await this.ensureWeatherReferencesForCalendarYear(active, active.state.cursorDate.year);
+    }
 
     if (this.settings.activeCalendarId !== active.id) {
       this.settings.activeCalendarId = active.id;
@@ -458,6 +463,8 @@ export default class TtrpgToolsTimePlugin extends Plugin {
       ...this.settings,
       activeCalendarId: calendar.id
     });
+	
+	await this.ensureWeatherReferencesForCalendarYear(calendar, calendar.state.cursorDate.year);
     this.refreshOpenViews();
   }
 
@@ -471,6 +478,10 @@ export default class TtrpgToolsTimePlugin extends Plugin {
         ...this.settings,
         activeCalendarId: normalized.id
       });
+    }
+	
+    if (this.activeCalendar?.id === normalized.id) {
+      await this.ensureWeatherReferencesForCalendarYear(normalized, normalized.state.cursorDate.year);
     }
 
     this.refreshOpenViews();
@@ -686,16 +697,61 @@ export default class TtrpgToolsTimePlugin extends Plugin {
   }
 
   async loadEventYear(calendarId: string, year: number): Promise<EventYearFile | null> {
-    return await this.dataStore.loadEventYear(calendarId, year);
+    const rawCurrentYear = await this.dataStore.loadEventYear(calendarId, year);
+    const calendarDefinition =
+      (this.activeCalendar?.id === calendarId
+        ? this.activeCalendar
+        : await this.dataStore.loadCalendarById(calendarId))?.definition;
+
+    if (!calendarDefinition) {
+      return rawCurrentYear;
+    }
+
+    const concreteEvents = (rawCurrentYear?.events ?? [])
+      .filter((event) => !event.recurrence)
+      .map((event) => ({ ...event }));
+
+    const recurringSourceYears = await this.dataStore.listEventYears(calendarId);
+    const recurringOccurrences: CalendarEventDefinition[] = [];
+
+    for (const sourceYear of recurringSourceYears) {
+      if (sourceYear > year) {
+        break;
+      }
+
+      const sourceFile =
+        sourceYear === year
+          ? rawCurrentYear
+          : await this.dataStore.loadEventYear(calendarId, sourceYear);
+
+      if (!sourceFile) {
+        continue;
+      }
+
+      sourceFile.events
+        .filter((event) => Boolean(event.recurrence))
+        .forEach((event) => {
+          recurringOccurrences.push(...expandRecurringEventForYear(event, calendarDefinition, year));
+        });
+    }
+
+    const events = [...concreteEvents, ...recurringOccurrences].sort(sortEvents);
+
+    if (!rawCurrentYear && events.length === 0) {
+      return null;
+    }
+
+    return {
+      version: 1,
+      kind: "event-year",
+      calendarId,
+      year,
+      events
+    };
   }
 
   async loadEventIndexYear(calendarId: string, year: number): Promise<EventIndexYearFile | null> {
-    const existing = await this.dataStore.loadEventIndexYear(calendarId, year);
-    if (existing) {
-      return existing;
-    }
-
-    const detail = await this.dataStore.loadEventYear(calendarId, year);
+    const detail = await this.loadEventYear(calendarId, year);
     if (!detail) {
       return null;
     }
@@ -704,13 +760,12 @@ export default class TtrpgToolsTimePlugin extends Plugin {
       (this.activeCalendar?.id === calendarId
         ? this.activeCalendar
         : await this.dataStore.loadCalendarById(calendarId))?.definition;
-    const rebuilt = buildEventIndexYearFile(detail, calendarDefinition);
-    await this.dataStore.saveEventIndexYear(rebuilt);
-    return rebuilt;
+
+    return buildEventIndexYearFile(detail, calendarDefinition);
   }
 
   async ensureEventYearFile(calendarId: string, year: number): Promise<EventYearFile> {
-    const existing = await this.loadEventYear(calendarId, year);
+    const existing = await this.dataStore.loadEventYear(calendarId, year);
     if (existing) {
       return existing;
     }
@@ -732,6 +787,24 @@ export default class TtrpgToolsTimePlugin extends Plugin {
   }
 
   async loadEventById(
+    calendarId: string,
+    year: number,
+    eventId: string
+  ): Promise<CalendarEventDefinition | null> {
+    const occurrence = await this.loadEventOccurrenceById(calendarId, year, eventId);
+
+    if (occurrence?.sourceEventId) {
+      return await this.loadSourceEventById(calendarId, occurrence.sourceEventId);
+    }
+
+    if (occurrence) {
+      return occurrence;
+    }
+
+    return await this.loadSourceEventById(calendarId, eventId);
+  }
+
+  async loadEventOccurrenceById(
     calendarId: string,
     year: number,
     eventId: string
@@ -760,25 +833,39 @@ export default class TtrpgToolsTimePlugin extends Plugin {
       await this.removeEventCopies(previousEvent, calendarDefinition);
     }
 
-    const startYear = Math.min(normalized.date.year, normalized.endDate?.year ?? normalized.date.year);
-    const endYear = Math.max(normalized.date.year, normalized.endDate?.year ?? normalized.date.year);
-
-    for (let year = startYear; year <= endYear; year += 1) {
-      const file = await this.ensureEventYearFile(normalized.calendarId, year);
-      const existingIndex = file.events.findIndex((entry) => entry.id === normalized.id);
+    if (normalized.recurrence) {
+      const sourceYearFile = await this.ensureEventYearFile(normalized.calendarId, normalized.date.year);
+      const existingIndex = sourceYearFile.events.findIndex((entry) => entry.id === normalized.id);
 
       if (existingIndex >= 0) {
-        file.events[existingIndex] = normalized;
+        sourceYearFile.events[existingIndex] = normalized;
       } else {
-        file.events.push(normalized);
+        sourceYearFile.events.push(normalized);
       }
 
-      file.events.sort(sortEvents);
-      await this.dataStore.saveEventYear(file);
-      await this.dataStore.saveEventIndexYear(buildEventIndexYearFile(file, calendarDefinition));
+      sourceYearFile.events.sort(sortEvents);
+      await this.dataStore.saveEventYear(sourceYearFile);
+    } else {
+      const startYear = Math.min(normalized.date.year, normalized.endDate?.year ?? normalized.date.year);
+      const endYear = Math.max(normalized.date.year, normalized.endDate?.year ?? normalized.date.year);
+
+      for (let year = startYear; year <= endYear; year += 1) {
+        const file = await this.ensureEventYearFile(normalized.calendarId, year);
+        const existingIndex = file.events.findIndex((entry) => entry.id === normalized.id);
+
+        if (existingIndex >= 0) {
+          file.events[existingIndex] = normalized;
+        } else {
+          file.events.push(normalized);
+        }
+
+        file.events.sort(sortEvents);
+        await this.dataStore.saveEventYear(file);
+        await this.dataStore.saveEventIndexYear(buildEventIndexYearFile(file, calendarDefinition));
+      }
     }
 
-    if (normalized.weatherPackId) {
+    if (normalized.weatherPackId && !normalized.recurrence) {
       await this.applyWeatherPackToRange(
         normalized.calendarId,
         normalized.weatherPackId,
@@ -796,6 +883,34 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     event: CalendarEventDefinition,
     calendarDefinition: CalendarFile["definition"] | undefined
   ): Promise<void> {
+    if (event.recurrence) {
+      const years = await this.dataStore.listEventYears(event.calendarId);
+
+      for (const year of years) {
+        const file = await this.dataStore.loadEventYear(event.calendarId, year);
+
+        if (!file) {
+          continue;
+        }
+
+        const nextEvents = file.events.filter((entry) => entry.id !== event.id);
+
+        if (nextEvents.length === file.events.length) {
+          continue;
+        }
+
+        const nextFile: EventYearFile = {
+          ...file,
+          events: nextEvents.sort(sortEvents)
+        };
+
+        await this.dataStore.saveEventYear(nextFile);
+        await this.dataStore.saveEventIndexYear(buildEventIndexYearFile(nextFile, calendarDefinition));
+      }
+
+      return;
+    }
+
     const startYear = Math.min(event.date.year, event.endDate?.year ?? event.date.year);
     const endYear = Math.max(event.date.year, event.endDate?.year ?? event.date.year);
 
@@ -846,6 +961,49 @@ export default class TtrpgToolsTimePlugin extends Plugin {
       }
     };
     await this.saveCalendar(nextCalendar, true);
+  }
+  
+  async ensureWeatherReferencesForCalendarYear(
+    calendar: CalendarFile,
+    year: number
+  ): Promise<void> {
+    if (!calendar.autoGenerateLinkedWeatherReferences) {
+      return;
+    }
+
+    const packIds = new Set<string>(calendar.linkedWeatherPackIds);
+
+    if (calendar.defaultWeatherPackId) {
+      packIds.add(calendar.defaultWeatherPackId);
+    }
+
+    await Promise.all(
+      [...packIds].map(async (packId) => {
+        const pack = await this.loadWeatherPackById(packId);
+        if (!pack) {
+          return;
+        }
+
+        await this.loadWeatherReferenceYear(calendar.id, pack.id, year);
+      })
+    );
+  }
+
+  private async loadSourceEventById(
+    calendarId: string,
+    eventId: string
+  ): Promise<CalendarEventDefinition | null> {
+    const years = await this.dataStore.listEventYears(calendarId);
+
+    for (const year of years) {
+      const file = await this.dataStore.loadEventYear(calendarId, year);
+      const match = findEventById(file, eventId);
+      if (match) {
+        return match;
+      }
+    }
+
+    return null;
   }
 
   async setTagPackLinked(tagPackId: string, linked: boolean): Promise<void> {

@@ -21,6 +21,9 @@ export type WeatherSourceType = "pack" | "event" | "manual";
 export type WeatherProfileCycleReset = "none" | "intercalation-cycle";
 export type MoonCycleAnchor = "absolute" | "month";
 
+export type EventRecurrenceFrequency = "daily" | "weekly" | "monthly" | "yearly";
+export type EventRecurrenceEndMode = "never" | "count" | "until";
+
 export interface FantasyTimeConfig {
   enabled: boolean;
   hoursPerDay: number;
@@ -135,6 +138,7 @@ export interface CalendarFile {
   linkedTagPackIds: string[];
   linkedWeatherPackIds: string[];
   markers: DayMarker[];
+  autoGenerateLinkedWeatherReferences?: boolean;
   defaultWeatherPackId?: string;
   description?: string;
 }
@@ -183,6 +187,14 @@ export interface TtrpgToolsTimeSettings {
   showCalendarWeekNumbers: boolean;
 }
 
+export interface EventRecurrenceRule {
+  frequency: EventRecurrenceFrequency;
+  interval: number;
+  endMode: EventRecurrenceEndMode;
+  count?: number;
+  until?: FantasyDate;
+}
+
 export interface EventPresetFile {
   version: 1;
   kind: "event-preset";
@@ -209,6 +221,8 @@ export interface CalendarEventDefinition {
   imageRef?: string;
   noteRef?: string;
   createdAt: string;
+  recurrence?: EventRecurrenceRule;
+  sourceEventId?: string;
   updatedAt: string;
 }
 
@@ -223,6 +237,7 @@ export interface EventYearFile {
 export interface EventIndexEntry {
   id: string;
   title: string;
+  sourceEventId?: string;
   color: string;
 }
 

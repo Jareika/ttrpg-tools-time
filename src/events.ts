@@ -1,10 +1,20 @@
-import { clampDate, shiftDay, slugify } from "./calendar";
+import {
+  clampDate,
+  getAbsoluteDay,
+  shiftDay,
+  shiftMonth,
+  shiftYear,
+  slugify
+} from "./calendar";
 import type {
   CalendarEventDefinition,
   EventPresetFile,
+  EventRecurrenceEndMode,
+  EventRecurrenceFrequency,
+  EventRecurrenceRule,
   FantasyCalendarDefinition,
-  EventIndexDay,
   EventIndexYearFile,
+  EventIndexDay,
   EventYearFile,
   FantasyDate
 } from "./types";
@@ -33,6 +43,8 @@ export function normalizeCalendarEventDefinition(raw: unknown): CalendarEventDef
     imageRef: readOptionalString(record.imageRef),
     noteRef: readOptionalString(record.noteRef),
     createdAt: readString(record.createdAt, now),
+    recurrence: readOptionalEventRecurrence(record.recurrence),
+    sourceEventId: readOptionalString(record.sourceEventId),
     updatedAt: readString(record.updatedAt, now)
   };
 }
@@ -89,6 +101,7 @@ export function normalizeEventIndexYearFile(raw: unknown): EventIndexYearFile {
         return {
           id,
           title: readString(itemRecord.title, `Event ${index + 1}`),
+		  sourceEventId: readOptionalString(itemRecord.sourceEventId),
           color: readColor(itemRecord.color) ?? "#4e3e3e"
         };
       })
@@ -131,6 +144,7 @@ export function buildEventIndexYearFile(
 
       days[key].items.push({
         id: event.id,
+		sourceEventId: event.sourceEventId,
 		title: event.title,
         color
       });
@@ -167,7 +181,7 @@ export function getEventDotsForDate(
 export function getEventIndexEntriesForDate(
   file: EventIndexYearFile | null,
   date: FantasyDate
-): Array<{ id: string; title: string; color: string }> {
+): Array<{ id: string; title: string; color: string; sourceEventId?: string }> {
   if (!file || file.year !== date.year) {
     return [];
   }
@@ -181,6 +195,118 @@ export function findEventById(
 ): CalendarEventDefinition | null {
   if (!file) return null;
   return file.events.find((event) => event.id === eventId) ?? null;
+}
+
+export function buildRecurringOccurrenceId(
+  sourceEventId: string,
+  date: FantasyDate
+): string {
+  return `${sourceEventId}::${date.year}-${date.monthIndex}-${date.day}`;
+}
+
+export function expandRecurringEventForYear(
+  event: CalendarEventDefinition,
+  definition: FantasyCalendarDefinition,
+  targetYear: number
+): CalendarEventDefinition[] {
+  if (!event.recurrence) {
+    return [];
+  }
+
+  const recurrence = event.recurrence;
+  const sourceEventId = event.sourceEventId ?? event.id;
+  const untilDate = recurrence.until ? clampDate(recurrence.until, definition) : undefined;
+  const durationDays = getEventDurationDays(event, definition);
+  const maxCount = recurrence.endMode === "count"
+    ? Math.max(1, Math.trunc(recurrence.count || 1))
+    : null;
+  const results: CalendarEventDefinition[] = [];
+
+  let occurrenceIndex = getFastForwardOccurrenceCount(event, recurrence, definition, targetYear);
+  let occurrenceStart = shiftOccurrenceStart(
+    clampDate(event.date, definition),
+    recurrence,
+    occurrenceIndex,
+    definition
+  );
+  let guard = 0;
+
+  while (guard < 50000) {
+    if (maxCount !== null && occurrenceIndex >= maxCount) {
+      break;
+    }
+
+    if (untilDate && compareFantasyDates(occurrenceStart, untilDate) > 0) {
+      break;
+    }
+
+    const occurrenceEnd = shiftDay(occurrenceStart, durationDays - 1, definition);
+
+    if (intersectsYear(occurrenceStart, occurrenceEnd, targetYear)) {
+      results.push({
+        ...event,
+        id: buildRecurringOccurrenceId(sourceEventId, occurrenceStart),
+        sourceEventId,
+        date: { ...occurrenceStart },
+        endDate: compareFantasyDates(occurrenceStart, occurrenceEnd) === 0
+          ? undefined
+          : { ...occurrenceEnd }
+      });
+    }
+
+    if (occurrenceStart.year > targetYear && occurrenceEnd.year > targetYear) {
+      break;
+    }
+
+    occurrenceIndex += 1;
+    occurrenceStart = shiftOccurrenceStart(occurrenceStart, recurrence, 1, definition);
+    guard += 1;
+  }
+
+  return results;
+}
+
+function getFastForwardOccurrenceCount(
+  event: CalendarEventDefinition,
+  recurrence: EventRecurrenceRule,
+  definition: FantasyCalendarDefinition,
+  targetYear: number
+): number {
+  const normalizedStart = clampDate(event.date, definition);
+
+  if (targetYear <= normalizedStart.year) {
+    return 0;
+  }
+
+  if (recurrence.frequency === "daily" || recurrence.frequency === "weekly") {
+    const stepDays = recurrence.frequency === "daily"
+      ? recurrence.interval
+      : recurrence.interval * definition.weekdays.length;
+    const targetStartAbs = getAbsoluteDay(definition, { year: targetYear, monthIndex: 0, day: 1 });
+    const startAbs = getAbsoluteDay(definition, normalizedStart);
+    return Math.max(0, Math.floor((targetStartAbs - startAbs) / Math.max(1, stepDays)) - 2);
+  }
+
+  if (recurrence.frequency === "monthly") {
+    const yearDelta = targetYear - normalizedStart.year;
+    const approxMonthCount = yearDelta * Math.max(1, definition.months.length);
+    return Math.max(0, Math.floor(approxMonthCount / Math.max(1, recurrence.interval)) - 2);
+  }
+
+  if (recurrence.frequency === "yearly") {
+    return Math.max(0, Math.floor((targetYear - normalizedStart.year) / Math.max(1, recurrence.interval)) - 1);
+  }
+
+  return 0;
+}
+
+function getEventDurationDays(
+  event: CalendarEventDefinition,
+  definition: FantasyCalendarDefinition
+): number {
+  const start = clampDate(event.date, definition);
+  const end = clampDate(event.endDate ?? event.date, definition);
+  return Math.max(1, getAbsoluteDay(definition, end) - getAbsoluteDay(definition, start) + 1);
 }
 
 function expandEventDatesForIndex(
@@ -213,6 +339,52 @@ function compareFantasyDates(left: FantasyDate, right: FantasyDate): number {
   if (left.year !== right.year) return left.year - right.year;
   if (left.monthIndex !== right.monthIndex) return left.monthIndex - right.monthIndex;
   return left.day - right.day;
+}
+
+function intersectsYear(start: FantasyDate, end: FantasyDate, year: number): boolean {
+  return start.year <= year && end.year >= year;
+}
+
+function shiftOccurrenceStart(
+  date: FantasyDate,
+  recurrence: EventRecurrenceRule,
+  occurrenceSteps: number,
+  definition: FantasyCalendarDefinition
+): FantasyDate {
+  const steps = Math.max(0, Math.trunc(occurrenceSteps || 0));
+  const interval = Math.max(1, Math.trunc(recurrence.interval || 1));
+
+  switch (recurrence.frequency) {
+    case "daily":
+      return shiftDay(date, steps * interval, definition);
+    case "weekly":
+      return shiftDay(date, steps * interval * definition.weekdays.length, definition);
+    case "monthly":
+      return shiftMonth(date, steps * interval, definition);
+    case "yearly":
+      return shiftYear(date, steps * interval, definition);
+    default:
+      return { ...date };
+  }
+}
+
+function readOptionalEventRecurrence(value: unknown): EventRecurrenceRule | undefined {
+  const record = asRecord(value);
+  const frequency = readEventRecurrenceFrequency(record.frequency);
+
+  if (!frequency) {
+    return undefined;
+  }
+
+  const endMode = readEventRecurrenceEndMode(record.endMode) ?? "never";
+
+  return {
+    frequency,
+    interval: Math.max(1, Math.trunc(readNumber(record.interval, 1))),
+    endMode,
+    count: endMode === "count" ? Math.max(1, Math.trunc(readNumber(record.count, 1))) : undefined,
+    until: endMode === "until" ? readOptionalFantasyDate(record.until) : undefined
+  };
 }
 
 export function createEventId(title: string): string {
@@ -305,4 +477,16 @@ function readStringArray(value: unknown): string[] {
   }
 
   return value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+}
+
+function readEventRecurrenceFrequency(value: unknown): EventRecurrenceFrequency | undefined {
+  return value === "daily" || value === "weekly" || value === "monthly" || value === "yearly"
+    ? value
+    : undefined;
+}
+
+function readEventRecurrenceEndMode(value: unknown): EventRecurrenceEndMode | undefined {
+  return value === "never" || value === "count" || value === "until"
+    ? value
+    : undefined;
 }

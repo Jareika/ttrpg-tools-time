@@ -120,6 +120,8 @@ export class CalendarEditorModal extends Modal {
   private weatherProfile: FantasyWeatherProfileMapping;
   private defaultWeatherPackId: string;
   private readonly selectedTagPackIds: Set<string>;
+  private readonly selectedWeatherPackIds: Set<string>;
+  private autoGenerateLinkedWeatherReferences: boolean;
 
   constructor(
     plugin: TtrpgToolsTimePlugin,
@@ -200,6 +202,8 @@ export class CalendarEditorModal extends Modal {
 
 	this.defaultWeatherPackId = source?.defaultWeatherPackId ?? "general";
     this.selectedTagPackIds = new Set(source?.linkedTagPackIds ?? []);
+    this.selectedWeatherPackIds = new Set(source?.linkedWeatherPackIds ?? []);
+    this.autoGenerateLinkedWeatherReferences = source?.autoGenerateLinkedWeatherReferences ?? false;
   }
 
   onOpen(): void {
@@ -422,6 +426,26 @@ export class CalendarEditorModal extends Modal {
         button.setTooltip("Manage weather packs");
         button.onClick(() => {
           this.plugin.openManageWeatherPacksModal();
+        });
+      });
+
+    this.renderPackSelector(
+      contentEl,
+      "Linked weather packs",
+      "These packs belong to this calendar ecosystem. If auto-generation is enabled, their yearly weather references are created when that calendar year is opened.",
+      weatherPacks.map((pack) => ({ id: pack.id, name: pack.name })),
+      this.selectedWeatherPackIds
+    );
+
+    new Setting(contentEl)
+      .setName("Auto-generate linked weather references")
+      .setDesc(
+        "When enabled, opening/navigating to a year will ensure reference-year JSON files exist for all linked weather packs plus the default pack."
+      )
+      .addToggle((toggle) => {
+        toggle.setValue(this.autoGenerateLinkedWeatherReferences);
+        toggle.onChange((value) => {
+          this.autoGenerateLinkedWeatherReferences = value;
         });
       });
 
@@ -769,8 +793,9 @@ export class CalendarEditorModal extends Modal {
         }
       },
 	  defaultWeatherPackId: this.defaultWeatherPackId,
+	  autoGenerateLinkedWeatherReferences: this.autoGenerateLinkedWeatherReferences,
       linkedTagPackIds: [...this.selectedTagPackIds],
-	  linkedWeatherPackIds: this.existing?.linkedWeatherPackIds ?? [],
+	  linkedWeatherPackIds: [...this.selectedWeatherPackIds],
       markers: this.existing?.markers ?? []
     });
 

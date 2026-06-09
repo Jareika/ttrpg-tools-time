@@ -80,6 +80,7 @@ export const DEFAULT_CALENDAR_FILE: CalendarFile = {
   linkedWeatherPackIds: [],
   defaultWeatherPackId: "general",
   markers: [],
+  autoGenerateLinkedWeatherReferences: false,
   description: "Default calendar created on first launch."
 };
 
@@ -137,6 +138,10 @@ export function normalizeCalendarFile(raw: unknown): CalendarFile {
     defaultWeatherPackId:
       readOptionalString(record.defaultWeatherPackId) ??
       DEFAULT_CALENDAR_FILE.defaultWeatherPackId,
+    autoGenerateLinkedWeatherReferences: readBoolean(
+      record.autoGenerateLinkedWeatherReferences,
+      DEFAULT_CALENDAR_FILE.autoGenerateLinkedWeatherReferences ?? false
+    ),
     markers: readMarkers(record.markers),
     description: readOptionalString(record.description)
   };
@@ -684,6 +689,7 @@ export function cloneCalendarFile(calendar: CalendarFile): CalendarFile {
     linkedWeatherPackIds: [...calendar.linkedWeatherPackIds],
     defaultWeatherPackId: calendar.defaultWeatherPackId,
     markers: cloneMarkers(calendar.markers)
+	,autoGenerateLinkedWeatherReferences: calendar.autoGenerateLinkedWeatherReferences
   };
 }
 

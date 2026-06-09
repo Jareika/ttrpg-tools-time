@@ -3,7 +3,13 @@ import type TtrpgToolsTimePlugin from "./main";
 import { clampDate, getMonthsForYear, slugify } from "./calendar";
 import { createEventId } from "./events";
 import { clampTimeOfDay } from "./moons";
-import type { CalendarEventDefinition, CalendarFile, FantasyDate } from "./types";
+import type {
+  CalendarEventDefinition,
+  CalendarFile,
+  EventRecurrenceEndMode,
+  EventRecurrenceFrequency,
+  FantasyDate
+} from "./types";
 
 export const EVENT_EDITOR_VIEW_TYPE = "time-event-editor-view";
 const DEFAULT_EVENT_COLOR = "#4e3e3e";
@@ -28,6 +34,14 @@ export class TimeEventEditorView extends ItemView {
   private noteRef = "";
   private imageRef = "";
   private saveAsPresetName = "";
+  private recurrenceEnabled = false;
+  private recurrenceFrequency: EventRecurrenceFrequency = "yearly";
+  private recurrenceInterval = 1;
+  private recurrenceEndMode: EventRecurrenceEndMode = "never";
+  private recurrenceCount = 10;
+  private recurrenceUntilYear = 1;
+  private recurrenceUntilMonthIndex = 0;
+  private recurrenceUntilDay = 1;
   private endYear = 1;
   private endMonthIndex = 0;
   private endDay = 1;
@@ -69,6 +83,8 @@ export class TimeEventEditorView extends ItemView {
     const endDate = event.endDate ?? event.date;
     const startTime = event.startTime;
     const endTime = event.endTime ?? event.startTime;
+    const recurrence = event.recurrence;
+    const recurrenceUntil = recurrence?.until ?? event.date;
 
     this.editingOriginalEvent = cloneCalendarEvent(event);
     this.initialized = true;
@@ -88,6 +104,14 @@ export class TimeEventEditorView extends ItemView {
     this.startMinute = startTime?.minute ?? 0;
     this.endHour = endTime?.hour ?? this.startHour;
     this.endMinute = endTime?.minute ?? this.startMinute;
+    this.recurrenceEnabled = Boolean(recurrence);
+    this.recurrenceFrequency = recurrence?.frequency ?? "yearly";
+    this.recurrenceInterval = recurrence?.interval ?? 1;
+    this.recurrenceEndMode = recurrence?.endMode ?? "never";
+    this.recurrenceCount = recurrence?.count ?? 10;
+    this.recurrenceUntilYear = recurrenceUntil.year;
+    this.recurrenceUntilMonthIndex = recurrenceUntil.monthIndex;
+    this.recurrenceUntilDay = recurrenceUntil.day;
     this.refresh();
   }
 
@@ -353,6 +377,106 @@ export class TimeEventEditorView extends ItemView {
       this.isTimedEvent = false;
     }
 
+    form.createEl("h3", {
+      cls: "time-event-editor__section-title",
+      text: "Repeat"
+    });
+
+    this.renderField(form, "Repeat event", (field) => {
+      const toggle = field.createEl("input");
+      toggle.type = "checkbox";
+      toggle.checked = this.recurrenceEnabled;
+      toggle.addEventListener("change", () => {
+        this.recurrenceEnabled = toggle.checked;
+        this.refresh();
+      });
+    });
+
+    if (this.recurrenceEnabled) {
+      const recurrenceGrid = form.createDiv({ cls: "time-event-editor__grid" });
+
+      this.renderField(recurrenceGrid, "Frequency", (field) => {
+        const select = field.createEl("select", { cls: "time-event-editor__input" });
+        addSelectOption(select, "daily", "Daily");
+        addSelectOption(select, "weekly", "Weekly");
+        addSelectOption(select, "monthly", "Monthly");
+        addSelectOption(select, "yearly", "Yearly");
+        select.value = this.recurrenceFrequency;
+        select.addEventListener("change", () => {
+          this.recurrenceFrequency = select.value as EventRecurrenceFrequency;
+        });
+      });
+
+      this.renderField(recurrenceGrid, "Interval", (field) => {
+        const input = field.createEl("input", { cls: "time-event-editor__input" });
+        input.type = "number";
+        input.min = "1";
+        input.value = String(this.recurrenceInterval);
+        input.addEventListener("input", () => {
+          this.recurrenceInterval = Math.max(1, Math.trunc(Number(input.value) || 1));
+        });
+      });
+
+      this.renderField(recurrenceGrid, "End mode", (field) => {
+        const select = field.createEl("select", { cls: "time-event-editor__input" });
+        addSelectOption(select, "never", "Never");
+        addSelectOption(select, "count", "After count");
+        addSelectOption(select, "until", "Until date");
+        select.value = this.recurrenceEndMode;
+        select.addEventListener("change", () => {
+          this.recurrenceEndMode = select.value as EventRecurrenceEndMode;
+          this.refresh();
+        });
+      });
+
+      if (this.recurrenceEndMode === "count") {
+        this.renderField(form, "Occurrence count", (field) => {
+          const input = field.createEl("input", { cls: "time-event-editor__input" });
+          input.type = "number";
+          input.min = "1";
+          input.value = String(this.recurrenceCount);
+          input.addEventListener("input", () => {
+            this.recurrenceCount = Math.max(1, Math.trunc(Number(input.value) || 1));
+          });
+        });
+      }
+
+      if (this.recurrenceEndMode === "until") {
+        const untilGrid = form.createDiv({ cls: "time-event-editor__grid" });
+
+        this.renderField(untilGrid, "Until year", (field) => {
+          const input = field.createEl("input", { cls: "time-event-editor__input" });
+          input.type = "number";
+          input.value = String(this.recurrenceUntilYear);
+          input.addEventListener("input", () => {
+            this.recurrenceUntilYear = Math.trunc(Number(input.value) || 0);
+          });
+        });
+
+        this.renderField(untilGrid, "Until month", (field) => {
+          const input = field.createEl("input", { cls: "time-event-editor__input" });
+          input.type = "number";
+          input.min = "1";
+          input.value = String(this.recurrenceUntilMonthIndex + 1);
+          input.addEventListener("input", () => {
+            this.recurrenceUntilMonthIndex = Math.max(0, Math.trunc(Number(input.value) || 1) - 1);
+          });
+        });
+
+        this.renderField(untilGrid, "Until day", (field) => {
+          const input = field.createEl("input", { cls: "time-event-editor__input" });
+          input.type = "number";
+          input.min = "1";
+          input.value = String(this.recurrenceUntilDay);
+          input.addEventListener("input", () => {
+            this.recurrenceUntilDay = Math.max(1, Math.trunc(Number(input.value) || 1));
+          });
+        });
+      }
+
+      this.isTimedEvent = false;
+    }
+
     this.renderField(form, "Dot color", (field) => {
       const row = field.createDiv({ cls: "time-event-editor__color-row" });
 
@@ -571,6 +695,14 @@ export class TimeEventEditorView extends ItemView {
     this.imageRef = "";
     this.saveAsPresetName = "";
     this.selectedTagRefs = new Set<string>();
+    this.recurrenceEnabled = false;
+    this.recurrenceFrequency = "yearly";
+    this.recurrenceInterval = 1;
+    this.recurrenceEndMode = "never";
+    this.recurrenceCount = 10;
+    this.recurrenceUntilYear = date.year;
+    this.recurrenceUntilMonthIndex = date.monthIndex;
+    this.recurrenceUntilDay = date.day;
     this.applyCurrentCalendarDateRange(date);
     this.endHour = 9;
     this.endMinute = 0;
@@ -616,6 +748,18 @@ export class TimeEventEditorView extends ItemView {
       new Notice("For same-day timed events, the end time must not be before the start time.");
       return;
     }
+	
+    const recurrence = this.recurrenceEnabled
+      ? {
+          frequency: this.recurrenceFrequency,
+          interval: Math.max(1, Math.trunc(this.recurrenceInterval || 1)),
+          endMode: this.recurrenceEndMode,
+          count: this.recurrenceEndMode === "count" ? Math.max(1, Math.trunc(this.recurrenceCount || 1)) : undefined,
+          until: this.recurrenceEndMode === "until"
+            ? clampDate({ year: this.recurrenceUntilYear, monthIndex: this.recurrenceUntilMonthIndex, day: this.recurrenceUntilDay }, calendar.definition)
+            : undefined
+        }
+      : undefined;
 
     const eventId = this.editingOriginalEvent?.id ?? createEventId(title);
     const now = new Date().toISOString();
@@ -638,6 +782,7 @@ export class TimeEventEditorView extends ItemView {
       tagRefs: [...this.selectedTagRefs].sort((left, right) =>
         left.localeCompare(right, undefined, { sensitivity: "base" })
       ),
+	  recurrence,
       createdAt: this.editingOriginalEvent?.createdAt ?? now,
       updatedAt: now
     }, this.editingOriginalEvent ?? undefined);
@@ -732,6 +877,17 @@ function cloneCalendarEvent(event: CalendarEventDefinition): CalendarEventDefini
 
 function buildTagRef(packId: string, tagId: string): string {
   return `${packId}:${tagId}`;
+}
+
+function addSelectOption(
+  select: HTMLSelectElement,
+  value: string,
+  label: string
+): void {
+  const option = select.ownerDocument.createElement("option");
+  option.value = value;
+  option.text = label;
+  select.add(option);
 }
 
 function applyTagButtonState(

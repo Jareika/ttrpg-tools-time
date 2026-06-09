@@ -131,6 +131,23 @@ export class TimeDataStore {
       .filter((year) => Number.isFinite(year))
       .sort((left, right) => left - right);
   }
+  
+  async listEventYears(calendarId: string): Promise<number[]> {
+    const folderPath = normalizeStoragePath(
+      `${this.eventDetailsFolder}/${slugify(calendarId)}`
+    );
+    const folder = this.app.vault.getAbstractFileByPath(folderPath);
+
+    if (!(folder instanceof TFolder)) {
+      return [];
+    }
+
+    return folder.children
+      .filter((child): child is TFile => child instanceof TFile && child.extension === "json")
+      .map((file) => Number.parseInt(file.basename, 10))
+      .filter((year) => Number.isFinite(year))
+      .sort((left, right) => left - right);
+  }
 
   async listEventPresets(calendarId: string): Promise<EventPresetFile[]> {
     const presets = await this.readFolderFiles(
