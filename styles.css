@@ -334,6 +334,24 @@
   padding: 4px;
 }
 
+.time-plugin-settings select,
+.time-plugin-settings .dropdown,
+.workspace-leaf-content[data-type="time-calendar-view"] select,
+.workspace-leaf-content[data-type="time-day-view"] select,
+.workspace-leaf-content[data-type="time-event-editor-view"] select,
+.modal-container .modal.time-flex-modal select {
+  min-height: 36px;
+  height: 36px;
+  max-width: 100%;
+  padding: 0 30px 0 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  line-height: 1.2;
+  box-shadow: none;
+}
+
 /* ==========================================================================
    Calendar view
    ========================================================================== */
@@ -974,6 +992,56 @@
   gap: 14px;
 }
 
+.time-event-editor__grid--top {
+  align-items: start;
+}
+
+.time-event-editor__grid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.time-event-editor__field--span-3 {
+  grid-column: 1 / -1;
+}
+
+.time-event-editor__field--no-label {
+  gap: 0;
+}
+
+.time-event-editor__date-sections {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.time-event-editor__date-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--time-border);
+  border-radius: 12px;
+  background: var(--time-card-bg);
+}
+
+.time-event-editor__block-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--time-heading-soft);
+}
+
+.time-event-editor__time-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.time-event-editor__field--no-label .time-event-editor__input {
+  margin-top: 0;
+}
+
 .time-event-editor__field {
   display: flex;
   flex-direction: column;
@@ -990,6 +1058,44 @@
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 10px;
+}
+
+.time-event-editor__toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: -2px;
+}
+
+.time-event-editor__toggle-row input[type="checkbox"] {
+  margin: 0;
+}
+
+.time-event-editor__toggle-label {
+  color: var(--time-muted-text);
+}
+
+.time-event-editor__picker-display {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.time-event-editor__picker-button {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--time-button-bg);
+  color: var(--time-strong-text);
+  cursor: pointer;
+}
+
+.time-event-editor__picker-button:hover {
+  background: var(--time-accent-faint);
 }
 
 .time-event-editor__color-row {
@@ -1640,6 +1746,9 @@
 @media (max-width: 620px) {
   .time-event-editor__picker-row,
   .time-event-editor__grid,
+  .time-event-editor__grid--two,
+  .time-event-editor__date-sections,
+  .time-event-editor__time-row,
   .time-inline-fields--triple,
   .time-tag-editor__row,
   .time-moon-phase-editor__row,

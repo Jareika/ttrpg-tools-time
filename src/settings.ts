@@ -24,6 +24,7 @@ export class TimeSettingTab extends PluginSettingTab {
     const activeCalendar = this.plugin.activeCalendar;
 
     containerEl.empty();
+	containerEl.addClass("time-plugin-settings");
     this.pendingDataFolder = this.plugin.settings.dataFolder;
 
     new Setting(containerEl).setName("Calendar").setHeading();

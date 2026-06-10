@@ -1,4 +1,4 @@
-import { App, FuzzySuggestModal, ItemView, Notice, TFile, WorkspaceLeaf, type FuzzyMatch } from "obsidian";
+import { App, FuzzySuggestModal, ItemView, Notice, TFile, WorkspaceLeaf, setIcon, type FuzzyMatch } from "obsidian";
 import type TtrpgToolsTimePlugin from "./main";
 import { clampDate, getMonthsForYear, slugify } from "./calendar";
 import { createEventId } from "./events";
@@ -24,11 +24,10 @@ export class TimeEventEditorView extends ItemView {
   private description = "";
   private color = DEFAULT_EVENT_COLOR;
   private startYear = 1;
-  private isTimedEvent = false;
-  private startHour = 8;
-  private startMinute = 0;
-  private endHour = 9;
-  private endMinute = 0;
+  private startHour: number | null = null;
+  private startMinute: number | null = null;
+  private endHour: number | null = null;
+  private endMinute: number | null = null;
   private startMonthIndex = 0;
   private startDay = 1;
   private noteRef = "";
@@ -99,11 +98,10 @@ export class TimeEventEditorView extends ItemView {
     this.selectedTagRefs = new Set(event.tagRefs);
     this.applyStartDate(event.date);
     this.applyEndDate(endDate);
-    this.isTimedEvent = Boolean(startTime || endTime);
-    this.startHour = startTime?.hour ?? 8;
-    this.startMinute = startTime?.minute ?? 0;
-    this.endHour = endTime?.hour ?? this.startHour;
-    this.endMinute = endTime?.minute ?? this.startMinute;
+    this.startHour = startTime?.hour ?? null;
+    this.startMinute = startTime?.minute ?? null;
+    this.endHour = endTime?.hour ?? null;
+    this.endMinute = endTime?.minute ?? null;
     this.recurrenceEnabled = Boolean(recurrence);
     this.recurrenceFrequency = recurrence?.frequency ?? "yearly";
     this.recurrenceInterval = recurrence?.interval ?? 1;
@@ -170,11 +168,28 @@ export class TimeEventEditorView extends ItemView {
 
     const form = panel.createDiv({ cls: "time-event-editor__form" });
 
-    this.renderField(form, "Preset", (field) => {
+    const topGrid = form.createDiv({ cls: "time-event-editor__grid time-event-editor__grid--top" });
+
+    this.renderField(topGrid, "Title", (field) => {
+      const input = field.createEl("input", { cls: "time-event-editor__input" });
+      input.type = "text";
+      input.placeholder = "Event title";
+      input.value = this.title;
+      input.addEventListener("input", () => {
+        this.title = input.value;
+      });
+    }, {
+      hideLabel: true,
+      className: "time-event-editor__field--span-3 time-event-editor__field--no-label"
+    });
+
+    const quickGrid = form.createDiv({ cls: "time-event-editor__grid time-event-editor__grid--top" });
+
+    this.renderField(quickGrid, "Preset", (field) => {
       const select = field.createEl("select", { cls: "time-event-editor__input" });
       const emptyOption = select.ownerDocument.createElement("option");
       emptyOption.value = "";
-      emptyOption.text = presets.length > 0 ? "Choose saved preset" : "No saved presets";
+      emptyOption.text = "Presets";
       select.add(emptyOption);
 
       presets.forEach((preset) => {
@@ -200,24 +215,17 @@ export class TimeEventEditorView extends ItemView {
         this.selectedTagRefs = new Set(preset.tagRefs.filter((tagRef) => availableTagRefs.has(tagRef)));
         this.refresh();
       });
+    }, {
+      hideLabel: true,
+      className: "time-event-editor__field--no-label"
     });
 
-    this.renderField(form, "Title", (field) => {
-      const input = field.createEl("input", { cls: "time-event-editor__input" });
-      input.type = "text";
-      input.placeholder = "Event title";
-      input.value = this.title;
-      input.addEventListener("input", () => {
-        this.title = input.value;
-      });
-    });
-	
-    this.renderField(form, "Weather source", (field) => {
+    this.renderField(quickGrid, "Weather source", (field) => {
       const select = field.createEl("select", { cls: "time-event-editor__input" });
 
       const noneOption = select.ownerDocument.createElement("option");
       noneOption.value = "";
-      noneOption.text = "Do not write weather";
+      noneOption.text = "Weather";
       select.add(noneOption);
 
       weatherPacks.forEach((pack) => {
@@ -232,16 +240,46 @@ export class TimeEventEditorView extends ItemView {
       select.addEventListener("change", () => {
         this.selectedWeatherPackId = select.value;
       });
+    }, {
+      hideLabel: true,
+      className: "time-event-editor__field--no-label"
     });
 
-    form.createEl("h3", {
-      cls: "time-event-editor__section-title",
+    this.renderField(quickGrid, "Dot color", (field) => {
+      const row = field.createDiv({ cls: "time-event-editor__color-row" });
+
+      const colorInput = row.createEl("input", { cls: "time-event-editor__color" });
+      colorInput.type = "color";
+      colorInput.value = this.color;
+
+      const textInput = row.createEl("input", { cls: "time-event-editor__input" });
+      textInput.type = "text";
+      textInput.value = this.color;
+
+      colorInput.addEventListener("input", () => {
+        this.color = colorInput.value;
+        textInput.value = colorInput.value;
+      });
+      textInput.addEventListener("change", () => {
+        const next = normalizeColor(textInput.value);
+        this.color = next;
+        colorInput.value = next;
+        textInput.value = next;
+      });
+    }, {
+      hideLabel: true,
+      className: "time-event-editor__field--no-label"
+    });
+
+    const dateSections = form.createDiv({ cls: "time-event-editor__date-sections" });
+
+    const startBlock = dateSections.createDiv({ cls: "time-event-editor__date-block" });
+    startBlock.createDiv({
+      cls: "time-event-editor__block-title",
       text: "Start"
     });
 
-    const startDateGrid = form.createDiv({ cls: "time-event-editor__grid" });
-
-    this.renderField(startDateGrid, "Year", (field) => {
+    this.renderField(startBlock, "Year", (field) => {
       const input = field.createEl("input", { cls: "time-event-editor__input" });
       input.type = "number";
       input.value = String(this.startYear);
@@ -250,7 +288,7 @@ export class TimeEventEditorView extends ItemView {
       });
     });
 
-    this.renderField(startDateGrid, "Month", (field) => {
+    this.renderField(startBlock, "Month", (field) => {
       const select = field.createEl("select", { cls: "time-event-editor__input" });
       getMonthsForYear(calendar.definition, this.startYear).forEach((month, index) => {
         const option = select.ownerDocument.createElement("option");
@@ -264,7 +302,7 @@ export class TimeEventEditorView extends ItemView {
       });
     });
 
-    this.renderField(startDateGrid, "Day", (field) => {
+    this.renderField(startBlock, "Day", (field) => {
       const input = field.createEl("input", { cls: "time-event-editor__input" });
       input.type = "number";
       input.min = "1";
@@ -274,14 +312,13 @@ export class TimeEventEditorView extends ItemView {
       });
     });
 
-    form.createEl("h3", {
-      cls: "time-event-editor__section-title",
+    const endBlock = dateSections.createDiv({ cls: "time-event-editor__date-block" });
+    endBlock.createDiv({
+      cls: "time-event-editor__block-title",
       text: "End"
     });
 
-    const endDateGrid = form.createDiv({ cls: "time-event-editor__grid" });
-
-    this.renderField(endDateGrid, "Year", (field) => {
+    this.renderField(endBlock, "Year", (field) => {
       const input = field.createEl("input", { cls: "time-event-editor__input" });
       input.type = "number";
       input.value = String(this.endYear);
@@ -290,7 +327,7 @@ export class TimeEventEditorView extends ItemView {
       });
     });
 
-    this.renderField(endDateGrid, "Month", (field) => {
+    this.renderField(endBlock, "Month", (field) => {
       const select = field.createEl("select", { cls: "time-event-editor__input" });
       getMonthsForYear(calendar.definition, this.endYear).forEach((month, index) => {
         const option = select.ownerDocument.createElement("option");
@@ -304,7 +341,7 @@ export class TimeEventEditorView extends ItemView {
       });
     });
 
-    this.renderField(endDateGrid, "Day", (field) => {
+    this.renderField(endBlock, "Day", (field) => {
       const input = field.createEl("input", { cls: "time-event-editor__input" });
       input.type = "number";
       input.min = "1";
@@ -315,81 +352,64 @@ export class TimeEventEditorView extends ItemView {
     });
 	
     if (calendar.definition.time.enabled) {
-      this.renderField(form, "Timed event", (field) => {
-        const toggle = field.createEl("input");
-        toggle.type = "checkbox";
-        toggle.checked = this.isTimedEvent;
-        toggle.addEventListener("change", () => {
-          this.isTimedEvent = toggle.checked;
-          this.refresh();
-        });
+      const timeBlock = dateSections.createDiv({ cls: "time-event-editor__date-block" });
+      timeBlock.createDiv({
+        cls: "time-event-editor__block-title",
+        text: "Time"
       });
 
-      if (this.isTimedEvent) {
-        form.createEl("h3", {
-          cls: "time-event-editor__section-title",
-          text: "Time"
-        });
+      const hourRow = timeBlock.createDiv({ cls: "time-event-editor__time-row" });
+      this.renderTimeSelectField(
+        hourRow,
+        "Start hour",
+        this.startHour,
+        calendar.definition.time.hoursPerDay,
+        (value) => {
+          this.startHour = value;
+        }
+      );
+      this.renderTimeSelectField(
+        hourRow,
+        "End hour",
+        this.endHour,
+        calendar.definition.time.hoursPerDay,
+        (value) => {
+          this.endHour = value;
+        }
+      );
 
-        const timeGrid = form.createDiv({ cls: "time-event-editor__grid" });
-
-        this.renderField(timeGrid, "Start hour", (field) => {
-          const input = field.createEl("input", { cls: "time-event-editor__input" });
-          input.type = "number";
-          input.min = "0";
-          input.value = String(this.startHour);
-          input.addEventListener("input", () => {
-            this.startHour = Math.max(0, Math.trunc(Number(input.value) || 0));
-          });
-        });
-
-        this.renderField(timeGrid, "Start minute", (field) => {
-          const input = field.createEl("input", { cls: "time-event-editor__input" });
-          input.type = "number";
-          input.min = "0";
-          input.value = String(this.startMinute);
-          input.addEventListener("input", () => {
-            this.startMinute = Math.max(0, Math.trunc(Number(input.value) || 0));
-          });
-        });
-
-        this.renderField(timeGrid, "End hour", (field) => {
-          const input = field.createEl("input", { cls: "time-event-editor__input" });
-          input.type = "number";
-          input.min = "0";
-          input.value = String(this.endHour);
-          input.addEventListener("input", () => {
-            this.endHour = Math.max(0, Math.trunc(Number(input.value) || 0));
-          });
-        });
-
-        this.renderField(timeGrid, "End minute", (field) => {
-          const input = field.createEl("input", { cls: "time-event-editor__input" });
-          input.type = "number";
-          input.min = "0";
-          input.value = String(this.endMinute);
-          input.addEventListener("input", () => {
-            this.endMinute = Math.max(0, Math.trunc(Number(input.value) || 0));
-          });
-        });
-      }
-    } else {
-      this.isTimedEvent = false;
+      const minuteRow = timeBlock.createDiv({ cls: "time-event-editor__time-row" });
+      this.renderTimeSelectField(
+        minuteRow,
+        "Start minute",
+        this.startMinute,
+        calendar.definition.time.minutesPerHour,
+        (value) => {
+          this.startMinute = value;
+        }
+      );
+      this.renderTimeSelectField(
+        minuteRow,
+        "End minute",
+        this.endMinute,
+        calendar.definition.time.minutesPerHour,
+        (value) => {
+          this.endMinute = value;
+        }
+      );
     }
 
-    form.createEl("h3", {
-      cls: "time-event-editor__section-title",
-      text: "Repeat"
+    const repeatToggleRow = form.createDiv({ cls: "time-event-editor__toggle-row" });
+    const repeatToggle = repeatToggleRow.createEl("input");
+    repeatToggle.type = "checkbox";
+    repeatToggle.checked = this.recurrenceEnabled;
+    repeatToggle.addEventListener("change", () => {
+      this.recurrenceEnabled = repeatToggle.checked;
+      this.refresh();
     });
-
-    this.renderField(form, "Repeat event", (field) => {
-      const toggle = field.createEl("input");
-      toggle.type = "checkbox";
-      toggle.checked = this.recurrenceEnabled;
-      toggle.addEventListener("change", () => {
-        this.recurrenceEnabled = toggle.checked;
-        this.refresh();
-      });
+    repeatToggleRow.createEl("label", {
+      cls: "time-event-editor__toggle-label",
+      text: "Repeat event"
     });
 
     if (this.recurrenceEnabled) {
@@ -473,33 +493,7 @@ export class TimeEventEditorView extends ItemView {
           });
         });
       }
-
-      this.isTimedEvent = false;
     }
-
-    this.renderField(form, "Dot color", (field) => {
-      const row = field.createDiv({ cls: "time-event-editor__color-row" });
-
-      const colorInput = row.createEl("input", { cls: "time-event-editor__color" });
-      colorInput.type = "color";
-      colorInput.value = this.color;
-
-      const textInput = row.createEl("input", { cls: "time-event-editor__input" });
-      textInput.type = "text";
-      textInput.value = this.color;
-
-      colorInput.addEventListener("input", () => {
-        this.color = colorInput.value;
-        textInput.value = colorInput.value;
-      });
-
-      textInput.addEventListener("change", () => {
-        const next = normalizeColor(textInput.value);
-        this.color = next;
-        colorInput.value = next;
-        textInput.value = next;
-      });
-    });
 
     this.renderField(form, "Description", (field) => {
       const textarea = field.createEl("textarea", { cls: "time-event-editor__textarea" });
@@ -510,21 +504,23 @@ export class TimeEventEditorView extends ItemView {
         this.description = textarea.value;
       });
     });
-	
-    this.renderFilePicker(form, "Image", this.imageRef, "No image selected", () => {
+
+    const filesGrid = form.createDiv({ cls: "time-event-editor__grid time-event-editor__grid--two" });
+
+    this.renderFilePicker(filesGrid, "Image", this.imageRef, "No image selected", () => {
       this.pickImageFile();
     }, () => {
       this.imageRef = "";
       this.refresh();
     });
 
-    this.renderFilePicker(form, "Linked note", this.noteRef, "No note selected", () => {
+    this.renderFilePicker(filesGrid, "Linked note", this.noteRef, "No note selected", () => {
       this.pickNoteFile();
     }, () => {
       this.noteRef = "";
       this.refresh();
     });
-	
+
     if (linkedTagPacks.length > 0) {
       const tagsSection = form.createDiv({ cls: "time-event-editor__tags" });
       tagsSection.createEl("h3", {
@@ -562,7 +558,7 @@ export class TimeEventEditorView extends ItemView {
         });
       });
     }
-	
+
     this.renderField(form, "Save as preset", (field) => {
       const input = field.createEl("input", { cls: "time-event-editor__input" });
       input.type = "text";
@@ -621,21 +617,27 @@ export class TimeEventEditorView extends ItemView {
       const input = row.createEl("input", { cls: "time-event-editor__input" });
       input.type = "text";
       input.readOnly = true;
-      input.value = value;
+      input.value = getDisplayFileName(value);
       input.placeholder = placeholder;
+      input.title = value || placeholder;
+      input.addClass("time-event-editor__picker-display");
 
       const browseButton = row.createEl("button", {
-        cls: "time-manager__button",
-        text: "Browse"
+        cls: "time-event-editor__picker-button"
       });
       browseButton.type = "button";
+      browseButton.setAttr("aria-label", `Browse ${label.toLowerCase()}`);
+      browseButton.title = "Browse";
+      setIcon(browseButton, "folder-open");
       browseButton.addEventListener("click", onBrowse);
 
       const clearButton = row.createEl("button", {
-        cls: "time-manager__button",
-        text: "Clear"
+        cls: "time-event-editor__picker-button"
       });
       clearButton.type = "button";
+      clearButton.setAttr("aria-label", `Clear ${label.toLowerCase()}`);
+      clearButton.title = "Clear";
+      setIcon(clearButton, "x");
       clearButton.addEventListener("click", onClear);
     });
   }
@@ -643,14 +645,50 @@ export class TimeEventEditorView extends ItemView {
   private renderField(
     parent: HTMLElement,
     label: string,
-    render: (field: HTMLElement) => void
+    render: (field: HTMLElement) => void,
+    options?: {
+      hideLabel?: boolean;
+      className?: string;
+    }
   ): void {
-    const field = parent.createDiv({ cls: "time-event-editor__field" });
-    field.createEl("label", {
-      cls: "time-event-editor__label",
-      text: label
-    });
+    const classNames = ["time-event-editor__field"];
+
+    if (options?.className) {
+      classNames.push(options.className);
+    }
+
+    const field = parent.createDiv({ cls: classNames.join(" ") });
+
+    if (!options?.hideLabel) {
+      field.createEl("label", {
+        cls: "time-event-editor__label",
+        text: label
+      });
+    }
+
     render(field);
+  }
+  
+  private renderTimeSelectField(
+    parent: HTMLElement,
+    label: string,
+    value: number | null,
+    optionCount: number,
+    onChange: (value: number | null) => void
+  ): void {
+    this.renderField(parent, label, (field) => {
+      const select = field.createEl("select", { cls: "time-event-editor__input" });
+      addSelectOption(select, "", "-");
+
+      for (let index = 0; index < optionCount; index += 1) {
+        addSelectOption(select, String(index), formatTimeSelectValue(index, optionCount));
+      }
+
+      select.value = value === null ? "" : String(value);
+      select.addEventListener("change", () => {
+        onChange(select.value === "" ? null : Math.max(0, Number(select.value) || 0));
+      });
+    });
   }
 
   private seedFromCalendar(calendar: CalendarFile): void {
@@ -683,12 +721,11 @@ export class TimeEventEditorView extends ItemView {
     const date = clampDate(seedDate ?? calendar.state.cursorDate, calendar.definition);
 
     this.selectedPresetId = "";
-	this.selectedWeatherPackId = "";
-	this.editingOriginalEvent = null;
+    this.selectedWeatherPackId = "";
+    this.editingOriginalEvent = null;
     this.title = "";
-    this.isTimedEvent = false;
-    this.startHour = 8;
-    this.startMinute = 0;
+    this.startHour = null;
+    this.startMinute = null;
     this.description = "";
     this.color = DEFAULT_EVENT_COLOR;
     this.noteRef = "";
@@ -704,8 +741,8 @@ export class TimeEventEditorView extends ItemView {
     this.recurrenceUntilMonthIndex = date.monthIndex;
     this.recurrenceUntilDay = date.day;
     this.applyCurrentCalendarDateRange(date);
-    this.endHour = 9;
-    this.endMinute = 0;
+    this.endHour = null;
+    this.endMinute = null;
     this.initialized = true;
   }
 
@@ -730,13 +767,36 @@ export class TimeEventEditorView extends ItemView {
       return;
     }
 
-    const normalizedStartTime =
-      calendar.definition.time.enabled && this.isTimedEvent
-        ? clampTimeOfDay({ hour: this.startHour, minute: this.startMinute }, calendar.definition)
-        : undefined;
+    const hasAnyTimeValue =
+      calendar.definition.time.enabled &&
+      [this.startHour, this.startMinute, this.endHour, this.endMinute].some((value) => value !== null);
+
+    if (hasAnyTimeValue && (this.startHour === null || this.startMinute === null)) {
+      new Notice("If you use time, please choose both start hour and start minute.");
+      return;
+    }
+
+    if (
+      hasAnyTimeValue &&
+      ((this.endHour === null && this.endMinute !== null) ||
+        (this.endHour !== null && this.endMinute === null))
+    ) {
+      new Notice("Please choose both end hour and end minute, or leave both on '-'.");
+      return;
+    }
+
+    const normalizedStartTime = hasAnyTimeValue
+      ? clampTimeOfDay(
+          { hour: this.startHour ?? 0, minute: this.startMinute ?? 0 },
+          calendar.definition
+        )
+      : undefined;
     const normalizedEndTime =
-      calendar.definition.time.enabled && this.isTimedEvent
-        ? clampTimeOfDay({ hour: this.endHour, minute: this.endMinute }, calendar.definition)
+      hasAnyTimeValue && this.endHour !== null && this.endMinute !== null
+        ? clampTimeOfDay(
+            { hour: this.endHour, minute: this.endMinute },
+            calendar.definition
+          )
         : undefined;
 
     if (
@@ -844,6 +904,21 @@ const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "b
 
 function normalizeColor(value: string): string {
   return /^#[0-9a-fA-F]{6}$/.test(value) ? value : DEFAULT_EVENT_COLOR;
+}
+
+function formatTimeSelectValue(value: number, optionCount: number): string {
+  const width = Math.max(2, String(Math.max(0, optionCount - 1)).length);
+  return String(value).padStart(width, "0");
+}
+
+function getDisplayFileName(path: string): string {
+  const trimmed = path.trim();
+
+  if (trimmed.length === 0) {
+    return "";
+  }
+
+  return trimmed.split("/").pop() ?? trimmed;
 }
 
 function compareFantasyDates(left: FantasyDate, right: FantasyDate): number {
