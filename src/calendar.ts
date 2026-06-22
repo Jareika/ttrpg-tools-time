@@ -1,4 +1,5 @@
 import type {
+  CalendarTimelineStyle,
   CalendarFile,
   CalendarState,
   CalendarViewMode,
@@ -142,6 +143,7 @@ export function normalizeCalendarFile(raw: unknown): CalendarFile {
       record.autoGenerateLinkedWeatherReferences,
       DEFAULT_CALENDAR_FILE.autoGenerateLinkedWeatherReferences ?? false
     ),
+	timeline: readTimelineStyle(record.timeline),
     markers: readMarkers(record.markers),
     description: readOptionalString(record.description)
   };
@@ -557,6 +559,82 @@ function readMoonCycleAnchor(value: unknown): FantasyMoon["cycleAnchor"] {
   return value === "month" ? "month" : "absolute";
 }
 
+function readTimelineStyle(raw: unknown): CalendarTimelineStyle | undefined {
+  const record = asRecord(raw);
+  const colors = readTimelineStyleColors(record.colors);
+  const monthNames = readTimelineMonthNames(record.monthNames ?? record.months);
+
+  const result: CalendarTimelineStyle = {
+    name: readOptionalString(record.name),
+    align:
+      record.align === "right"
+        ? "right"
+        : record.align === "left"
+          ? "left"
+          : undefined,
+    maxSummaryLines: readOptionalInteger(record.maxSummaryLines),
+    cardWidth: readOptionalInteger(record.cardWidth),
+    cardHeight: readOptionalInteger(record.cardHeight),
+    boxHeight: readOptionalInteger(record.boxHeight),
+    sideGapLeft: readOptionalInteger(record.sideGapLeft),
+    sideGapRight: readOptionalInteger(record.sideGapRight),
+    colors,
+    monthNames: monthNames.length > 0 ? monthNames : undefined
+  };
+
+  return hasTimelineStyleValues(result) ? result : undefined;
+}
+
+function readTimelineStyleColors(
+  raw: unknown
+): CalendarTimelineStyle["colors"] | undefined {
+  const record = asRecord(raw);
+
+  const colors: NonNullable<CalendarTimelineStyle["colors"]> = {
+    bg: readOptionalString(record.bg),
+    accent: readOptionalString(record.accent),
+    hover: readOptionalString(record.hover),
+    title: readOptionalString(record.title),
+    date: readOptionalString(record.date)
+  };
+
+  return Object.values(colors).some((value) => typeof value === "string" && value.length > 0)
+    ? colors
+    : undefined;
+}
+
+function readTimelineMonthNames(raw: unknown): string[] {
+  if (typeof raw === "string") {
+    return raw
+      .split(/[,\n;]+/g)
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+  }
+
+  return readStringArray(raw);
+}
+
+function readOptionalInteger(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.trunc(value)
+    : undefined;
+}
+
+function hasTimelineStyleValues(value: CalendarTimelineStyle): boolean {
+  return (
+    typeof value.name === "string" ||
+    typeof value.align === "string" ||
+    typeof value.maxSummaryLines === "number" ||
+    typeof value.cardWidth === "number" ||
+    typeof value.cardHeight === "number" ||
+    typeof value.boxHeight === "number" ||
+    typeof value.sideGapLeft === "number" ||
+    typeof value.sideGapRight === "number" ||
+    (Array.isArray(value.monthNames) && value.monthNames.length > 0) ||
+    Object.values(value.colors ?? {}).some((entry) => typeof entry === "string" && entry.length > 0)
+  );
+}
+
 function readMonthDay(
   raw: unknown,
   fallback: FantasyMonthDay,
@@ -647,6 +725,14 @@ export function cloneMarkers(markers: DayMarker[]): DayMarker[] {
   return markers.map(cloneMarker);
 }
 
+function cloneTimelineStyle(style: CalendarTimelineStyle): CalendarTimelineStyle {
+  return {
+    ...style,
+    colors: style.colors ? { ...style.colors } : undefined,
+    monthNames: style.monthNames ? [...style.monthNames] : undefined
+  };
+}
+
 export function cloneCalendarDefinition(
   definition: FantasyCalendarDefinition
 ): FantasyCalendarDefinition {
@@ -688,8 +774,9 @@ export function cloneCalendarFile(calendar: CalendarFile): CalendarFile {
     linkedTagPackIds: [...calendar.linkedTagPackIds],
     linkedWeatherPackIds: [...calendar.linkedWeatherPackIds],
     defaultWeatherPackId: calendar.defaultWeatherPackId,
-    markers: cloneMarkers(calendar.markers)
-	,autoGenerateLinkedWeatherReferences: calendar.autoGenerateLinkedWeatherReferences
+    timeline: calendar.timeline ? cloneTimelineStyle(calendar.timeline) : undefined,
+    markers: cloneMarkers(calendar.markers),
+    autoGenerateLinkedWeatherReferences: calendar.autoGenerateLinkedWeatherReferences
   };
 }
 

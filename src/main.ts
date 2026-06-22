@@ -9,6 +9,7 @@ import {
   expandRecurringEventForYear,
   buildEventIndexYearFile,
   findEventById,
+  estimateRecurringEventEndYear,
   normalizeCalendarEventDefinition,
   sortEvents
 } from "./events";
@@ -40,6 +41,12 @@ import type {
   WeatherSourceType,
   WeatherYearFile
 } from "./types";
+import {
+  TIMELINE_FILTER_VIEW_TYPE,
+  TIMELINE_VIEW_TYPE,
+  TimeTimelineFilterView,
+  TimeTimelineView
+} from "./timeline-view";
 import { CALENDAR_VIEW_TYPE, TimeCalendarView } from "./view";
 import {
   createWeatherReferenceYear,
@@ -64,6 +71,9 @@ export default class TtrpgToolsTimePlugin extends Plugin {
   private readonly weatherPackCache = new Map<string, WeatherPackFile>();
   private readonly weatherReferenceCache = new Map<string, WeatherReferenceYearFile>();
   private readonly weatherYearCache = new Map<string, WeatherYearFile>();
+  private timelineLayoutMode: "vertical" | "horizontal" = "vertical";
+  private readonly timelineIncludedTagRefs = new Set<string>();
+  private readonly timelineExcludedTagRefs = new Set<string>();
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -83,17 +93,35 @@ export default class TtrpgToolsTimePlugin extends Plugin {
       EVENT_EDITOR_VIEW_TYPE,
       (leaf) => new TimeEventEditorView(leaf, this)
     );
+	
+    this.registerView(
+      TIMELINE_VIEW_TYPE,
+      (leaf) => new TimeTimelineView(leaf, this)
+    );
 
-    this.addRibbonIcon("calendar", "Open ttrpg tools: time", () => {
+    this.registerView(
+      TIMELINE_FILTER_VIEW_TYPE,
+      (leaf) => new TimeTimelineFilterView(leaf, this)
+    );
+
+    this.addRibbonIcon("calendar", "Open TTRPG Tools - Time", () => {
       void this.activateView();
     });
 
-    this.addRibbonIcon("sun", "Open ttrpg tools: time day view", () => {
+    this.addRibbonIcon("sun", "Open TTRPG Tools - Time: day view", () => {
       void this.activateDayView();
     });
 
-    this.addRibbonIcon("plus-circle", "Open ttrpg tools: time event editor", () => {
+    this.addRibbonIcon("plus-circle", "Open TTRPG Tools - Time: event editor", () => {
       void this.activateEventEditorView();
+    });
+	
+    this.addRibbonIcon("milestone", "Open TTRPG Tools - Time: timeline", () => {
+      void this.activateTimelineView();
+    });
+
+    this.addRibbonIcon("tags", "Open TTRPG Tools - Time: timeline filters", () => {
+      void this.activateTimelineFilterView();
     });
 
     this.addCommand({
@@ -117,6 +145,22 @@ export default class TtrpgToolsTimePlugin extends Plugin {
       name: "Open event editor",
       callback: () => {
         void this.activateEventEditorView();
+      }
+    });
+
+    this.addCommand({
+      id: "open-timeline-side-pane",
+      name: "Open timeline side pane",
+      callback: () => {
+        void this.activateTimelineView();
+      }
+    });
+
+    this.addCommand({
+      id: "open-timeline-filter-pane",
+      name: "Open timeline filter pane",
+      callback: () => {
+        void this.activateTimelineFilterView();
       }
     });
 
@@ -214,11 +258,14 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     this.app.workspace.getLeavesOfType(CALENDAR_VIEW_TYPE).forEach((leaf) => leaf.detach());
     this.app.workspace.getLeavesOfType(CALENDAR_DAY_VIEW_TYPE).forEach((leaf) => leaf.detach());
     this.app.workspace.getLeavesOfType(EVENT_EDITOR_VIEW_TYPE).forEach((leaf) => leaf.detach());
+    this.app.workspace.getLeavesOfType(TIMELINE_VIEW_TYPE).forEach((leaf) => leaf.detach());
+    this.app.workspace.getLeavesOfType(TIMELINE_FILTER_VIEW_TYPE).forEach((leaf) => leaf.detach());
   }
 
   async initializeData(): Promise<void> {
     await this.dataStore.ensureBaseFolders();
     await this.ensureDefaultWeatherPack();
+	this.clearTimelineTagFilters(false);
 
     const calendars = await this.dataStore.listCalendars();
 
@@ -233,6 +280,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
         : null) ?? calendars[0];
 
     this.activeCalendar = active;
+	this.clearTimelineTagFilters(false);
 	
     if (active) {
       await this.ensureWeatherReferencesForCalendarYear(active, active.state.cursorDate.year);
@@ -381,6 +429,36 @@ export default class TtrpgToolsTimePlugin extends Plugin {
 
     await this.app.workspace.revealLeaf(leaf);
   }
+  
+  async activateTimelineView(): Promise<void> {
+    let leaf = this.app.workspace.getLeavesOfType(TIMELINE_VIEW_TYPE)[0];
+
+    if (!leaf) {
+      leaf = this.app.workspace.getRightLeaf(true);
+    }
+
+    if (!leaf) return;
+
+    await leaf.setViewState({
+      type: TIMELINE_VIEW_TYPE,
+      active: true
+    });
+
+    await this.app.workspace.revealLeaf(leaf);
+  }
+
+  async activateTimelineFilterView(): Promise<void> {
+    let leaf = this.app.workspace.getLeavesOfType(TIMELINE_FILTER_VIEW_TYPE)[0];
+
+    if (!leaf) {
+      leaf = this.app.workspace.getRightLeaf(true);
+    }
+
+    if (!leaf) return;
+
+    await leaf.setViewState({ type: TIMELINE_FILTER_VIEW_TYPE, active: true });
+    await this.app.workspace.revealLeaf(leaf);
+  }
 
   async activateDayView(): Promise<void> {
     let leaf = this.app.workspace.getLeavesOfType(CALENDAR_DAY_VIEW_TYPE)[0];
@@ -459,6 +537,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     }
 
     this.activeCalendar = calendar;
+	this.clearTimelineTagFilters(false);
     await this.replaceSettings({
       ...this.settings,
       activeCalendarId: calendar.id
@@ -479,6 +558,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
         activeCalendarId: normalized.id
       });
     }
+	this.clearTimelineTagFilters(false);
 	
     if (this.activeCalendar?.id === normalized.id) {
       await this.ensureWeatherReferencesForCalendarYear(normalized, normalized.state.cursorDate.year);
@@ -684,9 +764,74 @@ export default class TtrpgToolsTimePlugin extends Plugin {
       "pack"
     );
   }
+  
+  getTimelineLayoutMode(): "vertical" | "horizontal" {
+    return this.timelineLayoutMode;
+  }
+
+  async setTimelineLayoutMode(mode: "vertical" | "horizontal"): Promise<void> {
+    if (this.timelineLayoutMode === mode) {
+      return;
+    }
+
+    this.timelineLayoutMode = mode;
+    this.refreshOpenViews();
+  }
+
+  getTimelineTagFilterSnapshot(): { include: string[]; exclude: string[] } {
+    return {
+      include: [...this.timelineIncludedTagRefs],
+      exclude: [...this.timelineExcludedTagRefs]
+    };
+  }
+
+  isTimelineTagIncluded(tagRef: string): boolean {
+    return this.timelineIncludedTagRefs.has(tagRef);
+  }
+
+  isTimelineTagExcluded(tagRef: string): boolean {
+    return this.timelineExcludedTagRefs.has(tagRef);
+  }
+
+  toggleTimelineIncludedTag(tagRef: string): void {
+    if (this.timelineIncludedTagRefs.has(tagRef)) {
+      this.timelineIncludedTagRefs.delete(tagRef);
+    } else {
+      this.timelineIncludedTagRefs.add(tagRef);
+      this.timelineExcludedTagRefs.delete(tagRef);
+    }
+
+    this.refreshOpenViews();
+  }
+
+  toggleTimelineExcludedTag(tagRef: string): void {
+    if (this.timelineExcludedTagRefs.has(tagRef)) {
+      this.timelineExcludedTagRefs.delete(tagRef);
+    } else {
+      this.timelineExcludedTagRefs.add(tagRef);
+      this.timelineIncludedTagRefs.delete(tagRef);
+    }
+
+    this.refreshOpenViews();
+  }
+
+  clearTimelineTagFilters(refresh = true): void {
+    this.timelineIncludedTagRefs.clear();
+    this.timelineExcludedTagRefs.clear();
+
+    if (refresh) {
+      this.refreshOpenViews();
+    }
+  }
 
   refreshOpenViews(): void {
-    [CALENDAR_VIEW_TYPE, CALENDAR_DAY_VIEW_TYPE, EVENT_EDITOR_VIEW_TYPE].forEach((viewType) => {
+    [
+      CALENDAR_VIEW_TYPE,
+      CALENDAR_DAY_VIEW_TYPE,
+      EVENT_EDITOR_VIEW_TYPE,
+      TIMELINE_VIEW_TYPE,
+      TIMELINE_FILTER_VIEW_TYPE
+    ].forEach((viewType) => {
       this.app.workspace.getLeavesOfType(viewType).forEach((leaf) => {
         const candidate = leaf.view as { refresh?: () => void };
         if (typeof candidate.refresh === "function") {
@@ -762,6 +907,53 @@ export default class TtrpgToolsTimePlugin extends Plugin {
         : await this.dataStore.loadCalendarById(calendarId))?.definition;
 
     return buildEventIndexYearFile(detail, calendarDefinition);
+  }
+  
+  async loadTimelineEvents(calendarId: string): Promise<CalendarEventDefinition[]> {
+    const calendar =
+      this.activeCalendar?.id === calendarId
+        ? this.activeCalendar
+        : await this.dataStore.loadCalendarById(calendarId);
+
+    if (!calendar) {
+      return [];
+    }
+
+    const sourceYears = await this.dataStore.listEventYears(calendarId);
+    const rawSourceFiles = await Promise.all(
+      sourceYears.map((year) => this.dataStore.loadEventYear(calendarId, year))
+    );
+
+    const fallbackHorizon = Math.max(calendar.state.todayDate.year, calendar.state.cursorDate.year) + 25;
+    const yearCandidates = [calendar.state.todayDate.year, calendar.state.cursorDate.year];
+
+    rawSourceFiles.forEach((file) => {
+      file?.events.forEach((event) => {
+        yearCandidates.push(event.date.year, event.endDate?.year ?? event.date.year);
+
+        if (event.recurrence) {
+          yearCandidates.push(
+            estimateRecurringEventEndYear(event, calendar.definition, fallbackHorizon)
+          );
+        }
+      });
+    });
+
+    const minYear = Math.min(...yearCandidates);
+    const maxYear = Math.max(...yearCandidates);
+    const deduped = new Map<string, CalendarEventDefinition>();
+
+    for (let year = minYear; year <= maxYear; year += 1) {
+      const file = await this.loadEventYear(calendarId, year);
+      if (!file) continue;
+      file.events.forEach((event) => {
+        if (!deduped.has(event.id)) {
+          deduped.set(event.id, event);
+        }
+      });
+    }
+
+    return [...deduped.values()].sort(sortEvents);
   }
 
   async ensureEventYearFile(calendarId: string, year: number): Promise<EventYearFile> {

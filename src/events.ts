@@ -266,6 +266,37 @@ export function expandRecurringEventForYear(
   return results;
 }
 
+export function estimateRecurringEventEndYear(
+  event: CalendarEventDefinition,
+  definition: FantasyCalendarDefinition,
+  fallbackEndYear = event.date.year + 25
+): number {
+  if (!event.recurrence) {
+    return event.endDate?.year ?? event.date.year;
+  }
+
+  const recurrence = event.recurrence;
+  const durationDays = getEventDurationDays(event, definition);
+
+  if (recurrence.endMode === "until" && recurrence.until) {
+    const untilDate = clampDate(recurrence.until, definition);
+    return shiftDay(untilDate, durationDays - 1, definition).year;
+  }
+
+  if (recurrence.endMode === "count") {
+    const occurrenceCount = Math.max(1, Math.trunc(recurrence.count || 1));
+    const lastStart = shiftOccurrenceStart(
+      clampDate(event.date, definition),
+      recurrence,
+      Math.max(0, occurrenceCount - 1),
+      definition
+    );
+    return shiftDay(lastStart, durationDays - 1, definition).year;
+  }
+
+  return Math.max(event.endDate?.year ?? event.date.year, Math.trunc(fallbackEndYear || event.date.year));
+}
+
 function getFastForwardOccurrenceCount(
   event: CalendarEventDefinition,
   recurrence: EventRecurrenceRule,

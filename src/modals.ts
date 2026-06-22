@@ -18,6 +18,7 @@ import {
 import { getMoonPhaseLabel } from "./moons";
 import { WeatherPackPickerModal } from "./weather-pack-modals";
 import type {
+  CalendarTimelineStyle,
   CalendarFile,
   CalendarViewMode,
   FantasyLeapDayRule,
@@ -25,6 +26,7 @@ import type {
   FantasyWeatherProfileMapping,
   MoonCycleAnchor,
   MoonPhaseImageDefinition,
+  TimelineAlign,
   TagPackFile
 } from "./types";
 import type TtrpgToolsTimePlugin from "./main";
@@ -122,6 +124,7 @@ export class CalendarEditorModal extends Modal {
   private readonly selectedTagPackIds: Set<string>;
   private readonly selectedWeatherPackIds: Set<string>;
   private autoGenerateLinkedWeatherReferences: boolean;
+  private timeline: CalendarTimelineStyle | undefined;
 
   constructor(
     plugin: TtrpgToolsTimePlugin,
@@ -204,6 +207,7 @@ export class CalendarEditorModal extends Modal {
     this.selectedTagPackIds = new Set(source?.linkedTagPackIds ?? []);
     this.selectedWeatherPackIds = new Set(source?.linkedWeatherPackIds ?? []);
     this.autoGenerateLinkedWeatherReferences = source?.autoGenerateLinkedWeatherReferences ?? false;
+	this.timeline = cloneCalendarTimelineStyle(source?.timeline);
   }
 
   onOpen(): void {
@@ -456,6 +460,19 @@ export class CalendarEditorModal extends Modal {
       (await this.plugin.listTagPacks()).map((pack) => ({ id: pack.id, name: pack.name })),
       this.selectedTagPackIds
     );
+	
+    new Setting(contentEl)
+      .setName("Timeline style")
+      .setDesc(buildTimelineStyleSummary(this.timeline))
+      .addButton((button) => {
+        button.setButtonText("Configure");
+        button.onClick(() => {
+          new TimelineStyleModal(this.app, this.timeline, (nextTimeline) => {
+            this.timeline = nextTimeline;
+            void this.render();
+          }).open();
+        });
+      });
 
     const footer = contentEl.createDiv({ cls: "time-modal__footer" });
 
@@ -794,6 +811,7 @@ export class CalendarEditorModal extends Modal {
       },
 	  defaultWeatherPackId: this.defaultWeatherPackId,
 	  autoGenerateLinkedWeatherReferences: this.autoGenerateLinkedWeatherReferences,
+	  timeline: cloneCalendarTimelineStyle(this.timeline),
       linkedTagPackIds: [...this.selectedTagPackIds],
 	  linkedWeatherPackIds: [...this.selectedWeatherPackIds],
       markers: this.existing?.markers ?? []
@@ -803,6 +821,232 @@ export class CalendarEditorModal extends Modal {
     this.close();
     this.onSaved?.();
     new Notice(`Saved calendar "${calendar.name}".`);
+  }
+}
+
+class TimelineStyleModal extends Modal {
+  private readonly onSave: (timeline: CalendarTimelineStyle | undefined) => void;
+  private draft: CalendarTimelineStyle;
+  private monthNamesText: string;
+
+  constructor(
+    app: App,
+    timeline: CalendarTimelineStyle | undefined,
+    onSave: (timeline: CalendarTimelineStyle | undefined) => void
+  ) {
+    super(app);
+    this.onSave = onSave;
+    this.draft = cloneCalendarTimelineStyle(timeline) ?? {};
+    this.draft.colors = { ...(this.draft.colors ?? {}) };
+    this.monthNamesText = formatTimelineMonthNames(this.draft.monthNames);
+  }
+
+  onOpen(): void {
+    prepareFlexibleModal(this);
+    this.render();
+  }
+
+  private render(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("time-modal");
+
+    contentEl.createEl("h2", {
+      text: this.draft.name?.trim() ? "Edit timeline" : "Create timeline"
+    });
+
+    new Setting(contentEl)
+      .setName("Name")
+      .setDesc("Example: travel")
+      .addText((text) => {
+        text.setValue(this.draft.name ?? "");
+        text.onChange((value) => {
+          this.draft.name = value.trim() || undefined;
+        });
+      });
+
+    new Setting(contentEl)
+      .setName("Alignment")
+      .setDesc("Where the image is placed in the cross layout.")
+      .addDropdown((dropdown) => {
+        const current: TimelineAlign = this.draft.align ?? "left";
+        dropdown.addOption("left", "Left (image left)");
+        dropdown.addOption("right", "Right (image right)");
+        dropdown.setValue(current);
+        dropdown.onChange((value) => {
+          this.draft.align = value === "right" ? "right" : "left";
+        });
+      });
+
+    const addOptionalNumberField = (
+      name: string,
+      value: number | undefined,
+      placeholder: string,
+      assign: (value: number | undefined) => void
+    ) => {
+      new Setting(contentEl)
+        .setName(name)
+        .setDesc("Empty = use defaults")
+        .addText((text) => {
+          text.setPlaceholder(placeholder);
+          text.setValue(value != null ? String(value) : "");
+          text.onChange((inputValue) => {
+            const trimmed = inputValue.trim();
+            if (trimmed.length === 0) {
+              assign(undefined);
+              return;
+            }
+
+            const parsed = Number(trimmed);
+            if (Number.isFinite(parsed)) {
+              assign(Math.trunc(parsed));
+            }
+          });
+        });
+    };
+
+    addOptionalNumberField(
+      "Max. summary lines",
+      this.draft.maxSummaryLines,
+      "7",
+      (value) => {
+        this.draft.maxSummaryLines = value;
+      }
+    );
+
+    addOptionalNumberField(
+      "Image width",
+      this.draft.cardWidth,
+      "200",
+      (value) => {
+        this.draft.cardWidth = value;
+      }
+    );
+
+    addOptionalNumberField(
+      "Image height",
+      this.draft.cardHeight,
+      "315",
+      (value) => {
+        this.draft.cardHeight = value;
+      }
+    );
+
+    addOptionalNumberField(
+      "Box height",
+      this.draft.boxHeight,
+      "289",
+      (value) => {
+        this.draft.boxHeight = value;
+      }
+    );
+
+    addOptionalNumberField(
+      "Inner left padding",
+      this.draft.sideGapLeft,
+      "40",
+      (value) => {
+        this.draft.sideGapLeft = value;
+      }
+    );
+
+    addOptionalNumberField(
+      "Inner right padding",
+      this.draft.sideGapRight,
+      "40",
+      (value) => {
+        this.draft.sideGapRight = value;
+      }
+    );
+
+    new Setting(contentEl)
+      .setName("Box background")
+      .setDesc("Empty = default/theme color")
+      .addColorPicker((picker) => {
+        picker.setValue(this.draft.colors?.bg || "");
+        picker.onChange((value) => {
+          this.draft.colors ??= {};
+          this.draft.colors.bg = value || undefined;
+        });
+      });
+
+    new Setting(contentEl)
+      .setName("Box border")
+      .setDesc("Empty = default/theme color")
+      .addColorPicker((picker) => {
+        picker.setValue(this.draft.colors?.accent || "");
+        picker.onChange((value) => {
+          this.draft.colors ??= {};
+          this.draft.colors.accent = value || undefined;
+        });
+      });
+
+    new Setting(contentEl)
+      .setName("Hover background")
+      .setDesc("Empty = default/theme color")
+      .addColorPicker((picker) => {
+        picker.setValue(this.draft.colors?.hover || "");
+        picker.onChange((value) => {
+          this.draft.colors ??= {};
+          this.draft.colors.hover = value || undefined;
+        });
+      });
+
+    new Setting(contentEl)
+      .setName("Title color")
+      .setDesc("Empty = default/theme color")
+      .addColorPicker((picker) => {
+        picker.setValue(this.draft.colors?.title || "");
+        picker.onChange((value) => {
+          this.draft.colors ??= {};
+          this.draft.colors.title = value || undefined;
+        });
+      });
+
+    new Setting(contentEl)
+      .setName("Date color")
+      .setDesc("Empty = default/theme color")
+      .addColorPicker((picker) => {
+        picker.setValue(this.draft.colors?.date || "");
+        picker.onChange((value) => {
+          this.draft.colors ??= {};
+          this.draft.colors.date = value || undefined;
+        });
+      });
+
+    new Setting(contentEl)
+      .setName("Month names")
+      .setDesc("Set own month names. Separate them with comma.")
+      .addTextArea((text) => {
+        text.inputEl.rows = 3;
+        text.setValue(this.monthNamesText);
+        text.onChange((value) => {
+          this.monthNamesText = value;
+        });
+      });
+
+    const footer = contentEl.createDiv({ cls: "time-modal__footer" });
+
+    new Setting(footer).addButton((button) => {
+      button.setButtonText("Save");
+      button.setCta();
+      button.onClick(() => this.submit());
+    });
+
+    new Setting(footer).addButton((button) => {
+      button.setButtonText("Cancel");
+      button.onClick(() => this.close());
+    });
+  }
+
+  private submit(): void {
+    const nextTimeline = normalizeCalendarTimelineStyle({
+      ...this.draft,
+      monthNames: parseTimelineMonthNames(this.monthNamesText)
+    });
+
+    this.onSave(nextTimeline);
+    this.close();
   }
 }
 
@@ -3080,4 +3324,133 @@ function createManagerButton(
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(Math.trunc(value), min), max);
+}
+
+function cloneCalendarTimelineStyle(
+  timeline: CalendarTimelineStyle | undefined
+): CalendarTimelineStyle | undefined {
+  if (!timeline) {
+    return undefined;
+  }
+
+  return {
+    ...timeline,
+    colors: timeline.colors ? { ...timeline.colors } : undefined,
+    monthNames: timeline.monthNames ? [...timeline.monthNames] : undefined
+  };
+}
+
+function normalizeCalendarTimelineStyle(
+  timeline: CalendarTimelineStyle | undefined
+): CalendarTimelineStyle | undefined {
+  if (!timeline) {
+    return undefined;
+  }
+
+  const colors = normalizeCalendarTimelineColors(timeline.colors);
+  const monthNames = (timeline.monthNames ?? [])
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
+  const result: CalendarTimelineStyle = {
+    name: timeline.name?.trim() || undefined,
+    align:
+      timeline.align === "right"
+        ? "right"
+        : timeline.align === "left"
+          ? "left"
+          : undefined,
+    maxSummaryLines: normalizeOptionalInteger(timeline.maxSummaryLines),
+    cardWidth: normalizeOptionalInteger(timeline.cardWidth),
+    cardHeight: normalizeOptionalInteger(timeline.cardHeight),
+    boxHeight: normalizeOptionalInteger(timeline.boxHeight),
+    sideGapLeft: normalizeOptionalInteger(timeline.sideGapLeft),
+    sideGapRight: normalizeOptionalInteger(timeline.sideGapRight),
+    colors,
+    monthNames: monthNames.length > 0 ? monthNames : undefined
+  };
+
+  return hasCalendarTimelineStyleValues(result) ? result : undefined;
+}
+
+function normalizeCalendarTimelineColors(
+  colors: CalendarTimelineStyle["colors"] | undefined
+): CalendarTimelineStyle["colors"] | undefined {
+  if (!colors) {
+    return undefined;
+  }
+
+  const result = {
+    bg: normalizeOptionalColor(colors.bg),
+    accent: normalizeOptionalColor(colors.accent),
+    hover: normalizeOptionalColor(colors.hover),
+    title: normalizeOptionalColor(colors.title),
+    date: normalizeOptionalColor(colors.date)
+  };
+
+  return Object.values(result).some((value) => typeof value === "string" && value.length > 0)
+    ? result
+    : undefined;
+}
+
+function parseTimelineMonthNames(value: string): string[] | undefined {
+  const entries = value
+    .split(/[,\n;]+/g)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
+  return entries.length > 0 ? entries : undefined;
+}
+
+function formatTimelineMonthNames(monthNames: string[] | undefined): string {
+  return monthNames?.join(", ") ?? "";
+}
+
+function normalizeOptionalInteger(value: number | undefined): number | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.trunc(value)
+    : undefined;
+}
+
+function normalizeOptionalColor(value: string | undefined): string | undefined {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
+}
+
+function hasCalendarTimelineStyleValues(value: CalendarTimelineStyle): boolean {
+  return (
+    typeof value.name === "string" ||
+    typeof value.align === "string" ||
+    typeof value.maxSummaryLines === "number" ||
+    typeof value.cardWidth === "number" ||
+    typeof value.cardHeight === "number" ||
+    typeof value.boxHeight === "number" ||
+    typeof value.sideGapLeft === "number" ||
+    typeof value.sideGapRight === "number" ||
+    (Array.isArray(value.monthNames) && value.monthNames.length > 0) ||
+    Object.values(value.colors ?? {}).some((entry) => typeof entry === "string" && entry.length > 0)
+  );
+}
+
+function buildTimelineStyleSummary(
+  timeline: CalendarTimelineStyle | undefined
+): string {
+  if (!timeline) {
+    return "Uses default timeline layout values for this calendar.";
+  }
+
+  const parts: string[] = [];
+
+  if (timeline.name?.trim()) {
+    parts.push(timeline.name.trim());
+  }
+
+  parts.push(timeline.align === "right" ? "image right" : "image left");
+
+  if (Array.isArray(timeline.monthNames) && timeline.monthNames.length > 0) {
+    parts.push(`${timeline.monthNames.length} custom month names`);
+  }
+
+  return parts.join(" • ");
 }

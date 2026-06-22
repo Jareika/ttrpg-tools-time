@@ -44,6 +44,24 @@ export class TimeSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("Open timeline side pane")
+      .setDesc("Open or focus the event timeline view.")
+      .addButton((button) =>
+        button.setButtonText("Open").onClick(() => {
+          void this.plugin.activateTimelineView();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Open timeline filter pane")
+      .setDesc("Open or focus the timeline tag filter pane. Click = include, double-click = exclude.")
+      .addButton((button) =>
+        button.setButtonText("Open").onClick(() => {
+          void this.plugin.activateTimelineFilterView();
+        })
+      );
+
+    new Setting(containerEl)
       .setName("Data folder")
       .setDesc("Base folder for calendar and tag-pack JSON files.")
       .addText((text) => {

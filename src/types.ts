@@ -20,6 +20,7 @@ export type WeatherCondition =
 export type WeatherSourceType = "pack" | "event" | "manual";
 export type WeatherProfileCycleReset = "none" | "intercalation-cycle";
 export type MoonCycleAnchor = "absolute" | "month";
+export type TimelineAlign = "left" | "right";
 
 export type EventRecurrenceFrequency = "daily" | "weekly" | "monthly" | "yearly";
 export type EventRecurrenceEndMode = "never" | "count" | "until";
@@ -28,6 +29,27 @@ export interface FantasyTimeConfig {
   enabled: boolean;
   hoursPerDay: number;
   minutesPerHour: number;
+}
+
+export interface TimelineStyleColors {
+  bg?: string;
+  accent?: string;
+  hover?: string;
+  title?: string;
+  date?: string;
+}
+
+export interface CalendarTimelineStyle {
+  name?: string;
+  align?: TimelineAlign;
+  maxSummaryLines?: number;
+  cardWidth?: number;
+  cardHeight?: number;
+  boxHeight?: number;
+  sideGapLeft?: number;
+  sideGapRight?: number;
+  colors?: TimelineStyleColors;
+  monthNames?: string[];
 }
 
 export interface FantasyTimeOfDay {
@@ -140,6 +162,7 @@ export interface CalendarFile {
   markers: DayMarker[];
   autoGenerateLinkedWeatherReferences?: boolean;
   defaultWeatherPackId?: string;
+  timeline?: CalendarTimelineStyle;
   description?: string;
 }
 

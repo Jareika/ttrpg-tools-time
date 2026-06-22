@@ -41,7 +41,7 @@ export class TimeCalendarView extends ItemView {
   }
 
   getDisplayText(): string {
-    return this.plugin.activeCalendar?.definition.name ?? "TTRPG Tools: Time";
+    return this.plugin.activeCalendar?.definition.name ?? "TTRPG Tools - Time";
   }
 
   getIcon(): string {
