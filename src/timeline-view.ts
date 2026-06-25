@@ -7,7 +7,6 @@ import type {
   CalendarFile,
   FantasyDate,
   TimelineAlign,
-  FantasyMonth,
   TagPackFile
 } from "./types";
 
@@ -290,39 +289,38 @@ export class TimeTimelineView extends ItemView {
     row.style.setProperty("--tl-hover", timelineStyle.colors.hover ?? "var(--interactive-accent)");
 
     const grid = row.createDiv({ cls: `tl-grid ${item.imageSrc ? "has-media" : "no-media"}` });
-    grid.style.setProperty("--tl-media-w", `${timelineStyle.cardWidth}px`);
+    grid.setCssProps({
+      "--tl-media-w": `${timelineStyle.cardWidth}px`
+    });
 
     let media: HTMLElement | null = null;
 
     if (item.imageSrc) {
-      media = grid.createDiv({ cls: "tl-media" });
-      media.style.width = `${timelineStyle.cardWidth}px`;
-      media.style.height = `${timelineStyle.cardHeight}px`;
-      media.style.position = "relative";
+      media = grid.createDiv({ cls: "tl-media time-timeline__media-frame" });
+      media.setCssProps({
+        "--time-tl-media-h": `${timelineStyle.cardHeight}px`
+      });
 
-      const img = media.createEl("img", {
+      media.createEl("img", {
+		cls: "time-timeline__media-image",
         attr: {
           src: item.imageSrc,
           alt: item.title,
           loading: "lazy"
         }
       });
-
-      img.style.width = "100%";
-      img.style.height = "100%";
-      img.style.objectFit = "cover";
-      img.style.display = "block";
     }
 
     const box = grid.createDiv({
-      cls: `tl-box callout ${item.imageSrc ? "has-media" : "no-media"}`
+      cls: `tl-box callout time-timeline__box ${item.imageSrc ? "has-media" : "no-media"}`
     });
 
-    box.style.height = `${timelineStyle.boxHeight}px`;
-    box.style.boxSizing = "border-box";
-    box.style.setProperty("--tl-bg", timelineStyle.colors.bg ?? "var(--background-primary)");
-    box.style.setProperty("--tl-accent", accentColor);
-    box.style.setProperty("--tl-hover", timelineStyle.colors.hover ?? "var(--interactive-accent)");
+    box.setCssProps({
+      "--time-tl-box-h": `${timelineStyle.boxHeight}px`,
+      "--tl-bg": timelineStyle.colors.bg ?? "var(--background-primary)",
+      "--tl-accent": accentColor,
+      "--tl-hover": timelineStyle.colors.hover ?? "var(--interactive-accent)"
+    });
 
     const titleEl = box.createEl("h1", {
       cls: "tl-title tl-title-colored",
@@ -334,10 +332,10 @@ export class TimeTimelineView extends ItemView {
       text: formatRangeLabel(calendar, item.start, item.end, timelineStyle)
     });
 
-    const summaryEl = box.createDiv({ cls: "tl-summary" });
-    summaryEl.addClass("tl-clamp");
-    summaryEl.style.setProperty("--tl-summary-lines", String(timelineStyle.maxSummaryLines));
-    summaryEl.style.setProperty("--tl-summary-lh", "1.4");
+    const summaryEl = box.createDiv({ cls: "tl-summary tl-clamp time-timeline__summary" });
+    summaryEl.setCssProps({
+      "--tl-summary-lines": String(timelineStyle.maxSummaryLines)
+    });
     summaryEl.textContent = item.summary ?? "";
 
     if (timelineStyle.colors.title) {
@@ -626,7 +624,7 @@ export class TimeTimelineFilterView extends ItemView {
   }
 
   getDisplayText(): string {
-    return "Timeline Filters";
+    return "Timeline filters";
   }
 
   getIcon(): string {
@@ -666,33 +664,15 @@ export class TimeTimelineFilterView extends ItemView {
     }
 
     const panel = root.createDiv({ cls: "time-tag-filter__panel" });
-    const header = panel.createDiv({ cls: "time-tag-filter__header" });
+    const content = panel.createDiv({ cls: "time-tag-filter__content" });
+    const filterSnapshot = this.plugin.getTimelineTagFilterSnapshot();
 
-    header.createEl("h2", {
-      cls: "time-tag-filter__title",
-      text: "Timeline filters"
-    });
-
-    header.createEl("p", {
-      cls: "time-tag-filter__meta",
-      text: "Click = include, double-click = exclude. Exclude always wins."
-    });
-
-    const toolbar = header.createDiv({ cls: "time-tag-filter__toolbar" });
-    createActionButton(toolbar, "Open timeline", () => {
-      void this.plugin.activateTimelineView();
-    });
-
-    if (
-      this.plugin.getTimelineTagFilterSnapshot().include.length > 0 ||
-      this.plugin.getTimelineTagFilterSnapshot().exclude.length > 0
-    ) {
+    if (filterSnapshot.include.length > 0 || filterSnapshot.exclude.length > 0) {
+      const toolbar = content.createDiv({ cls: "time-tag-filter__toolbar" });
       createActionButton(toolbar, "Clear filters", () => {
         this.plugin.clearTimelineTagFilters();
       });
     }
-
-    const content = panel.createDiv({ cls: "time-tag-filter__content" });
 
     if (tagInfos.length === 0) {
       const empty = content.createDiv({ cls: "time-calendar__empty" });
@@ -703,7 +683,7 @@ export class TimeTimelineFilterView extends ItemView {
       return;
     }
 
-    const filters = this.plugin.getTimelineTagFilterSnapshot();
+    const filters = filterSnapshot;
     const included = new Set(filters.include);
     const excluded = new Set(filters.exclude);
 

@@ -4,6 +4,7 @@
 
 .workspace-leaf-content[data-type="time-calendar-view"],
 .workspace-leaf-content[data-type="time-day-view"],
+.workspace-leaf-content[data-type="time-control-view"],
 .workspace-leaf-content[data-type="time-event-editor-view"],
 .modal-container .modal.time-flex-modal {
   --time-accent: #cf655f;
@@ -38,6 +39,7 @@
 
 .theme-light .workspace-leaf-content[data-type="time-calendar-view"],
 .theme-light .workspace-leaf-content[data-type="time-day-view"],
+.theme-light .workspace-leaf-content[data-type="time-control-view"],
 .theme-light .workspace-leaf-content[data-type="time-event-editor-view"],
 .theme-light .modal-container .modal.time-flex-modal {
   --time-app-bg: var(--background-primary);
@@ -65,6 +67,7 @@
 
 .theme-dark .workspace-leaf-content[data-type="time-calendar-view"],
 .theme-dark .workspace-leaf-content[data-type="time-day-view"],
+.theme-dark .workspace-leaf-content[data-type="time-control-view"],
 .theme-dark .workspace-leaf-content[data-type="time-event-editor-view"],
 .theme-dark .modal-container .modal.time-flex-modal {
   --time-accent: #df8f88;
@@ -97,12 +100,14 @@
 
 .workspace-leaf-content[data-type="time-calendar-view"] .view-content,
 .workspace-leaf-content[data-type="time-day-view"] .view-content,
+.workspace-leaf-content[data-type="time-control-view"] .view-content,
 .workspace-leaf-content[data-type="time-event-editor-view"] .view-content {
   padding: 0;
 }
 
 .time-calendar-view,
 .time-day-view,
+.time-control-view,
 .time-event-editor-view {
   height: 100%;
   container-type: inline-size;
@@ -110,6 +115,7 @@
 
 .time-calendar,
 .time-day,
+.time-control,
 .time-event-editor {
   min-height: 100%;
   height: 100%;
@@ -128,6 +134,10 @@
   padding: 10px;
 }
 
+.time-control {
+  padding: 10px;
+}
+
 .time-event-editor {
   padding: 14px;
 }
@@ -138,6 +148,7 @@
 
 .time-calendar__panel,
 .time-day__panel,
+.time-control__panel,
 .time-event-editor__panel,
 .time-calendar__empty {
   background: var(--time-panel-bg);
@@ -173,7 +184,9 @@
 .time-tag-editor__delete,
 .time-season-editor__delete,
 .time-collection-editor__delete,
-.time-manager__toggle {
+.time-manager__toggle,
+.time-control__button,
+.time-control-insert__calendar-button {
   transition:
     background-color 120ms ease,
     border-color 120ms ease,
@@ -338,6 +351,7 @@
 .time-plugin-settings .dropdown,
 .workspace-leaf-content[data-type="time-calendar-view"] select,
 .workspace-leaf-content[data-type="time-day-view"] select,
+.workspace-leaf-content[data-type="time-control-view"] select,
 .workspace-leaf-content[data-type="time-event-editor-view"] select,
 .modal-container .modal.time-flex-modal select {
   min-height: 36px;
@@ -350,6 +364,215 @@
   color: var(--text-normal);
   line-height: 1.2;
   box-shadow: none;
+}
+
+/* ==========================================================================
+   Control view
+   ========================================================================== */
+
+.time-control__panel {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  border-radius: 16px;
+  padding: 12px;
+}
+
+.time-control__header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.time-control__title {
+  margin: 0;
+  font-size: 1.4rem;
+  line-height: 1.1;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--time-heading);
+}
+
+.time-control__meta,
+.time-control__clock-note {
+  color: var(--time-muted-text);
+}
+
+.time-control__buttons {
+  display: grid;
+  gap: 10px;
+}
+
+.time-control__quick-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(42px, 1fr));
+  gap: 8px;
+}
+
+.time-control__time-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 120px), 1fr));
+  gap: 8px;
+}
+
+.time-control__button,
+.time-control-insert__calendar-button {
+  border: 1px solid rgba(207, 101, 95, 0.2);
+  border-radius: 10px;
+  background: var(--time-button-bg);
+  color: var(--time-strong-text);
+  cursor: pointer;
+}
+
+.time-control__button {
+  width: 100%;
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.time-control__button--icon-only {
+  min-height: 0;
+  aspect-ratio: 1 / 1;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  grid-template-columns: 1fr;
+}
+
+.time-control__button--icon-only .time-control__button-label {
+  display: none;
+}
+
+.time-control__button--icon-only .time-control__button-icon,
+.time-control__button--icon-only .time-control__button-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.time-control__button--time {
+  min-height: 42px;
+}
+
+.time-control__button--label-only {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.time-control__button--label-only .time-control__button-label {
+  text-align: center;
+}
+
+.time-control__button:hover:not(:disabled),
+.time-control-insert__calendar-button:hover {
+  background: var(--time-accent-faint);
+  transform: translateY(-1px);
+}
+
+.time-control__button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.time-control__button-icon {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+}
+
+.time-control__button-icon:empty {
+  display: none;
+}
+
+.time-control__button-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.time-control__button-label {
+  min-width: 0;
+  font-weight: 600;
+}
+
+.time-control__divider {
+  height: 1px;
+  margin: 2px 0;
+  background: var(--time-border);
+}
+
+.time-control__section-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--time-heading-soft);
+}
+
+.time-control__clock {
+  padding: 10px 12px;
+  border: 1px solid var(--time-border);
+  border-radius: 12px;
+  background: var(--time-card-bg);
+}
+
+.time-control__clock-date {
+  color: var(--time-muted-text);
+}
+
+.time-control__clock-time {
+  margin-top: 2px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--time-heading);
+}
+
+.time-control-insert__calendar-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.time-control-insert__calendar-button {
+  min-height: 34px;
+  padding: 6px 12px;
+}
+
+.time-control-insert__calendar-button.is-selected {
+  background: var(--time-accent);
+  border-color: var(--time-accent);
+  color: #fff8ef;
+}
+
+/* ==========================================================================
+   Settings: time buttons
+   ========================================================================== */
+
+.time-settings-button-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.time-settings-button-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.3fr) 120px 90px 90px 38px;
+  align-items: center;
+  gap: 8px;
+}
+
+.time-settings-button-toolbar {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
 }
 
 /* ==========================================================================
@@ -1661,8 +1884,17 @@
   .time-day {
     padding: 8px;
   }
+  
+  .time-control {
+    padding: 8px;
+  }
 
   .time-day__panel {
+    gap: 8px;
+    padding: 10px;
+  }
+  
+  .time-control__panel {
     gap: 8px;
     padding: 10px;
   }
@@ -1752,6 +1984,7 @@
   .time-inline-fields--triple,
   .time-tag-editor__row,
   .time-moon-phase-editor__row,
+  .time-settings-button-row,
   .time-weather-pack-months__header,
   .time-weather-pack-months__row,
   .time-collection-editor__row--weekday,
@@ -1761,7 +1994,8 @@
   .time-collection-editor__row--moon,
   .time-collection-editor__row--leap-rule,
   .time-collection-editor__row--moon-header,
-  .time-season-editor__row {
+  .time-season-editor__row,
+  .time-settings-button-header {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -1807,7 +2041,7 @@
 }
 
 .time-tag-filter {
-  padding: 10px;
+  padding: 6px;
 }
 
 .time-timeline__panel,
@@ -1828,6 +2062,10 @@
 .time-tag-filter__header {
   padding: 14px 16px 12px;
   border-bottom: 1px solid var(--time-border, var(--background-modifier-border));
+}
+
+.time-tag-filter__header {
+  display: none;
 }
 
 .time-timeline__title,
@@ -1851,7 +2089,11 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 0px;
+}
+
+.time-embedded-timeline .time-timeline__toolbar {
+  margin-bottom: 14px;
 }
 
 .time-timeline__content,
@@ -1868,8 +2110,8 @@
 .time-tag-filter__content {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 12px 14px 14px;
+  gap: 10px;
+  padding: 10px;
 }
 
 .time-tag-filter__group {
@@ -1969,6 +2211,19 @@
   z-index: 2;
 }
 
+.time-timeline-view .simple-timeline .time-timeline__media-frame {
+  position: relative;
+  width: var(--tl-media-w, 200px);
+  height: var(--time-tl-media-h, 315px);
+}
+
+.time-timeline-view .simple-timeline .time-timeline__media-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
 .time-timeline-view .simple-timeline .tl-box.callout {
   grid-area: box;
   position: relative;
@@ -1986,6 +2241,11 @@
     background-color 0.15s ease,
     border-color 0.15s ease,
     box-shadow 0.15s ease;
+}
+
+.time-timeline-view .simple-timeline .time-timeline__box {
+  box-sizing: border-box;
+  height: var(--time-tl-box-h, 289px);
 }
 
 .time-timeline-view .simple-timeline .tl-row:not(.tl-align-right) .tl-box.callout.has-media {
@@ -2070,6 +2330,10 @@
 
 .time-timeline-view .simple-timeline .tl-box .tl-summary.tl-clamp {
   max-height: calc(var(--tl-summary-lines, 7) * var(--tl-summary-lh, 1.4) * 1em);
+}
+
+.time-timeline-view .simple-timeline .time-timeline__summary {
+  --tl-summary-lh: 1.4;
 }
 
 .time-timeline-view .simple-timeline .tl-media:hover + .tl-box.callout.has-media,

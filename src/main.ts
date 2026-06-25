@@ -1,8 +1,10 @@
-import { App, Notice, Plugin, TFile } from "obsidian";
+import { App, MarkdownView, Notice, Plugin, TFile, WorkspaceLeaf } from "obsidian";
 import {
+  normalizeFantasyClockState,
   normalizeCalendarFile,
   normalizeSettings
 } from "./calendar";
+import { CONTROL_VIEW_TYPE, TimeControlView } from "./control-view";
 import { CALENDAR_DAY_VIEW_TYPE, TimeDayView } from "./day-view";
 import { EVENT_EDITOR_VIEW_TYPE, TimeEventEditorView } from "./event-editor-view";
 import {
@@ -32,8 +34,11 @@ import type {
   EventPresetFile,
   EventIndexYearFile,
   EventYearFile,
+  FantasyClockEntry,
+  FantasyClockState,
   FantasyDate,
   TagPackFile,
+  TimeAdvanceButtonConfig,
   TtrpgToolsTimeSettings,
   WeatherDayEntry,
   WeatherPackFile,
@@ -47,6 +52,12 @@ import {
   TimeTimelineFilterView,
   TimeTimelineView
 } from "./timeline-view";
+import {
+  buildTimelinePublishPayloadFromBlock,
+  renderTimelineCodeBlock,
+  type TimeTimelineLayout,
+  type TimeTimelinePublishPayload
+} from "./timeline-embed";
 import { CALENDAR_VIEW_TYPE, TimeCalendarView } from "./view";
 import {
   createWeatherReferenceYear,
@@ -71,6 +82,8 @@ export default class TtrpgToolsTimePlugin extends Plugin {
   private readonly weatherPackCache = new Map<string, WeatherPackFile>();
   private readonly weatherReferenceCache = new Map<string, WeatherReferenceYearFile>();
   private readonly weatherYearCache = new Map<string, WeatherYearFile>();
+  private fantasyClock: FantasyClockState = { byCalendarId: {} };
+  private lastMarkdownLeaf: WorkspaceLeaf | null = null;
   private timelineLayoutMode: "vertical" | "horizontal" = "vertical";
   private readonly timelineIncludedTagRefs = new Set<string>();
   private readonly timelineExcludedTagRefs = new Set<string>();
@@ -95,6 +108,11 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     );
 	
     this.registerView(
+      CONTROL_VIEW_TYPE,
+      (leaf) => new TimeControlView(leaf, this)
+    );
+	
+    this.registerView(
       TIMELINE_VIEW_TYPE,
       (leaf) => new TimeTimelineView(leaf, this)
     );
@@ -103,6 +121,14 @@ export default class TtrpgToolsTimePlugin extends Plugin {
       TIMELINE_FILTER_VIEW_TYPE,
       (leaf) => new TimeTimelineFilterView(leaf, this)
     );
+	
+    this.registerMarkdownCodeBlockProcessor("time-timeline-cal", (src, el, ctx) => {
+      void renderTimelineCodeBlock(this, src, "cal", el, ctx);
+    });
+
+    this.registerMarkdownCodeBlockProcessor("time-timeline-h", (src, el, ctx) => {
+      void renderTimelineCodeBlock(this, src, "h", el, ctx);
+    });
 
     this.addRibbonIcon("calendar", "Open TTRPG Tools - Time", () => {
       void this.activateView();
@@ -112,15 +138,19 @@ export default class TtrpgToolsTimePlugin extends Plugin {
       void this.activateDayView();
     });
 
-    this.addRibbonIcon("plus-circle", "Open TTRPG Tools - Time: event editor", () => {
+    this.addRibbonIcon("plus-circle", "Open TTRPG Tools - Time: Event editor", () => {
       void this.activateEventEditorView();
     });
 	
-    this.addRibbonIcon("milestone", "Open TTRPG Tools - Time: timeline", () => {
+    this.addRibbonIcon("command", "Open TTRPG Tools - Time: Controls", () => {
+      void this.activateControlView();
+    });
+	
+    this.addRibbonIcon("milestone", "Open TTRPG Tools - Time: Timeline", () => {
       void this.activateTimelineView();
     });
 
-    this.addRibbonIcon("tags", "Open TTRPG Tools - Time: timeline filters", () => {
+    this.addRibbonIcon("tags", "Open TTRPG Tools - Time: Timeline filters", () => {
       void this.activateTimelineFilterView();
     });
 
@@ -147,10 +177,18 @@ export default class TtrpgToolsTimePlugin extends Plugin {
         void this.activateEventEditorView();
       }
     });
+	
+    this.addCommand({
+      id: "open-control-pane",
+      name: "Open control pane",
+      callback: () => {
+        void this.activateControlView();
+      }
+    });
 
     this.addCommand({
       id: "open-timeline-side-pane",
-      name: "Open timeline side pane",
+      name: "Open timeline view",
       callback: () => {
         void this.activateTimelineView();
       }
@@ -237,6 +275,12 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     });
 
     this.addSettingTab(new TimeSettingTab(this.app, this));
+	
+    this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf) => {
+      if (leaf?.view instanceof MarkdownView) {
+        this.lastMarkdownLeaf = leaf;
+      }
+    }));
 
     this.app.workspace.onLayoutReady(() => {
       void (async () => {
@@ -258,6 +302,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     this.app.workspace.getLeavesOfType(CALENDAR_VIEW_TYPE).forEach((leaf) => leaf.detach());
     this.app.workspace.getLeavesOfType(CALENDAR_DAY_VIEW_TYPE).forEach((leaf) => leaf.detach());
     this.app.workspace.getLeavesOfType(EVENT_EDITOR_VIEW_TYPE).forEach((leaf) => leaf.detach());
+	this.app.workspace.getLeavesOfType(CONTROL_VIEW_TYPE).forEach((leaf) => leaf.detach());
     this.app.workspace.getLeavesOfType(TIMELINE_VIEW_TYPE).forEach((leaf) => leaf.detach());
     this.app.workspace.getLeavesOfType(TIMELINE_FILTER_VIEW_TYPE).forEach((leaf) => leaf.detach());
   }
@@ -434,7 +479,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     let leaf = this.app.workspace.getLeavesOfType(TIMELINE_VIEW_TYPE)[0];
 
     if (!leaf) {
-      leaf = this.app.workspace.getRightLeaf(true);
+      leaf = this.app.workspace.getLeaf(true);
     }
 
     if (!leaf) return;
@@ -457,6 +502,23 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     if (!leaf) return;
 
     await leaf.setViewState({ type: TIMELINE_FILTER_VIEW_TYPE, active: true });
+    await this.app.workspace.revealLeaf(leaf);
+  }
+  
+  async activateControlView(): Promise<void> {
+    let leaf = this.app.workspace.getLeavesOfType(CONTROL_VIEW_TYPE)[0];
+
+    if (!leaf) {
+      leaf = this.app.workspace.getRightLeaf(false);
+    }
+
+    if (!leaf) return;
+
+    await leaf.setViewState({
+      type: CONTROL_VIEW_TYPE,
+      active: true
+    });
+
     await this.app.workspace.revealLeaf(leaf);
   }
 
@@ -516,16 +578,132 @@ export default class TtrpgToolsTimePlugin extends Plugin {
 
   async loadSettings(): Promise<void> {
     const raw = (await this.loadData()) as unknown;
-    this.settings = normalizeSettings(raw);
+    const record = asRecord(raw);
+    const settingsSource = isRecord(record.settings) ? record.settings : raw;
+    this.settings = normalizeSettings(settingsSource);
+    this.fantasyClock = normalizeFantasyClockState(record.fantasyClock);
   }
 
   async saveSettings(): Promise<void> {
-    await this.saveData(this.settings);
+    await this.saveData({
+      settings: this.settings,
+      fantasyClock: this.fantasyClock
+    });
   }
 
   async replaceSettings(nextSettings: TtrpgToolsTimeSettings): Promise<void> {
     this.settings = normalizeSettings(nextSettings);
     await this.saveSettings();
+  }
+  
+  getConfiguredTimeAdvanceButtons(): TimeAdvanceButtonConfig[] {
+    return this.settings.controlTimeButtons
+      .filter((button) => button.hours !== 0 || button.minutes !== 0)
+      .map((button) => ({ ...button }));
+  }
+
+  getFantasyClock(calendar: CalendarFile | null = this.activeCalendar): FantasyClockEntry | null {
+    if (!calendar || !calendar.definition.time.enabled) {
+      return null;
+    }
+
+    const minutesPerHour = Math.max(1, Math.trunc(calendar.definition.time.minutesPerHour || 60));
+    const hoursPerDay = Math.max(1, Math.trunc(calendar.definition.time.hoursPerDay || 24));
+    const totalMinutesPerDay = hoursPerDay * minutesPerHour;
+    const stored = this.fantasyClock.byCalendarId[calendar.id];
+
+    if (!stored) {
+      return {
+        hour: 0,
+        minute: 0
+      };
+    }
+
+    const totalMinutes = mod(
+      Math.trunc(stored.hour || 0) * minutesPerHour + Math.trunc(stored.minute || 0),
+      totalMinutesPerDay
+    );
+
+    return {
+      hour: Math.floor(totalMinutes / minutesPerHour),
+      minute: totalMinutes % minutesPerHour
+    };
+  }
+
+  async advanceFantasyClock(hoursDelta: number, minutesDelta = 0): Promise<void> {
+    const calendar = this.activeCalendar;
+
+    if (!calendar) {
+      new Notice("No active calendar loaded.");
+      return;
+    }
+
+    if (!calendar.definition.time.enabled) {
+      new Notice("The active calendar has no time system enabled.");
+      return;
+    }
+
+    const minutesPerHour = Math.max(1, Math.trunc(calendar.definition.time.minutesPerHour || 60));
+    const hoursPerDay = Math.max(1, Math.trunc(calendar.definition.time.hoursPerDay || 24));
+    const totalMinutesPerDay = hoursPerDay * minutesPerHour;
+    const currentClock = this.getFantasyClock(calendar) ?? { hour: 0, minute: 0 };
+    const currentTotalMinutes = currentClock.hour * minutesPerHour + currentClock.minute;
+    const deltaMinutes =
+      Math.trunc(hoursDelta || 0) * minutesPerHour + Math.trunc(minutesDelta || 0);
+    const nextAbsoluteMinutes = currentTotalMinutes + deltaMinutes;
+    const nextMinuteOfDay = mod(nextAbsoluteMinutes, totalMinutesPerDay);
+    const dayDelta = Math.floor(nextAbsoluteMinutes / totalMinutesPerDay);
+
+    this.fantasyClock.byCalendarId[calendar.id] = {
+      hour: Math.floor(nextMinuteOfDay / minutesPerHour),
+      minute: nextMinuteOfDay % minutesPerHour
+    };
+
+    if (dayDelta !== 0) {
+      const nextTodayDate = shiftDay(calendar.state.todayDate, dayDelta, calendar.definition);
+      await this.saveCalendar(
+        {
+          ...calendar,
+          state: {
+            ...calendar.state,
+            todayDate: nextTodayDate,
+            cursorDate: nextTodayDate
+          }
+        },
+        true
+      );
+      return;
+    }
+
+    await this.saveSettings();
+    this.refreshOpenViews();
+  }
+
+  async insertTextAtLastMarkdownCursor(text: string): Promise<boolean> {
+    const targetLeaf = this.lastMarkdownLeaf;
+
+    if (targetLeaf?.view instanceof MarkdownView) {
+      await this.app.workspace.revealLeaf(targetLeaf);
+
+      const editor = targetLeaf.view.editor;
+      const cursor = editor.getCursor();
+      editor.replaceRange(text, cursor);
+      editor.focus();
+      return true;
+    }
+
+    const activeMarkdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
+
+    if (!activeMarkdownView) {
+      new Notice("No Markdown editor available for timeline insertion.");
+      return false;
+    }
+
+    const editor = activeMarkdownView.editor;
+    const cursor = editor.getCursor();
+    editor.replaceRange(text, cursor);
+    editor.focus();
+    return true;
   }
 
   async setActiveCalendarById(id: string): Promise<void> {
@@ -829,6 +1007,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
       CALENDAR_VIEW_TYPE,
       CALENDAR_DAY_VIEW_TYPE,
       EVENT_EDITOR_VIEW_TYPE,
+	  CONTROL_VIEW_TYPE,
       TIMELINE_VIEW_TYPE,
       TIMELINE_FILTER_VIEW_TYPE
     ].forEach((viewType) => {
@@ -1259,6 +1438,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     }
 
     await this.dataStore.deleteCalendar(id);
+	delete this.fantasyClock.byCalendarId[id];
 
     const remaining = await this.listCalendars();
     const nextActive =
@@ -1500,10 +1680,33 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     const packs = await this.listWeatherPacks();
     return packs[0]?.id ?? DEFAULT_WEATHER_PACK.id;
   }
+
+  async buildTimelinePublishPayloadFromBlock(
+    raw: string,
+    layout: TimeTimelineLayout
+  ): Promise<TimeTimelinePublishPayload | null> {
+    return await buildTimelinePublishPayloadFromBlock(this, raw, layout);
+  }
 }
 
 function compareFantasyDates(left: FantasyDate, right: FantasyDate): number {
   if (left.year !== right.year) return left.year - right.year;
   if (left.monthIndex !== right.monthIndex) return left.monthIndex - right.monthIndex;
   return left.day - right.day;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (typeof value === "object" && value !== null) {
+    return value as Record<string, unknown>;
+  }
+
+  return {};
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function mod(value: number, length: number): number {
+  return ((value % length) + length) % length;
 }

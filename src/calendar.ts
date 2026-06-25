@@ -1,4 +1,6 @@
 import type {
+  FantasyClockEntry,
+  FantasyClockState,
   CalendarTimelineStyle,
   CalendarFile,
   CalendarState,
@@ -21,6 +23,7 @@ import type {
   MoonPhaseImageDefinition,
   TagDefinition,
   TagPackFile,
+  TimeAdvanceButtonConfig,
   TtrpgToolsTimeSettings
 } from "./types";
 
@@ -90,7 +93,12 @@ export const DEFAULT_SETTINGS: TtrpgToolsTimeSettings = {
   activeCalendarId: DEFAULT_CALENDAR_FILE.id,
   openOnStartup: true,
   dayViewDateFormat: "D-M-YYYY",
-  showCalendarWeekNumbers: false
+  showCalendarWeekNumbers: false,
+  controlTimeButtons: []
+};
+
+export const DEFAULT_FANTASY_CLOCK_STATE: FantasyClockState = {
+  byCalendarId: {}
 };
 
 export function normalizeSettings(raw: unknown): TtrpgToolsTimeSettings {
@@ -101,7 +109,26 @@ export function normalizeSettings(raw: unknown): TtrpgToolsTimeSettings {
     activeCalendarId: readOptionalString(record.activeCalendarId),
     openOnStartup: readBoolean(record.openOnStartup, DEFAULT_SETTINGS.openOnStartup),
     dayViewDateFormat: readString(record.dayViewDateFormat, DEFAULT_SETTINGS.dayViewDateFormat),
-    showCalendarWeekNumbers: readBoolean(record.showCalendarWeekNumbers, DEFAULT_SETTINGS.showCalendarWeekNumbers)
+    showCalendarWeekNumbers: readBoolean(record.showCalendarWeekNumbers, DEFAULT_SETTINGS.showCalendarWeekNumbers),
+    controlTimeButtons: readTimeAdvanceButtons(record.controlTimeButtons)
+  };
+}
+
+export function normalizeFantasyClockState(raw: unknown): FantasyClockState {
+  const record = asRecord(raw);
+  const source = asRecord(record.byCalendarId ?? raw);
+  const byCalendarId: Record<string, FantasyClockEntry> = {};
+
+  Object.entries(source).forEach(([calendarId, value]) => {
+    const entry = asRecord(value);
+    byCalendarId[calendarId] = {
+      hour: Math.max(0, Math.trunc(readNumber(entry.hour, 0))),
+      minute: Math.max(0, Math.trunc(readNumber(entry.minute, 0)))
+    };
+  });
+
+  return {
+    byCalendarId
   };
 }
 
@@ -618,6 +645,50 @@ function readOptionalInteger(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value)
     ? Math.trunc(value)
     : undefined;
+}
+
+function readTimeAdvanceButtons(raw: unknown): TimeAdvanceButtonConfig[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw
+    .map((entry, index) => {
+      const record = asRecord(entry);
+      const hours = Math.trunc(readNumber(record.hours, 0));
+      const minutes = Math.trunc(readNumber(record.minutes, 0));
+      const label = readString(
+        record.label,
+        buildTimeAdvanceButtonLabel(hours, minutes, index)
+      );
+
+      return {
+        id: readString(record.id, slugify(`${label}-${index + 1}`)),
+        label,
+        icon: readOptionalString(record.icon),
+        hours,
+        minutes
+      };
+    })
+    .filter((button) => button.hours !== 0 || button.minutes !== 0);
+}
+
+function buildTimeAdvanceButtonLabel(
+  hours: number,
+  minutes: number,
+  index: number
+): string {
+  const parts: string[] = [];
+
+  if (hours !== 0) {
+    parts.push(`${hours >= 0 ? "+" : ""}${hours}h`);
+  }
+
+  if (minutes !== 0) {
+    parts.push(`${minutes >= 0 ? "+" : ""}${minutes}m`);
+  }
+
+  return parts.join(" ").trim() || `Advance ${index + 1}`;
 }
 
 function hasTimelineStyleValues(value: CalendarTimelineStyle): boolean {

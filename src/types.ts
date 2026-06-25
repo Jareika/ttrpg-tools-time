@@ -202,12 +202,30 @@ export interface TagPackFile {
   description?: string;
 }
 
+export interface TimeAdvanceButtonConfig {
+  id: string;
+  label: string;
+  icon?: string;
+  hours: number;
+  minutes: number;
+}
+
+export interface FantasyClockEntry {
+  hour: number;
+  minute: number;
+}
+
+export interface FantasyClockState {
+  byCalendarId: Record<string, FantasyClockEntry>;
+}
+
 export interface TtrpgToolsTimeSettings {
   dataFolder: string;
   activeCalendarId: string | null;
   openOnStartup: boolean;
   dayViewDateFormat: string;
   showCalendarWeekNumbers: boolean;
+  controlTimeButtons: TimeAdvanceButtonConfig[];
 }
 
 export interface EventRecurrenceRule {

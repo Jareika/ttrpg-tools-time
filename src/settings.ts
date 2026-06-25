@@ -1,9 +1,11 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, PluginSettingTab, Setting, setIcon } from "obsidian";
 import type TtrpgToolsTimePlugin from "./main";
+import type { TimeAdvanceButtonConfig } from "./types";
 
 export class TimeSettingTab extends PluginSettingTab {
   plugin: TtrpgToolsTimePlugin;
   private pendingDataFolder = "";
+  private pendingControlTimeButtons: TimeAdvanceButtonConfig[] = [];
 
   constructor(app: App, plugin: TtrpgToolsTimePlugin) {
     super(app, plugin);
@@ -11,6 +13,10 @@ export class TimeSettingTab extends PluginSettingTab {
   }
 
   display(): void {
+    this.pendingDataFolder = this.plugin.settings.dataFolder;
+    this.pendingControlTimeButtons = this.plugin.settings.controlTimeButtons.map((button) => ({
+      ...button
+    }));
     void this.render();
   }
 
@@ -25,7 +31,6 @@ export class TimeSettingTab extends PluginSettingTab {
 
     containerEl.empty();
 	containerEl.addClass("time-plugin-settings");
-    this.pendingDataFolder = this.plugin.settings.dataFolder;
 
     new Setting(containerEl).setName("Calendar").setHeading();
 
@@ -44,7 +49,7 @@ export class TimeSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Open timeline side pane")
+      .setName("Open timeline view")
       .setDesc("Open or focus the event timeline view.")
       .addButton((button) =>
         button.setButtonText("Open").onClick(() => {
@@ -58,6 +63,15 @@ export class TimeSettingTab extends PluginSettingTab {
       .addButton((button) =>
         button.setButtonText("Open").onClick(() => {
           void this.plugin.activateTimelineFilterView();
+        })
+      );
+	  
+    new Setting(containerEl)
+      .setName("Open control pane")
+      .setDesc("Open or focus the control side pane.")
+      .addButton((button) =>
+        button.setButtonText("Open").onClick(() => {
+          void this.plugin.activateControlView();
         })
       );
 
@@ -143,7 +157,109 @@ export class TimeSettingTab extends PluginSettingTab {
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.showCalendarWeekNumbers).onChange((value) => {
           void this.updateShowCalendarWeekNumbers(value);
-        }))
+        }));
+
+    new Setting(containerEl).setName("Control pane & fantasy time").setHeading();
+
+    const timeButtonsInfo = containerEl.createDiv({ cls: "time-settings-note" });
+    timeButtonsInfo.createDiv({
+      text: "These buttons are shown in the control pane. If none are configured, the fantasy-time section stays hidden."
+    });
+    timeButtonsInfo.createDiv({
+      cls: "setting-item-description",
+      text: "Icon = any Obsidian icon name. Time overflow advances the current calendar day automatically."
+    });
+
+    const buttonList = timeButtonsInfo.createDiv({ cls: "time-settings-button-list" });
+
+    if (this.pendingControlTimeButtons.length > 0) {
+      const header = buttonList.createDiv({ cls: "time-settings-button-row time-settings-button-header" });
+      ["Label", "Icon", "Hours", "Minutes", ""].forEach((label) => {
+        header.createDiv({
+          cls: "time-collection-editor__column-label",
+          text: label
+        });
+      });
+    } else {
+      buttonList.createDiv({
+        cls: "time-manager__empty",
+        text: "No time-advance buttons configured."
+      });
+    }
+
+    this.pendingControlTimeButtons.forEach((button, index) => {
+      const row = buttonList.createDiv({ cls: "time-settings-button-row" });
+
+      const labelInput = row.createEl("input", { cls: "time-collection-editor__input" });
+      labelInput.type = "text";
+      labelInput.placeholder = "+8h";
+      labelInput.value = button.label;
+      labelInput.addEventListener("input", () => {
+        this.pendingControlTimeButtons[index].label = labelInput.value;
+      });
+
+      const iconInput = row.createEl("input", { cls: "time-collection-editor__input" });
+      iconInput.type = "text";
+      iconInput.placeholder = "timer";
+      iconInput.value = button.icon ?? "";
+      iconInput.addEventListener("input", () => {
+        this.pendingControlTimeButtons[index].icon = iconInput.value.trim() || undefined;
+      });
+
+      const hoursInput = row.createEl("input", { cls: "time-collection-editor__input" });
+      hoursInput.type = "number";
+      hoursInput.value = String(button.hours);
+      hoursInput.addEventListener("input", () => {
+        this.pendingControlTimeButtons[index].hours = Math.trunc(Number(hoursInput.value) || 0);
+      });
+
+      const minutesInput = row.createEl("input", { cls: "time-collection-editor__input" });
+      minutesInput.type = "number";
+      minutesInput.value = String(button.minutes);
+      minutesInput.addEventListener("input", () => {
+        this.pendingControlTimeButtons[index].minutes = Math.trunc(Number(minutesInput.value) || 0);
+      });
+
+      const deleteButton = row.createEl("button", {
+        cls: "time-collection-editor__delete"
+      });
+      deleteButton.type = "button";
+      deleteButton.setAttr("aria-label", "Delete time button");
+      deleteButton.title = "Delete";
+      setIcon(deleteButton, "trash-2");
+      deleteButton.addEventListener("click", () => {
+        this.pendingControlTimeButtons.splice(index, 1);
+        void this.render();
+      });
+    });
+
+    const buttonToolbar = timeButtonsInfo.createDiv({ cls: "time-settings-button-toolbar" });
+
+    const addTimeButton = buttonToolbar.createEl("button", {
+      cls: "time-manager__button mod-cta",
+      text: "Add button"
+    });
+    addTimeButton.type = "button";
+    addTimeButton.addEventListener("click", () => {
+      this.pendingControlTimeButtons.push({
+        id: `time-button-${Date.now()}-${this.pendingControlTimeButtons.length + 1}`,
+        label: "+8h",
+        icon: "timer",
+        hours: 8,
+        minutes: 0
+      });
+      void this.render();
+    });
+
+    const saveTimeButtons = buttonToolbar.createEl("button", {
+      cls: "time-manager__button",
+      text: "Save buttons"
+    });
+    saveTimeButtons.type = "button";
+    saveTimeButtons.addEventListener("click", () => {
+      void this.updateControlTimeButtons();
+    });
+
     new Setting(containerEl).setName("Overview").setHeading();
 
     const calendarInfo = containerEl.createDiv({ cls: "time-settings-note" });
@@ -261,5 +377,30 @@ export class TimeSettingTab extends PluginSettingTab {
       showCalendarWeekNumbers: value
     });
     this.plugin.refreshOpenViews();
+  }
+  private async updateControlTimeButtons(): Promise<void> {
+    const nextButtons = this.pendingControlTimeButtons
+      .map((button, index) => {
+        const label = button.label.trim().length > 0
+          ? button.label.trim()
+          : `Advance ${index + 1}`;
+
+        return {
+          id: button.id.trim().length > 0 ? button.id.trim() : `time-button-${index + 1}`,
+          label,
+          icon: button.icon?.trim() ? button.icon.trim() : undefined,
+          hours: Math.trunc(button.hours || 0),
+          minutes: Math.trunc(button.minutes || 0)
+        };
+      })
+      .filter((button) => button.hours !== 0 || button.minutes !== 0);
+
+    await this.plugin.replaceSettings({
+      ...this.plugin.settings,
+      controlTimeButtons: nextButtons
+    });
+
+    this.plugin.refreshOpenViews();
+    this.display();
   }
 }
