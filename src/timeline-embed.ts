@@ -386,8 +386,8 @@ function renderCardRow(
     row.addClass("tl-align-right");
   }
 
-  row.style.paddingLeft = `${style.sideGapLeft}px`;
-  row.style.paddingRight = `${style.sideGapRight}px`;
+  row.style.setProperty("--tl-side-gap-left", `${style.sideGapLeft}px`);
+  row.style.setProperty("--tl-side-gap-right", `${style.sideGapRight}px`);
   row.style.setProperty("--tl-bg", style.colors.bg ?? "var(--background-primary)");
   row.style.setProperty("--tl-accent", entry.accentColor ?? style.colors.accent ?? "var(--background-modifier-border)");
   row.style.setProperty("--tl-hover", style.colors.hover ?? "var(--interactive-accent)");
@@ -501,7 +501,9 @@ function attachHoverForAnchor(
     }
 
     const mouseEvent = evt instanceof MouseEvent ? evt : undefined;
-    const doc = anchorEl.ownerDocument ?? document;
+      const doc =
+        (anchorEl as HTMLElement & { doc?: Document }).doc ??
+        anchorEl.ownerDocument;
     const view = doc.defaultView ?? window;
 
     return new view.MouseEvent("mousemove", {

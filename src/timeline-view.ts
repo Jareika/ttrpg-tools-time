@@ -282,8 +282,14 @@ export class TimeTimelineView extends ItemView {
 
     const accentColor = timelineStyle.colors.accent ?? item.accentColor ?? "var(--background-modifier-border)";
 
-    row.style.paddingLeft = horizontal ? "0px" : `${timelineStyle.sideGapLeft}px`;
-    row.style.paddingRight = horizontal ? "0px" : `${timelineStyle.sideGapRight}px`;
+    row.style.setProperty(
+      "--tl-side-gap-left",
+      horizontal ? "0px" : `${timelineStyle.sideGapLeft}px`
+    );
+    row.style.setProperty(
+      "--tl-side-gap-right",
+      horizontal ? "0px" : `${timelineStyle.sideGapRight}px`
+    );
     row.style.setProperty("--tl-bg", timelineStyle.colors.bg ?? "var(--background-primary)");
     row.style.setProperty("--tl-accent", accentColor);
     row.style.setProperty("--tl-hover", timelineStyle.colors.hover ?? "var(--interactive-accent)");
@@ -1027,8 +1033,8 @@ function clearEl(el: HTMLElement): void {
   }
 }
 
-function getDocumentFor(el?: HTMLElement): Document {
-  return el?.ownerDocument ?? document;
+function getDocumentFor(el: HTMLElement): Document {
+  return (el as HTMLElement & { doc?: Document }).doc ?? el.ownerDocument;
 }
 
 function normalizeColor(value?: string): string {
