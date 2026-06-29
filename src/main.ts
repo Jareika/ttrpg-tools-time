@@ -10,7 +10,6 @@ import { EVENT_EDITOR_VIEW_TYPE, TimeEventEditorView } from "./event-editor-view
 import {
   expandRecurringEventForYear,
   buildEventIndexYearFile,
-  findEventById,
   estimateRecurringEventEndYear,
   normalizeCalendarEventDefinition,
   sortEvents
@@ -318,6 +317,8 @@ export default class TtrpgToolsTimePlugin extends Plugin {
       this.activeCalendar = null;
       return;
     }
+	
+	await this.migrateLegacyEventStorage(calendars);
 
     const active =
       (this.settings.activeCalendarId
@@ -1021,60 +1022,24 @@ export default class TtrpgToolsTimePlugin extends Plugin {
   }
 
   async loadEventYear(calendarId: string, year: number): Promise<EventYearFile | null> {
-    const rawCurrentYear = await this.dataStore.loadEventYear(calendarId, year);
     const calendarDefinition =
       (this.activeCalendar?.id === calendarId
         ? this.activeCalendar
         : await this.dataStore.loadCalendarById(calendarId))?.definition;
 
     if (!calendarDefinition) {
-      return rawCurrentYear;
-    }
-
-    const concreteEvents = (rawCurrentYear?.events ?? [])
-      .filter((event) => !event.recurrence)
-      .map((event) => ({ ...event }));
-
-    const recurringSourceYears = await this.dataStore.listEventYears(calendarId);
-    const recurringOccurrences: CalendarEventDefinition[] = [];
-
-    for (const sourceYear of recurringSourceYears) {
-      if (sourceYear > year) {
-        break;
-      }
-
-      const sourceFile =
-        sourceYear === year
-          ? rawCurrentYear
-          : await this.dataStore.loadEventYear(calendarId, sourceYear);
-
-      if (!sourceFile) {
-        continue;
-      }
-
-      sourceFile.events
-        .filter((event) => Boolean(event.recurrence))
-        .forEach((event) => {
-          recurringOccurrences.push(...expandRecurringEventForYear(event, calendarDefinition, year));
-        });
-    }
-
-    const events = [...concreteEvents, ...recurringOccurrences].sort(sortEvents);
-
-    if (!rawCurrentYear && events.length === 0) {
       return null;
     }
 
-    return {
-      version: 1,
-      kind: "event-year",
-      calendarId,
-      year,
-      events
-    };
+    return await this.buildEventYearFromSources(calendarId, year, calendarDefinition);
   }
 
   async loadEventIndexYear(calendarId: string, year: number): Promise<EventIndexYearFile | null> {
+    const existing = await this.dataStore.loadEventIndexYear(calendarId, year);
+    if (existing) {
+      return existing;
+    }
+
     const detail = await this.loadEventYear(calendarId, year);
     if (!detail) {
       return null;
@@ -1085,7 +1050,9 @@ export default class TtrpgToolsTimePlugin extends Plugin {
         ? this.activeCalendar
         : await this.dataStore.loadCalendarById(calendarId))?.definition;
 
-    return buildEventIndexYearFile(detail, calendarDefinition);
+    const built = buildEventIndexYearFile(detail, calendarDefinition);
+    await this.dataStore.saveEventIndexYear(built);
+    return built;
   }
   
   async loadTimelineEvents(calendarId: string): Promise<CalendarEventDefinition[]> {
@@ -1098,41 +1065,50 @@ export default class TtrpgToolsTimePlugin extends Plugin {
       return [];
     }
 
-    const sourceYears = await this.dataStore.listEventYears(calendarId);
-    const rawSourceFiles = await Promise.all(
-      sourceYears.map((year) => this.dataStore.loadEventYear(calendarId, year))
-    );
-
-    const fallbackHorizon = Math.max(calendar.state.todayDate.year, calendar.state.cursorDate.year) + 25;
-    const yearCandidates = [calendar.state.todayDate.year, calendar.state.cursorDate.year];
-
-    rawSourceFiles.forEach((file) => {
-      file?.events.forEach((event) => {
-        yearCandidates.push(event.date.year, event.endDate?.year ?? event.date.year);
-
-        if (event.recurrence) {
-          yearCandidates.push(
-            estimateRecurringEventEndYear(event, calendar.definition, fallbackHorizon)
-          );
-        }
-      });
-    });
-
-    const minYear = Math.min(...yearCandidates);
-    const maxYear = Math.max(...yearCandidates);
-    const deduped = new Map<string, CalendarEventDefinition>();
-
-    for (let year = minYear; year <= maxYear; year += 1) {
-      const file = await this.loadEventYear(calendarId, year);
-      if (!file) continue;
-      file.events.forEach((event) => {
-        if (!deduped.has(event.id)) {
-          deduped.set(event.id, event);
-        }
-      });
+    const sourceEvents = await this.dataStore.listEventSources(calendarId);
+    if (sourceEvents.length === 0) {
+      return [];
     }
 
-    return [...deduped.values()].sort(sortEvents);
+    const concreteEvents = new Map<string, CalendarEventDefinition>();
+    const recurringSources = new Map<string, CalendarEventDefinition>();
+    const fallbackHorizon =
+      Math.max(calendar.state.todayDate.year, calendar.state.cursorDate.year) + 25;
+
+    sourceEvents.forEach((event) => {
+      if (event.recurrence) {
+        upsertEventById(recurringSources, event);
+        return;
+      }
+
+      upsertEventById(concreteEvents, event);
+    });
+
+    const recurringOccurrences = new Map<string, CalendarEventDefinition>();
+
+    for (const event of recurringSources.values()) {
+      const estimatedEndYear = estimateRecurringEventEndYear(
+        event,
+        calendar.definition,
+        fallbackHorizon
+      );
+      const startYear = Math.min(event.date.year, estimatedEndYear);
+      const endYear = Math.max(event.date.year, estimatedEndYear);
+
+      for (let year = startYear; year <= endYear; year += 1) {
+        const occurrences = expandRecurringEventForYear(
+          event,
+          calendar.definition,
+          year
+        );
+
+        occurrences.forEach((occurrence) => {
+          upsertEventById(recurringOccurrences, occurrence);
+        });
+      }
+    }
+
+    return [...concreteEvents.values(), ...recurringOccurrences.values()].sort(sortEvents);
   }
 
   async ensureEventYearFile(calendarId: string, year: number): Promise<EventYearFile> {
@@ -1180,8 +1156,44 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     year: number,
     eventId: string
   ): Promise<CalendarEventDefinition | null> {
-    const file = await this.loadEventYear(calendarId, year);
-    return findEventById(file, eventId);
+    const calendar =
+      this.activeCalendar?.id === calendarId
+        ? this.activeCalendar
+        : await this.dataStore.loadCalendarById(calendarId);
+
+    if (!calendar) {
+      return null;
+    }
+
+    const sourceEventId = parseRecurringOccurrenceSourceId(eventId);
+
+    if (sourceEventId) {
+      const source = await this.dataStore.loadEventSource(calendarId, sourceEventId);
+      if (!source?.recurrence) {
+        return null;
+      }
+
+      return (
+        expandRecurringEventForYear(source, calendar.definition, year).find(
+          (event) => event.id === eventId
+        ) ?? null
+      );
+    }
+
+    const source = await this.dataStore.loadEventSource(calendarId, eventId);
+    if (!source) {
+      return null;
+    }
+
+    if (source.recurrence) {
+      return (
+        expandRecurringEventForYear(source, calendar.definition, year).find(
+          (event) => event.id === eventId
+        ) ?? null
+      );
+    }
+
+    return eventIntersectsYear(source, year) ? source : null;
   }
 
   resolveStoredFileRef(ref: string): TFile | null {
@@ -1195,44 +1207,65 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     previousEvent?: CalendarEventDefinition
   ): Promise<void> {
     const normalized = normalizeCalendarEventDefinition(event);
-    const calendarDefinition =
-      (this.activeCalendar?.id === normalized.calendarId
+    const currentCalendar =
+      this.activeCalendar?.id === normalized.calendarId
         ? this.activeCalendar
-        : await this.dataStore.loadCalendarById(normalized.calendarId))?.definition;
-		
-    if (previousEvent) {
-      await this.removeEventCopies(previousEvent, calendarDefinition);
+        : await this.dataStore.loadCalendarById(normalized.calendarId);
+
+    if (!currentCalendar) {
+      new Notice("Could not resolve calendar for event save.");
+      return;
     }
 
-    if (normalized.recurrence) {
-      const sourceYearFile = await this.ensureEventYearFile(normalized.calendarId, normalized.date.year);
-      const existingIndex = sourceYearFile.events.findIndex((entry) => entry.id === normalized.id);
+    const previousCalendar =
+      previousEvent
+        ? (this.activeCalendar?.id === previousEvent.calendarId
+            ? this.activeCalendar
+            : await this.dataStore.loadCalendarById(previousEvent.calendarId))
+        : null;
 
-      if (existingIndex >= 0) {
-        sourceYearFile.events[existingIndex] = normalized;
-      } else {
-        sourceYearFile.events.push(normalized);
+    await this.dataStore.saveEventSource(normalized);
+
+    if (
+      previousEvent &&
+      (previousEvent.calendarId !== normalized.calendarId || previousEvent.id !== normalized.id)
+    ) {
+      await this.dataStore.deleteEventSource(previousEvent.calendarId, previousEvent.id);
+    }
+
+    const rebuildTargets = new Map<string, Set<number>>();
+    const addRebuildYears = (calendarId: string, years: number[]): void => {
+      const target = rebuildTargets.get(calendarId) ?? new Set<number>();
+      years.forEach((year) => target.add(year));
+      rebuildTargets.set(calendarId, target);
+    };
+
+    if (previousEvent) {
+      addRebuildYears(
+        previousEvent.calendarId,
+        getIndexedYearsForEventSource(previousEvent, previousCalendar)
+      );
+    }
+
+    addRebuildYears(
+      normalized.calendarId,
+      getIndexedYearsForEventSource(normalized, currentCalendar)
+    );
+
+    for (const [calendarId, years] of rebuildTargets.entries()) {
+      const calendarForYears =
+        calendarId === currentCalendar.id
+          ? currentCalendar
+          : calendarId === previousCalendar?.id
+            ? previousCalendar
+            : await this.dataStore.loadCalendarById(calendarId);
+
+      if (!calendarForYears) {
+        continue;
       }
 
-      sourceYearFile.events.sort(sortEvents);
-      await this.dataStore.saveEventYear(sourceYearFile);
-    } else {
-      const startYear = Math.min(normalized.date.year, normalized.endDate?.year ?? normalized.date.year);
-      const endYear = Math.max(normalized.date.year, normalized.endDate?.year ?? normalized.date.year);
-
-      for (let year = startYear; year <= endYear; year += 1) {
-        const file = await this.ensureEventYearFile(normalized.calendarId, year);
-        const existingIndex = file.events.findIndex((entry) => entry.id === normalized.id);
-
-        if (existingIndex >= 0) {
-          file.events[existingIndex] = normalized;
-        } else {
-          file.events.push(normalized);
-        }
-
-        file.events.sort(sortEvents);
-        await this.dataStore.saveEventYear(file);
-        await this.dataStore.saveEventIndexYear(buildEventIndexYearFile(file, calendarDefinition));
+      for (const year of [...years].sort((left, right) => left - right)) {
+        await this.rebuildEventIndexYear(calendarId, year, calendarForYears.definition);
       }
     }
 
@@ -1364,17 +1397,123 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     calendarId: string,
     eventId: string
   ): Promise<CalendarEventDefinition | null> {
-    const years = await this.dataStore.listEventYears(calendarId);
+    return await this.dataStore.loadEventSource(calendarId, eventId);
+  }
+  
+  private async buildEventYearFromSources(
+    calendarId: string,
+    year: number,
+    definition: CalendarFile["definition"],
+    sourceEvents?: CalendarEventDefinition[]
+  ): Promise<EventYearFile | null> {
+    const sources = sourceEvents ?? (await this.dataStore.listEventSources(calendarId));
 
-    for (const year of years) {
-      const file = await this.dataStore.loadEventYear(calendarId, year);
-      const match = findEventById(file, eventId);
-      if (match) {
-        return match;
-      }
+    if (sources.length === 0) {
+      return null;
     }
 
-    return null;
+    const concreteEvents = sources
+      .filter((event) => !event.recurrence && eventIntersectsYear(event, year))
+      .map((event) => ({ ...event }));
+
+    const recurringOccurrences = sources
+      .filter((event) => Boolean(event.recurrence))
+      .flatMap((event) => expandRecurringEventForYear(event, definition, year));
+
+    const events = dedupeEventList([...concreteEvents, ...recurringOccurrences]).sort(sortEvents);
+
+    if (events.length === 0) {
+      return null;
+    }
+
+    return {
+      version: 1,
+      kind: "event-year",
+      calendarId,
+      year,
+      events
+    };
+  }
+
+  private async rebuildEventIndexYear(
+    calendarId: string,
+    year: number,
+    definition?: CalendarFile["definition"],
+    sourceEvents?: CalendarEventDefinition[]
+  ): Promise<void> {
+    const calendarDefinition =
+      definition ??
+      (
+        this.activeCalendar?.id === calendarId
+          ? this.activeCalendar
+          : await this.dataStore.loadCalendarById(calendarId)
+      )?.definition;
+
+    if (!calendarDefinition) {
+      return;
+    }
+
+    const detail = await this.buildEventYearFromSources(
+      calendarId,
+      year,
+      calendarDefinition,
+      sourceEvents
+    );
+
+    if (!detail || detail.events.length === 0) {
+      await this.dataStore.deleteEventIndexYear(calendarId, year);
+      return;
+    }
+
+    await this.dataStore.saveEventIndexYear(
+      buildEventIndexYearFile(detail, calendarDefinition)
+    );
+  }
+
+  private async migrateLegacyEventStorage(calendars: CalendarFile[]): Promise<void> {
+    let migratedEventCount = 0;
+
+    for (const calendar of calendars) {
+      const existingSources = await this.dataStore.listEventSources(calendar.id);
+      if (existingSources.length > 0) {
+        continue;
+      }
+
+      const legacyYears = await this.dataStore.listEventYears(calendar.id);
+      if (legacyYears.length === 0) {
+        continue;
+      }
+
+      const deduped = new Map<string, CalendarEventDefinition>();
+
+      for (const year of legacyYears) {
+        const file = await this.dataStore.loadEventYear(calendar.id, year);
+        file?.events.forEach((event) => {
+          upsertEventById(deduped, event);
+        });
+      }
+
+      const sources = [...deduped.values()];
+      if (sources.length === 0) {
+        continue;
+      }
+
+      for (const event of sources) {
+        await this.dataStore.saveEventSource(event);
+      }
+
+      for (const year of legacyYears) {
+        await this.rebuildEventIndexYear(calendar.id, year, calendar.definition, sources);
+      }
+
+      migratedEventCount += sources.length;
+    }
+
+    if (migratedEventCount > 0) {
+      new Notice(
+        `Migrated ${migratedEventCount} legacy event(s) to source storage. Old yearly event files were left untouched as backup.`
+      );
+    }
   }
 
   async setTagPackLinked(tagPackId: string, linked: boolean): Promise<void> {
@@ -1693,6 +1832,84 @@ function compareFantasyDates(left: FantasyDate, right: FantasyDate): number {
   if (left.year !== right.year) return left.year - right.year;
   if (left.monthIndex !== right.monthIndex) return left.monthIndex - right.monthIndex;
   return left.day - right.day;
+}
+
+function getStoredEventYears(event: CalendarEventDefinition): number[] {
+  if (event.recurrence) {
+    return [event.date.year];
+  }
+
+  const startYear = Math.min(event.date.year, event.endDate?.year ?? event.date.year);
+  const endYear = Math.max(event.date.year, event.endDate?.year ?? event.date.year);
+  const years: number[] = [];
+
+  for (let year = startYear; year <= endYear; year += 1) {
+    years.push(year);
+  }
+
+  return years;
+}
+
+function getIndexedYearsForEventSource(
+  event: CalendarEventDefinition,
+  calendar: CalendarFile | null
+): number[] {
+  if (!event.recurrence) {
+    return getStoredEventYears(event);
+  }
+
+  if (!calendar) {
+    return [event.date.year];
+  }
+
+  const fallbackEndYear =
+    Math.max(calendar.state.todayDate.year, calendar.state.cursorDate.year) + 25;
+  const estimatedEndYear = estimateRecurringEventEndYear(
+    event,
+    calendar.definition,
+    fallbackEndYear
+  );
+  const startYear = Math.min(event.date.year, estimatedEndYear);
+  const endYear = Math.max(event.date.year, estimatedEndYear);
+  const years: number[] = [];
+
+  for (let year = startYear; year <= endYear; year += 1) {
+    years.push(year);
+  }
+
+  return years;
+}
+
+function eventIntersectsYear(event: CalendarEventDefinition, year: number): boolean {
+  const startYear = Math.min(event.date.year, event.endDate?.year ?? event.date.year);
+  const endYear = Math.max(event.date.year, event.endDate?.year ?? event.date.year);
+  return year >= startYear && year <= endYear;
+}
+
+function parseRecurringOccurrenceSourceId(eventId: string): string | null {
+  const delimiterIndex = eventId.indexOf("::");
+  return delimiterIndex >= 0 ? eventId.slice(0, delimiterIndex) : null;
+}
+
+function dedupeEventList(events: CalendarEventDefinition[]): CalendarEventDefinition[] {
+  const deduped = new Map<string, CalendarEventDefinition>();
+
+  events.forEach((event) => {
+    upsertEventById(deduped, event);
+  });
+
+  return [...deduped.values()];
+}
+
+function upsertEventById(
+  target: Map<string, CalendarEventDefinition>,
+  event: CalendarEventDefinition
+): void {
+  const existing = target.get(event.id);
+
+  if (!existing || (event.updatedAt ?? "") >= (existing.updatedAt ?? "")) {
+    target.set(event.id, event);
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

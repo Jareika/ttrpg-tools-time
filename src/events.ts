@@ -1,6 +1,9 @@
 import {
   clampDate,
+  dayOfYearToMonthDay,
+  getDayOfYear,
   getAbsoluteDay,
+  getMonthsForYear,
   shiftDay,
   shiftMonth,
   shiftYear,
@@ -59,9 +62,9 @@ export function normalizeEventYearFile(raw: unknown): EventYearFile {
     kind: "event-year",
     calendarId: readString(record.calendarId, "default-calendar"),
     year,
-    events: eventsRaw
-      .map((entry) => normalizeCalendarEventDefinition(entry))
-      .sort(sortEvents)
+    events: dedupeEventsById(
+      eventsRaw.map((entry) => normalizeCalendarEventDefinition(entry))
+    ).sort(sortEvents)
   };
 }
 
@@ -142,12 +145,16 @@ export function buildEventIndexYearFile(
         };
       }
 
-      days[key].items.push({
-        id: event.id,
-		sourceEventId: event.sourceEventId,
-		title: event.title,
-        color
-      });
+      const alreadyExists = days[key].items.some((item) => item.id === event.id);
+
+      if (!alreadyExists) {
+        days[key].items.push({
+          id: event.id,
+          sourceEventId: event.sourceEventId,
+          title: event.title,
+          color
+        });
+      }
     });
   });
 
@@ -345,25 +352,66 @@ function expandEventDatesForIndex(
   definition: FantasyCalendarDefinition | undefined,
   year: number
 ): FantasyDate[] {
-  if (!definition || !event.endDate || compareFantasyDates(event.endDate, event.date) < 0) {
+  if (!definition) {
     return event.date.year === year ? [{ ...event.date }] : [];
   }
 
+  const start = clampDate(event.date, definition);
+  const end = clampDate(event.endDate ?? event.date, definition);
+
+  if (compareFantasyDates(end, start) < 0) {
+    return [];
+  }
+
+  const yearMonths = getMonthsForYear(definition, year);
+  const lastMonthIndex = Math.max(0, yearMonths.length - 1);
+  const yearStart: FantasyDate = { year, monthIndex: 0, day: 1 };
+  const yearEnd: FantasyDate = {
+    year,
+    monthIndex: lastMonthIndex,
+    day: yearMonths[lastMonthIndex]?.days ?? 1
+  };
+
+  const overlapStart = compareFantasyDates(start, yearStart) > 0 ? start : yearStart;
+  const overlapEnd = compareFantasyDates(end, yearEnd) < 0 ? end : yearEnd;
+
+  if (compareFantasyDates(overlapStart, overlapEnd) > 0) {
+    return [];
+  }
+
+  const startDayOfYear = getDayOfYear(definition, overlapStart);
+  const endDayOfYear = getDayOfYear(definition, overlapEnd);
   const dates: FantasyDate[] = [];
-  let cursor = clampDate(event.date, definition);
-  const end = clampDate(event.endDate, definition);
-  let guard = 0;
 
-  while (compareFantasyDates(cursor, end) <= 0 && guard < 5000) {
-    if (cursor.year === year) {
-      dates.push({ ...cursor });
-    }
-
-    cursor = shiftDay(cursor, 1, definition);
-    guard += 1;
+  for (let dayOfYear = startDayOfYear; dayOfYear <= endDayOfYear; dayOfYear += 1) {
+    const monthDay = dayOfYearToMonthDay(definition, year, dayOfYear);
+    dates.push({
+      year,
+      monthIndex: monthDay.monthIndex,
+      day: monthDay.day
+    });
   }
 
   return dates;
+}
+
+function dedupeEventsById(events: CalendarEventDefinition[]): CalendarEventDefinition[] {
+  const byId = new Map<string, CalendarEventDefinition>();
+
+  for (const event of events) {
+    const existing = byId.get(event.id);
+
+    if (!existing) {
+      byId.set(event.id, event);
+      continue;
+    }
+
+    if ((event.updatedAt ?? "") >= (existing.updatedAt ?? "")) {
+      byId.set(event.id, event);
+    }
+  }
+
+  return [...byId.values()];
 }
 
 function compareFantasyDates(left: FantasyDate, right: FantasyDate): number {

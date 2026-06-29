@@ -6,6 +6,7 @@ import {
   slugify
 } from "./calendar";
 import {
+  normalizeCalendarEventDefinition,
   normalizeEventIndexYearFile,
   normalizeEventPresetFile,
   normalizeEventYearFile
@@ -16,6 +17,7 @@ import {
   normalizeWeatherYearFile
 } from "./weather";
 import type {
+  CalendarEventDefinition,
   CalendarFile,
   EventIndexYearFile,
   EventPresetFile,
@@ -60,6 +62,10 @@ export class TimeDataStore {
   get eventIndexFolder(): string {
     return normalizeStoragePath(`${this.baseFolder}/event-index`);
   }
+  
+  get eventSourceFolder(): string {
+    return normalizeStoragePath(`${this.baseFolder}/event-source`);
+  }
 
   get eventDetailsFolder(): string {
     return normalizeStoragePath(`${this.baseFolder}/event-details`);
@@ -82,6 +88,7 @@ export class TimeDataStore {
       this.weatherReferenceFolder,
       this.weatherDayViewFolder,
       this.eventIndexFolder,
+	  this.eventSourceFolder,
       this.eventDetailsFolder,
       this.eventPresetsFolder
     ];
@@ -158,6 +165,17 @@ export class TimeDataStore {
       left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
     );
   }
+  
+  async listEventSources(calendarId: string): Promise<CalendarEventDefinition[]> {
+    const events = await this.readFolderFiles(
+      this.buildEventSourceFolder(calendarId),
+      normalizeCalendarEventDefinition
+    );
+
+    return events.sort((left, right) =>
+      left.title.localeCompare(right.title, undefined, { sensitivity: "base" })
+    );
+  }
 
   async loadCalendarById(id: string): Promise<CalendarFile | null> {
     const path = this.buildCalendarPath(id);
@@ -204,6 +222,25 @@ export class TimeDataStore {
     const folder = this.buildEventPresetFolder(normalized.calendarId);
     await ensureFolder(this.app, folder);
     const path = this.buildEventPresetPath(normalized.calendarId, normalized.id);
+    await this.writeJson(path, normalized);
+  }
+  
+  async loadEventSource(calendarId: string, eventId: string): Promise<CalendarEventDefinition | null> {
+    const path = this.buildEventSourcePath(calendarId, eventId);
+    const existing = this.app.vault.getAbstractFileByPath(path);
+
+    if (!(existing instanceof TFile)) {
+      return null;
+    }
+
+    return normalizeCalendarEventDefinition(await this.readJson(existing));
+  }
+
+  async saveEventSource(event: CalendarEventDefinition): Promise<void> {
+    const normalized = normalizeCalendarEventDefinition(event);
+    const folder = this.buildEventSourceFolder(normalized.calendarId);
+    await ensureFolder(this.app, folder);
+    const path = this.buildEventSourcePath(normalized.calendarId, normalized.id);
     await this.writeJson(path, normalized);
   }
 
@@ -334,6 +371,16 @@ export class TimeDataStore {
       `${this.eventDetailsFolder}/${slugify(calendarId)}/${Math.trunc(year)}.events.json`
     );
   }
+  
+  buildEventSourceFolder(calendarId: string): string {
+    return normalizeStoragePath(`${this.eventSourceFolder}/${slugify(calendarId)}`);
+  }
+
+  buildEventSourcePath(calendarId: string, id: string): string {
+    return normalizeStoragePath(
+      `${this.buildEventSourceFolder(calendarId)}/${slugify(id)}.event.json`
+    );
+  }
 
   buildEventIndexYearPath(calendarId: string, year: number): string {
     return normalizeStoragePath(
@@ -357,6 +404,14 @@ export class TimeDataStore {
 
   async deleteWeatherPack(id: string): Promise<void> {
     await this.deleteFileIfPresent(this.buildWeatherPackPath(id));
+  }
+  
+  async deleteEventSource(calendarId: string, eventId: string): Promise<void> {
+    await this.deleteFileIfPresent(this.buildEventSourcePath(calendarId, eventId));
+  }
+
+  async deleteEventIndexYear(calendarId: string, year: number): Promise<void> {
+    await this.deleteFileIfPresent(this.buildEventIndexYearPath(calendarId, year));
   }
 
   private async exists(path: string): Promise<boolean> {

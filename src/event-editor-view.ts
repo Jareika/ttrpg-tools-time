@@ -18,6 +18,7 @@ export class TimeEventEditorView extends ItemView {
   private readonly plugin: TtrpgToolsTimePlugin;
 
   private initialized = false;
+  private isSubmitting = false;
   private selectedPresetId = "";
   private selectedWeatherPackId = "";
   private title = "";
@@ -577,6 +578,7 @@ export class TimeEventEditorView extends ItemView {
         text: "Cancel edit"
       });
       cancelEditButton.type = "button";
+	  cancelEditButton.disabled = this.isSubmitting;
       cancelEditButton.addEventListener("click", () => {
         this.resetForm(calendar);
         this.refresh();
@@ -588,6 +590,7 @@ export class TimeEventEditorView extends ItemView {
       text: "Use selected day"
     });
     selectedDayButton.type = "button";
+	selectedDayButton.disabled = this.isSubmitting;
     selectedDayButton.addEventListener("click", () => {
       this.applyCurrentCalendarDateRange(calendar.state.cursorDate);
       this.refresh();
@@ -595,9 +598,12 @@ export class TimeEventEditorView extends ItemView {
 
     const saveButton = actions.createEl("button", {
       cls: "time-manager__button mod-cta",
-      text: this.editingOriginalEvent ? "Update event" : "Save event"
+      text: this.isSubmitting
+        ? (this.editingOriginalEvent ? "Updating..." : "Saving...")
+        : (this.editingOriginalEvent ? "Update event" : "Save event")
     });
     saveButton.type = "button";
+	saveButton.disabled = this.isSubmitting;
     saveButton.addEventListener("click", () => {
       void this.submit(calendar);
     });
@@ -747,6 +753,10 @@ export class TimeEventEditorView extends ItemView {
   }
 
   private async submit(calendar: CalendarFile): Promise<void> {
+	  
+    if (this.isSubmitting) {
+      return;
+    }
     const title = this.title.trim();
     const normalizedStartDate = clampDate(
       { year: this.startYear, monthIndex: this.startMonthIndex, day: this.startDay },
@@ -820,7 +830,11 @@ export class TimeEventEditorView extends ItemView {
             : undefined
         }
       : undefined;
+	  
+    this.isSubmitting = true;
+    this.refresh();
 
+    try {
     const eventId = this.editingOriginalEvent?.id ?? createEventId(title);
     const now = new Date().toISOString();
 
@@ -872,7 +886,10 @@ export class TimeEventEditorView extends ItemView {
     });
 
     new Notice(`${wasEditing ? "Updated" : "Saved"} event "${title}".`);
-    this.refresh();
+    } finally {
+      this.isSubmitting = false;
+      this.refresh();
+    }
   }
 
   private pickImageFile(): void {
