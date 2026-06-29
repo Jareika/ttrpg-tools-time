@@ -879,11 +879,7 @@ export class TimeEventEditorView extends ItemView {
     }
 
     const wasEditing = Boolean(this.editingOriginalEvent);
-	this.resetForm(calendar, normalizedStartDate);
-
-    await this.plugin.updateActiveCalendarState({
-      cursorDate: { ...normalizedStartDate }
-    });
+    this.resetForm(calendar);
 
     new Notice(`${wasEditing ? "Updated" : "Saved"} event "${title}".`);
     } finally {
