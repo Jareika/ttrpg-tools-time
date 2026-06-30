@@ -16,11 +16,12 @@ import {
   slugify
 } from "./calendar";
 import { getMoonPhaseLabel } from "./moons";
-import { WeatherPackPickerModal } from "./weather-pack-modals";
 import type {
   CalendarTimelineStyle,
   CalendarFile,
   CalendarViewMode,
+  FantasyYearDisplayConfig,
+  MonthWeekdayMode,
   FantasyLeapDayRule,
   FantasyLeapMonthRule,
   FantasyWeatherProfileMapping,
@@ -48,6 +49,9 @@ interface EraDraft {
   shortName: string;
   startYear: number;
   startMonthIndex: number;
+  endYear: number | null;
+  endMonthIndex: number | null;
+  endDay: number | null;
   startDay: number;
 }
 
@@ -95,6 +99,12 @@ interface ConfirmOptions {
   cancelLabel?: string;
 }
 
+interface CalendarWeatherPackSettingsResult {
+  defaultWeatherPackId: string;
+  linkedWeatherPackIds: string[];
+  autoGenerateLinkedWeatherReferences: boolean;
+}
+
 export class CalendarEditorModal extends Modal {
   private readonly plugin: TtrpgToolsTimePlugin;
   private readonly existing: CalendarFile | null;
@@ -110,6 +120,8 @@ export class CalendarEditorModal extends Modal {
   private namedYears: NamedYearDraft[];
   private startWeekdayIndex: number;
   private todayYear: number;
+  private monthWeekdayMode: MonthWeekdayMode;
+  private yearDisplay: FantasyYearDisplayConfig;
   private todayMonthIndex: number;
   private todayDay: number;
   private savedActiveView: CalendarViewMode;
@@ -154,6 +166,9 @@ export class CalendarEditorModal extends Modal {
             name: "Era 1",
             shortName: "ERA",
             startYear: 0,
+            endYear: null,
+            endMonthIndex: null,
+            endDay: null,
             startMonthIndex: 0,
             startDay: 1
           }
@@ -172,6 +187,10 @@ export class CalendarEditorModal extends Modal {
     this.namedYears = (definition?.yearNames ?? []).map((entry) => ({ ...entry }));
     this.startWeekdayIndex = definition?.startWeekdayIndex ?? 0;
     this.todayYear = state?.todayDate.year ?? 1166;
+    this.monthWeekdayMode = definition?.monthWeekdayMode ?? "continuous";
+    this.yearDisplay = definition?.yearDisplay
+      ? { ...definition.yearDisplay }
+      : { negativeYearsMode: "signed", largeYearFormat: "plain" };
     this.todayMonthIndex = state?.todayDate.monthIndex ?? 0;
     this.todayDay = state?.todayDate.day ?? 1;
 	this.savedActiveView = state?.activeView ?? "year";
@@ -217,7 +236,6 @@ export class CalendarEditorModal extends Modal {
 
   private async render(): Promise<void> {
     const { contentEl } = this;
-	const weatherPacks = await this.plugin.listWeatherPacks();
     contentEl.empty();
     contentEl.addClass("time-modal");
 
@@ -225,117 +243,134 @@ export class CalendarEditorModal extends Modal {
       text: this.existing ? "Edit calendar" : "Create calendar"
     });
 
-    new Setting(contentEl)
-      .setName("Calendar name")
-      .setDesc("Display name of the calendar.")
-      .addText((text) => {
-        text.setValue(this.name);
-        text.onChange((value) => {
-          this.name = value.trim();
-        });
-      });
-
-    new Setting(contentEl)
-      .setName("Calendar ID")
-      .setDesc("Stable file identifier. Locked for existing calendars.")
-      .addText((text) => {
-        text.setValue(this.id);
-        text.setDisabled(this.existing !== null);
-        text.onChange((value) => {
-          if (this.existing) {
-            return;
-          }
-          this.id = slugify(value);
-        });
-      });
-
-    new Setting(contentEl)
-      .setName("Description")
-      .setDesc("Optional description.")
-      .addTextArea((text) => {
-        text.setValue(this.description);
-        text.inputEl.rows = 3;
-        text.onChange((value) => {
-          this.description = value.trim();
-        });
-      });
-
-    new Setting(contentEl)
-      .setName("Eras")
-      .setDesc(`${this.eras.length} era${this.eras.length === 1 ? "" : "s"} defined.`)
-      .addButton((button) => {
-        button.setButtonText("Configure");
-        button.onClick(() => {
-          this.openEraEditorModal();
-        });
-      });
-
-    new Setting(contentEl)
-      .setName("Weekdays")
-      .setDesc(
-        `${this.weekdays.length} weekday${this.weekdays.length === 1 ? "" : "s"} defined. Start weekday: ${this.getStartWeekdayName()}`
-      )
-      .addButton((button) => {
-        button.setButtonText("Configure");
-        button.onClick(() => {
-          this.openWeekdayEditorModal();
-        });
-      });
-
-    new Setting(contentEl)
-      .setName("Months")
-      .setDesc(`${this.months.length} month${this.months.length === 1 ? "" : "s"} defined.`)
-      .addButton((button) => {
-        button.setButtonText("Configure");
-        button.onClick(() => {
-          this.openMonthEditorModal();
-        });
-      });
-	  
-    new Setting(contentEl)
-      .setName("Leap & weather cycle")
-      .setDesc(this.getLeapSettingsSummary())
-      .addButton((button) => {
-        button.setButtonText("Configure");
-        button.onClick(() => {
-          this.openLeapSettingsModal();
-        });
-      });
-
-    new Setting(contentEl)
-      .setName("Moons")
-      .setDesc(`${this.moons.length} moon${this.moons.length === 1 ? "" : "s"} defined.`)
-      .addButton((button) => {
-        button.setButtonText("Configure");
-        button.onClick(() => {
-          this.openMoonEditorModal();
-        });
-      });
-
-    new Setting(contentEl)
-      .setName("Named years")
-      .setDesc(`${this.namedYears.length} named year${this.namedYears.length === 1 ? "" : "s"} defined.`)
-      .addButton((button) => {
-        button.setButtonText("Configure");
-        button.onClick(() => {
-          this.openNamedYearEditorModal();
-        });
-      });
-
-    const todayRow = contentEl.createDiv({
-      cls: "time-inline-fields time-inline-fields--triple"
+    const compactTopRow = contentEl.createDiv({
+      cls: "time-calendar-editor__compact-grid"
     });
 
-    createInlineNumberField(todayRow, {
-      label: "Today: Year",
+    createCompactTextField(compactTopRow, {
+      label: "Calendar name",
+      value: this.name,
+      placeholder: "New Calendar",
+      onChange: (value) => {
+        this.name = value.trim();
+      }
+    });
+
+    createCompactTextField(compactTopRow, {
+      label: "Calendar ID",
+      value: this.id,
+      placeholder: "new-calendar",
+      disabled: this.existing !== null,
+      onChange: (value) => {
+        if (this.existing) {
+          return;
+        }
+        this.id = slugify(value);
+      }
+    });
+
+    createCompactTextField(compactTopRow, {
+      label: "Description",
+      value: this.description,
+      placeholder: "Optional description",
+      onChange: (value) => {
+        this.description = value.trim();
+      }
+    });
+
+    const shortcutGrid = contentEl.createDiv({
+      cls: "time-calendar-editor__shortcut-grid"
+    });
+
+    createManagerButton(shortcutGrid, "Eras", () => {
+      this.openEraEditorModal();
+    });
+
+    createManagerButton(shortcutGrid, "Weekdays", () => {
+      this.openWeekdayEditorModal();
+    });
+
+    createManagerButton(shortcutGrid, "Months", () => {
+      this.openMonthEditorModal();
+    });
+
+    createManagerButton(shortcutGrid, "Leap & weather", () => {
+      this.openLeapSettingsModal();
+    });
+
+    createManagerButton(shortcutGrid, "Moons", () => {
+      this.openMoonEditorModal();
+    });
+
+    createManagerButton(shortcutGrid, "Named years", () => {
+      this.openNamedYearEditorModal();
+    });
+
+    createManagerButton(shortcutGrid, "Seasons", () => {
+      this.openSeasonEditorModal();
+    });
+
+    createManagerButton(shortcutGrid, "Timeline style", () => {
+      new TimelineStyleModal(this.app, this.timeline, (nextTimeline) => {
+        this.timeline = nextTimeline;
+        void this.render();
+      }).open();
+    });
+	
+    createManagerButton(shortcutGrid, "Weather packs", () => {
+      new CalendarWeatherPacksModal(
+        this.plugin,
+        this.defaultWeatherPackId,
+        [...this.selectedWeatherPackIds],
+        this.autoGenerateLinkedWeatherReferences,
+        (result) => {
+          this.defaultWeatherPackId = result.defaultWeatherPackId;
+          this.autoGenerateLinkedWeatherReferences = result.autoGenerateLinkedWeatherReferences;
+          this.selectedWeatherPackIds.clear();
+          result.linkedWeatherPackIds.forEach((id) => this.selectedWeatherPackIds.add(id));
+          void this.render();
+        }
+      ).open();
+    });
+
+    createManagerButton(shortcutGrid, "Tag packs", () => {
+      new CalendarTagPacksModal(
+        this.plugin,
+        [...this.selectedTagPackIds],
+        (tagPackIds) => {
+          this.selectedTagPackIds.clear();
+          tagPackIds.forEach((id) => this.selectedTagPackIds.add(id));
+          void this.render();
+        }
+      ).open();
+    });
+
+    const setupGrid = contentEl.createDiv({
+      cls: "time-calendar-editor__setup-grid"
+    });
+
+    const todayBlock = setupGrid.createDiv({
+      cls: "time-calendar-editor__setup-block"
+    });
+    todayBlock.createDiv({
+      cls: "time-event-editor__block-title",
+      text: "Today & display"
+    });
+
+    const todayFields = todayBlock.createDiv({
+      cls: "time-calendar-editor__mini-grid"
+    });
+
+    createCompactNumberField(todayFields, {
+      label: "Year",
       value: String(this.todayYear),
       onChange: (value) => {
         this.todayYear = value;
       }
     });
 
-    createInlineNumberField(todayRow, {
-      label: "Today: Month",
+    createCompactNumberField(todayFields, {
+      label: "Month",
       value: String(this.todayMonthIndex + 1),
       min: 1,
       onChange: (value) => {
@@ -343,37 +378,63 @@ export class CalendarEditorModal extends Modal {
       }
     });
 
-    createInlineNumberField(todayRow, {
-      label: "Today: Day",
+    createCompactNumberField(todayFields, {
+      label: "Day",
       value: String(this.todayDay),
       min: 1,
       onChange: (value) => {
         this.todayDay = Math.max(1, value);
       }
     });
-	
-    new Setting(contentEl)
-      .setName("Time system")
-      .setDesc(
-        this.timeEnabled
-          ? `Enabled. Events can optionally store exact time. Day length: ${this.hoursPerDay}h × ${this.minutesPerHour}m.`
-          : "Disabled. Calendar stays purely day-based."
-      )
-      .addToggle((toggle) => {
-        toggle.setValue(this.timeEnabled);
-        toggle.onChange((value) => {
-          this.timeEnabled = value;
-          void this.render();
-        });
-      });
+
+    const displayChecks = todayBlock.createDiv({
+      cls: "time-calendar-editor__checkbox-list"
+    });
+
+    createCompactCheckbox(displayChecks, {
+      label: "Hide minus on negative years",
+      checked: this.yearDisplay.negativeYearsMode === "absolute",
+      onChange: (checked) => {
+        this.yearDisplay.negativeYearsMode = checked ? "absolute" : "signed";
+      }
+    });
+
+    createCompactCheckbox(displayChecks, {
+      label: "Abbreviate large years",
+      checked: this.yearDisplay.largeYearFormat === "abbreviated",
+      onChange: (checked) => {
+        this.yearDisplay.largeYearFormat = checked ? "abbreviated" : "plain";
+      }
+    });
+
+    const timeBlock = setupGrid.createDiv({
+      cls: "time-calendar-editor__setup-block"
+    });
+    timeBlock.createDiv({
+      cls: "time-event-editor__block-title",
+      text: "Time system"
+    });
+
+    const timeChecks = timeBlock.createDiv({
+      cls: "time-calendar-editor__checkbox-list"
+    });
+
+    createCompactCheckbox(timeChecks, {
+      label: "Enable exact time",
+      checked: this.timeEnabled,
+      onChange: (checked) => {
+        this.timeEnabled = checked;
+        void this.render();
+      }
+    });
 
     if (this.timeEnabled) {
-      const timeRow = contentEl.createDiv({
-        cls: "time-inline-fields time-inline-fields--triple"
+      const timeFields = timeBlock.createDiv({
+        cls: "time-calendar-editor__mini-grid time-calendar-editor__mini-grid--two"
       });
 
-      createInlineNumberField(timeRow, {
-        label: "Hours per day",
+      createCompactNumberField(timeFields, {
+        label: "Hours / day",
         value: String(this.hoursPerDay),
         min: 1,
         onChange: (value) => {
@@ -381,8 +442,8 @@ export class CalendarEditorModal extends Modal {
         }
       });
 
-      createInlineNumberField(timeRow, {
-        label: "Minutes per hour",
+      createCompactNumberField(timeFields, {
+        label: "Minutes / hour",
         value: String(this.minutesPerHour),
         min: 1,
         onChange: (value) => {
@@ -390,89 +451,6 @@ export class CalendarEditorModal extends Modal {
         }
       });
     }
-	  
-    new Setting(contentEl)
-      .setName("Seasons")
-      .setDesc(
-        `${this.seasons.length} season${this.seasons.length === 1 ? "" : "s"} defined.`
-      )
-      .addButton((button) => {
-        button.setButtonText("Configure");
-        button.onClick(() => {
-          this.openSeasonEditorModal();
-        });
-      });
-
-    new Setting(contentEl)
-      .setName("Default weather pack")
-      .setDesc(
-        `Used when a day-view weather year is created. Current: ${
-          weatherPacks.find((pack) => pack.id === this.defaultWeatherPackId)?.name ??
-          this.defaultWeatherPackId
-        }`
-      )
-      .addButton((button) => {
-        button.setButtonText("Choose");
-        button.onClick(() => {
-          new WeatherPackPickerModal(
-            this.plugin,
-            this.defaultWeatherPackId,
-            (packId) => {
-              this.defaultWeatherPackId = packId;
-              void this.render();
-            },
-            "Choose default weather pack"
-          ).open();
-        });
-      })
-      .addExtraButton((button) => {
-        button.setIcon("settings");
-        button.setTooltip("Manage weather packs");
-        button.onClick(() => {
-          this.plugin.openManageWeatherPacksModal();
-        });
-      });
-
-    this.renderPackSelector(
-      contentEl,
-      "Linked weather packs",
-      "These packs belong to this calendar ecosystem. If auto-generation is enabled, their yearly weather references are created when that calendar year is opened.",
-      weatherPacks.map((pack) => ({ id: pack.id, name: pack.name })),
-      this.selectedWeatherPackIds
-    );
-
-    new Setting(contentEl)
-      .setName("Auto-generate linked weather references")
-      .setDesc(
-        "When enabled, opening/navigating to a year will ensure reference-year JSON files exist for all linked weather packs plus the default pack."
-      )
-      .addToggle((toggle) => {
-        toggle.setValue(this.autoGenerateLinkedWeatherReferences);
-        toggle.onChange((value) => {
-          this.autoGenerateLinkedWeatherReferences = value;
-        });
-      });
-
-    this.renderPackSelector(
-      contentEl,
-      "Linked tag packs",
-      "These tag packs will be available to this calendar when event support is added.",
-      (await this.plugin.listTagPacks()).map((pack) => ({ id: pack.id, name: pack.name })),
-      this.selectedTagPackIds
-    );
-	
-    new Setting(contentEl)
-      .setName("Timeline style")
-      .setDesc(buildTimelineStyleSummary(this.timeline))
-      .addButton((button) => {
-        button.setButtonText("Configure");
-        button.onClick(() => {
-          new TimelineStyleModal(this.app, this.timeline, (nextTimeline) => {
-            this.timeline = nextTimeline;
-            void this.render();
-          }).open();
-        });
-      });
 
     const footer = contentEl.createDiv({ cls: "time-modal__footer" });
 
@@ -554,8 +532,9 @@ export class CalendarEditorModal extends Modal {
   }
 
   private openMonthEditorModal(): void {
-    new MonthEditorModal(this.app, this.months, (nextMonths) => {
+    new MonthEditorModal(this.app, this.months, this.monthWeekdayMode, (nextMonths, nextMode) => {
       this.months = nextMonths;
+	  this.monthWeekdayMode = nextMode;
       void this.render();
     }).open();
   }
@@ -594,41 +573,6 @@ export class CalendarEditorModal extends Modal {
     ).open();
   }
 
-  private renderPackSelector(
-    parent: HTMLElement,
-    name: string,
-    desc: string,
-    options: Array<{ id: string; name: string }>,
-    selected: Set<string>
-  ): void {
-    const wrapper = parent.createDiv({ cls: "time-modal__pack-selector" });
-    wrapper.createEl("h3", { text: name });
-    wrapper.createEl("p", { text: desc });
-
-    if (options.length === 0) {
-      wrapper.createDiv({
-        cls: "setting-item-description",
-        text: "No packs available yet."
-      });
-      return;
-    }
-
-    options.forEach((option) => {
-      new Setting(wrapper)
-        .setName(option.name)
-        .addToggle((toggle) => {
-          toggle.setValue(selected.has(option.id));
-          toggle.onChange((value) => {
-            if (value) {
-              selected.add(option.id);
-            } else {
-              selected.delete(option.id);
-            }
-          });
-        });
-    });
-  }
-
   private async submit(): Promise<void> {
     const sanitizedWeekdays = this.weekdays
       .map((weekday) => weekday.trim())
@@ -658,6 +602,7 @@ export class CalendarEditorModal extends Modal {
           id: slugify(era.id || safeShortName || safeName),
           name: safeName,
           shortName: safeShortName,
+		  ...normalizeEraEndDraft(era, sanitizedMonths),
           startYear: Math.trunc(era.startYear || 0),
           startMonthIndex: safeStartMonthIndex,
           startDay: safeStartDay
@@ -754,6 +699,10 @@ export class CalendarEditorModal extends Modal {
       return {
         id: slugify(rule.id || safeName),
         name: safeName,
+        placement:
+          rule.placement === "append-to-month"
+            ? "append-to-month"
+            : "standalone",
         insertAfterMonthIndex: clamp(
           rule.insertAfterMonthIndex,
           -1,
@@ -789,12 +738,14 @@ export class CalendarEditorModal extends Modal {
         moons: sanitizedMoons,
         yearNames: sanitizedNamedYears,
         startWeekdayIndex: clamp(this.startWeekdayIndex, 0, sanitizedWeekdays.length - 1),
+		monthWeekdayMode: this.monthWeekdayMode,
         seasons: sanitizedSeasons,
         time: {
           enabled: this.timeEnabled,
           hoursPerDay: Math.max(1, Math.trunc(this.hoursPerDay)),
           minutesPerHour: Math.max(1, Math.trunc(this.minutesPerHour))
-        }
+        },
+        yearDisplay: { ...this.yearDisplay }
       },
       state: {
         activeView: this.savedActiveView,
@@ -821,6 +772,222 @@ export class CalendarEditorModal extends Modal {
     this.close();
     this.onSaved?.();
     new Notice(`Saved calendar "${calendar.name}".`);
+  }
+}
+
+class CalendarWeatherPacksModal extends Modal {
+  private defaultWeatherPackId: string;
+  private readonly linkedWeatherPackIds: Set<string>;
+  private autoGenerateLinkedWeatherReferences: boolean;
+
+  constructor(
+    private readonly plugin: TtrpgToolsTimePlugin,
+    defaultWeatherPackId: string,
+    linkedWeatherPackIds: string[],
+    autoGenerateLinkedWeatherReferences: boolean,
+    private readonly onSave: (result: CalendarWeatherPackSettingsResult) => void
+  ) {
+    super(plugin.app);
+    this.defaultWeatherPackId = defaultWeatherPackId;
+    this.linkedWeatherPackIds = new Set(linkedWeatherPackIds);
+    this.autoGenerateLinkedWeatherReferences = autoGenerateLinkedWeatherReferences;
+  }
+
+  onOpen(): void {
+    prepareFlexibleModal(this);
+    void this.render();
+  }
+
+  private async render(): Promise<void> {
+    const { contentEl } = this;
+    const weatherPacks = await this.plugin.listWeatherPacks();
+
+    if (weatherPacks.length > 0 && !weatherPacks.some((pack) => pack.id === this.defaultWeatherPackId)) {
+      this.defaultWeatherPackId = weatherPacks[0]?.id ?? "";
+    }
+
+    contentEl.empty();
+    contentEl.addClass("time-modal");
+
+    contentEl.createEl("h2", { text: "Calendar weather packs" });
+    contentEl.createEl("p", {
+      cls: "setting-item-description",
+      text: "Configure the default weather pack, linked weather packs, and automatic reference generation for this calendar."
+    });
+
+    if (weatherPacks.length === 0) {
+      contentEl.createDiv({
+        cls: "time-manager__empty",
+        text: "No weather packs available yet."
+      });
+
+      const footer = contentEl.createDiv({ cls: "time-modal__footer" });
+      createManagerButton(footer, "Manage weather packs", () => {
+        this.plugin.openManageWeatherPacksModal();
+      }, false, true);
+      createManagerButton(footer, "Close", () => {
+        this.close();
+      });
+      return;
+    }
+
+    new Setting(contentEl)
+      .setName("Default weather pack")
+      .setDesc("Used when a day-view weather year is created.")
+      .addDropdown((dropdown) => {
+        weatherPacks.forEach((pack) => {
+          dropdown.addOption(pack.id, pack.name);
+        });
+        dropdown.setValue(this.defaultWeatherPackId);
+        dropdown.onChange((value) => {
+          this.defaultWeatherPackId = value;
+        });
+      })
+      .addExtraButton((button) => {
+        button.setIcon("settings");
+        button.setTooltip("Manage weather packs");
+        button.onClick(() => {
+          this.plugin.openManageWeatherPacksModal();
+        });
+      });
+
+    new Setting(contentEl)
+      .setName("Auto-generate linked weather references")
+      .setDesc(
+        "When enabled, opening/navigating to a year will ensure reference-year JSON files exist for all linked weather packs plus the default pack."
+      )
+      .addToggle((toggle) => {
+        toggle.setValue(this.autoGenerateLinkedWeatherReferences);
+        toggle.onChange((value) => {
+          this.autoGenerateLinkedWeatherReferences = value;
+        });
+      });
+
+    contentEl.createEl("h3", { text: "Linked weather packs" });
+    contentEl.createEl("p", {
+      cls: "setting-item-description",
+      text: "These packs belong to this calendar ecosystem."
+    });
+
+    weatherPacks.forEach((pack) => {
+      new Setting(contentEl)
+        .setName(pack.name)
+        .setDesc(pack.id === this.defaultWeatherPackId ? "Default weather pack" : pack.id)
+        .addToggle((toggle) => {
+          toggle.setValue(this.linkedWeatherPackIds.has(pack.id));
+          toggle.onChange((value) => {
+            if (value) {
+              this.linkedWeatherPackIds.add(pack.id);
+            } else {
+              this.linkedWeatherPackIds.delete(pack.id);
+            }
+          });
+        });
+    });
+
+    const footer = contentEl.createDiv({ cls: "time-modal__footer" });
+
+    createManagerButton(footer, "Save", () => {
+      this.onSave({
+        defaultWeatherPackId: this.defaultWeatherPackId,
+        linkedWeatherPackIds: [...this.linkedWeatherPackIds].sort((left, right) =>
+          left.localeCompare(right, undefined, { sensitivity: "base" })
+        ),
+        autoGenerateLinkedWeatherReferences: this.autoGenerateLinkedWeatherReferences
+      });
+      this.close();
+    }, false, true);
+
+    createManagerButton(footer, "Manage weather packs", () => {
+      this.plugin.openManageWeatherPacksModal();
+    });
+
+    createManagerButton(footer, "Cancel", () => {
+      this.close();
+    });
+  }
+}
+
+class CalendarTagPacksModal extends Modal {
+  private readonly linkedTagPackIds: Set<string>;
+
+  constructor(
+    private readonly plugin: TtrpgToolsTimePlugin,
+    linkedTagPackIds: string[],
+    private readonly onSave: (tagPackIds: string[]) => void
+  ) {
+    super(plugin.app);
+    this.linkedTagPackIds = new Set(linkedTagPackIds);
+  }
+
+  onOpen(): void {
+    prepareFlexibleModal(this);
+    void this.render();
+  }
+
+  private async render(): Promise<void> {
+    const { contentEl } = this;
+    const tagPacks = await this.plugin.listTagPacks();
+
+    contentEl.empty();
+    contentEl.addClass("time-modal");
+
+    contentEl.createEl("h2", { text: "Calendar tag packs" });
+    contentEl.createEl("p", {
+      cls: "setting-item-description",
+      text: "Choose which tag packs are linked to this calendar."
+    });
+
+    if (tagPacks.length === 0) {
+      contentEl.createDiv({
+        cls: "time-manager__empty",
+        text: "No tag packs available yet."
+      });
+
+      const footer = contentEl.createDiv({ cls: "time-modal__footer" });
+      createManagerButton(footer, "Manage tag packs", () => {
+        this.plugin.openManageTagPacksModal();
+      }, false, true);
+      createManagerButton(footer, "Close", () => {
+        this.close();
+      });
+      return;
+    }
+
+    tagPacks.forEach((pack) => {
+      new Setting(contentEl)
+        .setName(pack.name)
+        .setDesc(`${pack.tags.length} tags`)
+        .addToggle((toggle) => {
+          toggle.setValue(this.linkedTagPackIds.has(pack.id));
+          toggle.onChange((value) => {
+            if (value) {
+              this.linkedTagPackIds.add(pack.id);
+            } else {
+              this.linkedTagPackIds.delete(pack.id);
+            }
+          });
+        });
+    });
+
+    const footer = contentEl.createDiv({ cls: "time-modal__footer" });
+
+    createManagerButton(footer, "Save", () => {
+      this.onSave(
+        [...this.linkedTagPackIds].sort((left, right) =>
+          left.localeCompare(right, undefined, { sensitivity: "base" })
+        )
+      );
+      this.close();
+    }, false, true);
+
+    createManagerButton(footer, "Manage tag packs", () => {
+      this.plugin.openManageTagPacksModal();
+    });
+
+    createManagerButton(footer, "Cancel", () => {
+      this.close();
+    });
   }
 }
 
@@ -1079,6 +1246,18 @@ class EraEditorModal extends Modal {
     contentEl.createEl("h2", { text: "Configure eras" });
 
     const list = contentEl.createDiv({ cls: "time-collection-editor__list" });
+	
+    if (this.eras.length > 0) {
+      const header = list.createDiv({
+        cls: "time-collection-editor__row time-collection-editor__row--era time-collection-editor__row--era-header"
+      });
+      ["Name", "Short", "Start year", "Start month", "Start day", "End year", "End month", "End day", ""].forEach((label) => {
+        header.createDiv({
+          cls: "time-collection-editor__column-label",
+          text: label
+        });
+      });
+    }
 
     if (this.eras.length === 0) {
       list.createDiv({ cls: "time-collection-editor__empty", text: "No eras defined yet." });
@@ -1128,6 +1307,29 @@ class EraEditorModal extends Modal {
       startDayInput.addEventListener("input", () => {
         this.eras[index].startDay = Math.max(1, Math.trunc(Number(startDayInput.value) || 1));
       });
+	  
+      const endYearInput = row.createEl("input", { cls: "time-collection-editor__input" });
+      endYearInput.type = "number";
+      endYearInput.placeholder = "Open";
+      endYearInput.value = era.endYear == null ? "" : String(era.endYear);
+      endYearInput.addEventListener("input", () => {
+        this.eras[index].endYear = parseNullableInt(endYearInput.value);
+      });
+
+      const endMonthSelect = createOptionalMonthSelect(row.ownerDocument, this.months, era.endMonthIndex, "time-collection-editor__input");
+      endMonthSelect.addEventListener("change", () => {
+        this.eras[index].endMonthIndex = endMonthSelect.value === "" ? null : Math.trunc(Number(endMonthSelect.value) || 0);
+      });
+      row.appendChild(endMonthSelect);
+
+      const endDayInput = row.createEl("input", { cls: "time-collection-editor__input" });
+      endDayInput.type = "number";
+      endDayInput.min = "1";
+      endDayInput.placeholder = "Open";
+      endDayInput.value = era.endDay == null ? "" : String(era.endDay);
+      endDayInput.addEventListener("input", () => {
+        this.eras[index].endDay = parseNullableInt(endDayInput.value);
+      });
 
       createDeleteIconButton(row, () => {
         this.eras.splice(index, 1);
@@ -1167,11 +1369,13 @@ class EraEditorModal extends Modal {
       const safeName = era.name.trim().length > 0 ? era.name.trim() : `Era ${index + 1}`;
       const safeStartMonthIndex = clamp(era.startMonthIndex, 0, months.length - 1);
       const safeStartDay = clamp(era.startDay, 1, months[safeStartMonthIndex]?.days ?? 1);
+	  const normalizedEnd = normalizeEraEndDraft(era, months);
 
       return {
         id: slugify(era.id || safeShortName || safeName),
         name: safeName,
         shortName: safeShortName,
+		...normalizedEnd,
         startYear: Math.trunc(era.startYear || 0),
         startMonthIndex: safeStartMonthIndex,
         startDay: safeStartDay
@@ -1181,6 +1385,25 @@ class EraEditorModal extends Modal {
       if (left.startMonthIndex !== right.startMonthIndex) return left.startMonthIndex - right.startMonthIndex;
       return left.startDay - right.startDay;
     });
+	
+    for (const era of sanitized) {
+      if (typeof era.endYear === "number") {
+        if (compareEraDateParts(
+          { year: era.startYear, monthIndex: era.startMonthIndex, day: era.startDay },
+          { year: era.endYear, monthIndex: era.endMonthIndex ?? 0, day: era.endDay ?? 1 }
+        ) > 0) {
+          new Notice(`Era "${era.name}" ends before it starts.`);
+          return;
+        }
+      }
+    }
+
+    for (let index = 0; index < sanitized.length - 1; index += 1) {
+      if (doErasOverlap(sanitized[index], sanitized[index + 1], months)) {
+        new Notice(`Eras "${sanitized[index].name}" and "${sanitized[index + 1].name}" overlap.`);
+        return;
+      }
+    }
 
     this.onSave(sanitized);
     this.close();
@@ -1292,12 +1515,19 @@ class WeekdayEditorModal extends Modal {
 }
 
 class MonthEditorModal extends Modal {
+  private monthWeekdayMode: MonthWeekdayMode;
   private months: MonthDraft[];
-  private readonly onSave: (months: MonthDraft[]) => void;
+  private readonly onSave: (months: MonthDraft[], monthWeekdayMode: MonthWeekdayMode) => void;
 
-  constructor(app: App, months: MonthDraft[], onSave: (months: MonthDraft[]) => void) {
+  constructor(
+    app: App,
+    months: MonthDraft[],
+    monthWeekdayMode: MonthWeekdayMode,
+    onSave: (months: MonthDraft[], monthWeekdayMode: MonthWeekdayMode) => void
+  ) {
     super(app);
     this.months = months.map((month) => ({ ...month }));
+	this.monthWeekdayMode = monthWeekdayMode;
     this.onSave = onSave;
   }
 
@@ -1311,6 +1541,18 @@ class MonthEditorModal extends Modal {
     contentEl.empty();
     contentEl.addClass("time-modal");
     contentEl.createEl("h2", { text: "Configure months" });
+	
+    new Setting(contentEl)
+      .setName("Weekday flow between months")
+      .setDesc("Continuous = next month continues weekday flow. Reset = every month starts on the configured start weekday.")
+      .addDropdown((dropdown) => {
+        dropdown.addOption("continuous", "Continuous");
+        dropdown.addOption("reset", "Reset every month");
+        dropdown.setValue(this.monthWeekdayMode);
+        dropdown.onChange((value) => {
+          this.monthWeekdayMode = value === "reset" ? "reset" : "continuous";
+        });
+      });
 
     const list = contentEl.createDiv({ cls: "time-collection-editor__list" });
 
@@ -1380,7 +1622,7 @@ class MonthEditorModal extends Modal {
       return;
     }
 
-    this.onSave(sanitized);
+    this.onSave(sanitized, this.monthWeekdayMode);
     this.close();
   }
 }
@@ -1593,10 +1835,10 @@ class LeapDayEditorModal extends Modal {
 	
     if (this.rules.length > 0) {
       const header = list.createDiv({
-        cls: "time-collection-editor__row time-collection-editor__row--leap-rule time-collection-editor__row--leap-rule-header"
+        cls: "time-collection-editor__row time-collection-editor__row--leap-day-rule time-collection-editor__row--leap-day-rule-header"
       });
 
-      ["Name", "Insert after", "Days", "Cycle", "Year Positions", ""].forEach((label) => {
+      ["Name", "Placement", "Insert after", "Days", "Cycle", "Year Positions", ""].forEach((label) => {
         header.createDiv({
           cls: "time-collection-editor__column-label",
           text: label
@@ -1606,7 +1848,7 @@ class LeapDayEditorModal extends Modal {
 
     this.rules.forEach((rule, index) => {
       const row = list.createDiv({
-        cls: "time-collection-editor__row time-collection-editor__row--leap-rule"
+        cls: "time-collection-editor__row time-collection-editor__row--leap-day-rule"
       });
 
       const nameInput = row.createEl("input", { cls: "time-collection-editor__input" });
@@ -1615,6 +1857,17 @@ class LeapDayEditorModal extends Modal {
       nameInput.value = rule.name;
       nameInput.addEventListener("input", () => {
         this.rules[index].name = nameInput.value;
+      });
+	  
+      const placementSelect = row.createEl("select", { cls: "time-collection-editor__input" });
+      addSelectOption(placementSelect, "standalone", "Standalone day block");
+      addSelectOption(placementSelect, "append-to-month", "Append to month");
+      placementSelect.value = rule.placement ?? "standalone";
+      placementSelect.addEventListener("change", () => {
+        this.rules[index].placement =
+          placementSelect.value === "append-to-month"
+            ? "append-to-month"
+            : "standalone";
       });
 
       const insertSelect = createMonthInsertionSelect(
@@ -1675,6 +1928,7 @@ class LeapDayEditorModal extends Modal {
       this.rules.push({
         id: slugify(name),
         name,
+		placement: "standalone",
         insertAfterMonthIndex: Math.max(0, this.months.length - 1),
         days: 1,
         cycleYears: 4,
@@ -3173,6 +3427,64 @@ function createMonthSelect(
   return select;
 }
 
+function createOptionalMonthSelect(
+  doc: Document,
+  months: Array<{ id: string; name: string; days: number }>,
+  selectedIndex: number | null,
+  className: string
+): HTMLSelectElement {
+  const select = doc.createElement("select");
+  if (className.trim().length > 0) {
+    select.className = className;
+  }
+
+  const emptyOption = doc.createElement("option");
+  emptyOption.value = "";
+  emptyOption.text = "Open";
+  select.add(emptyOption);
+
+  months.forEach((month, index) => {
+    const option = doc.createElement("option");
+    option.value = String(index);
+    option.text = month.name;
+    option.selected = index === selectedIndex;
+    select.add(option);
+  });
+
+  select.value = selectedIndex == null ? "" : String(selectedIndex);
+  return select;
+}
+
+function parseNullableInt(value: string): number | null {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  return Math.trunc(Number(trimmed) || 0);
+}
+
+function normalizeEraEndDraft(
+  era: EraDraft,
+  months: Array<{ days: number }>
+): Pick<EraDraft, "endYear" | "endMonthIndex" | "endDay"> {
+  if (era.endYear == null && era.endMonthIndex == null && era.endDay == null) {
+    return {
+      endYear: undefined as unknown as number | null,
+      endMonthIndex: undefined as unknown as number | null,
+      endDay: undefined as unknown as number | null
+    };
+  }
+
+  const endMonthIndex = clamp(era.endMonthIndex ?? Math.max(0, months.length - 1), 0, Math.max(0, months.length - 1));
+  const endDay = clamp(era.endDay ?? (months[endMonthIndex]?.days ?? 1), 1, months[endMonthIndex]?.days ?? 1);
+
+  return {
+    endYear: era.endYear ?? era.startYear,
+    endMonthIndex,
+    endDay
+  };
+}
+
 function cloneLeapMonthRules(rules: FantasyLeapMonthRule[]): FantasyLeapMonthRule[] {
   return rules.map((rule) => ({
     ...rule,
@@ -3184,6 +3496,7 @@ function cloneLeapMonthRules(rules: FantasyLeapMonthRule[]): FantasyLeapMonthRul
 function cloneLeapDayRules(rules: FantasyLeapDayRule[]): FantasyLeapDayRule[] {
   return rules.map((rule) => ({
     ...rule,
+	placement: rule.placement ?? "standalone",
     leapYearPositions: [...rule.leapYearPositions]
   }));
 }
@@ -3215,6 +3528,93 @@ function createInlineNumberField(
       options.onChange(Math.trunc(parsed));
     }
   });
+  return input;
+}
+
+function createCompactTextField(
+  parent: HTMLElement,
+  options: {
+    label: string;
+    value: string;
+    placeholder?: string;
+    disabled?: boolean;
+    onChange: (value: string) => void;
+  }
+): HTMLInputElement {
+  const field = parent.createDiv({ cls: "time-calendar-editor__compact-field" });
+  field.createEl("label", {
+    cls: "time-calendar-editor__compact-label",
+    text: options.label
+  });
+
+  const input = field.createEl("input", {
+    cls: "time-calendar-editor__compact-input"
+  });
+  input.type = "text";
+  input.value = options.value;
+  input.placeholder = options.placeholder ?? "";
+  input.disabled = options.disabled ?? false;
+  input.addEventListener("input", () => {
+    options.onChange(input.value);
+  });
+
+  return input;
+}
+
+function createCompactNumberField(
+  parent: HTMLElement,
+  options: {
+    label: string;
+    value: string;
+    min?: number;
+    onChange: (value: number) => void;
+  }
+): HTMLInputElement {
+  const field = parent.createDiv({ cls: "time-calendar-editor__mini-field" });
+  field.createEl("label", {
+    cls: "time-calendar-editor__mini-label",
+    text: options.label
+  });
+
+  const input = field.createEl("input", {
+    cls: "time-calendar-editor__mini-input"
+  });
+  input.type = "number";
+  input.value = options.value;
+  if (typeof options.min === "number") {
+    input.min = String(options.min);
+  }
+
+  input.addEventListener("input", () => {
+    const parsed = Number(input.value);
+    if (!Number.isNaN(parsed)) {
+      options.onChange(Math.trunc(parsed));
+    }
+  });
+
+  return input;
+}
+
+function createCompactCheckbox(
+  parent: HTMLElement,
+  options: {
+    label: string;
+    checked: boolean;
+    onChange: (checked: boolean) => void;
+  }
+): HTMLInputElement {
+  const row = parent.createDiv({ cls: "time-calendar-editor__checkbox-row" });
+  const input = row.createEl("input");
+  input.type = "checkbox";
+  input.checked = options.checked;
+  input.addEventListener("change", () => {
+    options.onChange(input.checked);
+  });
+
+  row.createEl("label", {
+    text: options.label
+  });
+
   return input;
 }
 
@@ -3433,24 +3833,40 @@ function hasCalendarTimelineStyleValues(value: CalendarTimelineStyle): boolean {
   );
 }
 
-function buildTimelineStyleSummary(
-  timeline: CalendarTimelineStyle | undefined
-): string {
-  if (!timeline) {
-    return "Uses default timeline layout values for this calendar.";
+function compareEraDateParts(
+  left: { year: number; monthIndex: number; day: number },
+  right: { year: number; monthIndex: number; day: number }
+): number {
+  if (left.year !== right.year) return left.year - right.year;
+  if (left.monthIndex !== right.monthIndex) return left.monthIndex - right.monthIndex;
+  return left.day - right.day;
+}
+
+function doErasOverlap(
+  left: EraDraft,
+  right: EraDraft,
+  months: Array<{ days: number }>
+): boolean {
+  const leftStart = { year: left.startYear, monthIndex: left.startMonthIndex, day: left.startDay };
+  const rightStart = { year: right.startYear, monthIndex: right.startMonthIndex, day: right.startDay };
+  const leftEnd = left.endYear == null
+    ? null
+    : {
+        year: left.endYear,
+        monthIndex: left.endMonthIndex ?? Math.max(0, months.length - 1),
+        day: left.endDay ?? (months[left.endMonthIndex ?? Math.max(0, months.length - 1)]?.days ?? 1)
+      };
+
+  if (leftEnd === null) {
+    return compareEraDateParts(leftStart, rightStart) <= 0;
   }
 
-  const parts: string[] = [];
+  return compareEraDateParts(leftEnd, rightStart) >= 0;
+}
 
-  if (timeline.name?.trim()) {
-    parts.push(timeline.name.trim());
-  }
-
-  parts.push(timeline.align === "right" ? "image right" : "image left");
-
-  if (Array.isArray(timeline.monthNames) && timeline.monthNames.length > 0) {
-    parts.push(`${timeline.monthNames.length} custom month names`);
-  }
-
-  return parts.join(" • ");
+function addSelectOption(select: HTMLSelectElement, value: string, label: string): void {
+  const option = select.ownerDocument.createElement("option");
+  option.value = value;
+  option.text = label;
+  select.add(option);
 }

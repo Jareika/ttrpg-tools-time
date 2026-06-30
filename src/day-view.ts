@@ -9,6 +9,7 @@ import {
   getSeasonForDate,
   shiftDay
 } from "./calendar";
+import { confirmWithModal } from "./confirm-dialog";
 import { getEventIndexEntriesForDate } from "./events";
 import {
   formatFantasyTime,
@@ -114,7 +115,8 @@ export class TimeDayView extends ItemView {
       text: formatDateWithPattern(
         calendar.state.cursorDate,
         calendar.definition,
-        this.plugin.settings.dayViewDateFormat
+        this.plugin.settings.dayViewDateFormat,
+        "compact"
       )
     });
     dateBlock.setAttr("title", formatLongDate(calendar.state.cursorDate, calendar.definition));
@@ -402,6 +404,33 @@ export class TimeDayView extends ItemView {
           calendar.state.cursorDate.year,
           eventId
         );
+      })
+    );
+	
+    menu.addItem((item) =>
+      item.setTitle("Delete event").setIcon("trash-2").onClick(() => {
+        void (async () => {
+          const detail = await this.plugin.loadEventById(
+            calendar.id,
+            calendar.state.cursorDate.year,
+            eventId
+          );
+
+          const title = detail?.title ?? "this event";
+          const confirmed = await confirmWithModal(this.plugin.app, {
+            title: "Delete event",
+            message: `Delete "${title}"?`,
+            confirmLabel: "Delete",
+            cancelLabel: "Cancel"
+          });
+
+          if (!confirmed) {
+            return;
+          }
+
+          const deleted = await this.plugin.deleteEventById(calendar.id, calendar.state.cursorDate.year, eventId);
+          if (deleted) this.refresh();
+        })();
       })
     );
 

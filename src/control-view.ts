@@ -205,7 +205,8 @@ export class TimeControlView extends ItemView {
             text: formatDateWithPattern(
               calendar.state.todayDate,
               calendar.definition,
-              this.plugin.settings.dayViewDateFormat
+              this.plugin.settings.dayViewDateFormat,
+              "compact"
             )
           });
           clockBox.createDiv({

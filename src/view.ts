@@ -2,6 +2,7 @@ import { ItemView, Menu, WorkspaceLeaf, setIcon } from "obsidian";
 import type TtrpgToolsTimePlugin from "./main";
 import {
   buildMonthGrid,
+  formatDisplayYear,
   formatLongDate,
   getEraShortLabel,
   getMonth,
@@ -125,7 +126,7 @@ export class TimeCalendarView extends ItemView {
     });
     rail.createDiv({
       cls: "time-calendar__rail-year",
-      text: String(state.cursorDate.year)
+      text: formatDisplayYear(definition, state.cursorDate.year, "compact")
     });
   }
 
@@ -272,7 +273,7 @@ export class TimeCalendarView extends ItemView {
     });
     intro.createDiv({
       cls: "time-view-meta",
-      text: `Week ${getWeekIndexInMonth(definition, state.cursorDate) + 1} • ${state.cursorDate.year}${formatEraSuffix(definition, state.cursorDate)}`
+      text: `Week ${getWeekIndexInMonth(definition, state.cursorDate) + 1} • ${formatDisplayYear(definition, state.cursorDate.year, "verbose")}${formatEraSuffix(definition, state.cursorDate)}`
     });
 
     this.renderWeekdayHeader(container, calendar);
@@ -319,7 +320,7 @@ export class TimeCalendarView extends ItemView {
     });
     intro.createDiv({
       cls: "time-view-meta",
-      text: `${state.cursorDate.year}${formatEraSuffix(definition, state.cursorDate)} • ${month.days} days`
+      text: `${formatDisplayYear(definition, state.cursorDate.year, "verbose")}${formatEraSuffix(definition, state.cursorDate)} • ${month.days} days`
     });
 
     this.renderMonthSection(
@@ -347,7 +348,7 @@ export class TimeCalendarView extends ItemView {
     const intro = container.createDiv({ cls: "time-view-frame time-view-frame--intro" });
     intro.createDiv({
       cls: "time-view-title",
-      text: `${state.cursorDate.year}`
+      text: formatDisplayYear(definition, state.cursorDate.year, "verbose")
     });
     intro.createDiv({
       cls: "time-view-meta",

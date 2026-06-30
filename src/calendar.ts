@@ -14,6 +14,7 @@ import type {
   FantasyMonthDay,
   FantasyEra,
   FantasyDate,
+  FantasyYearDisplayConfig,
   FantasyMonth,
   FantasyMoon,
   FantasyNamedYear,
@@ -39,10 +40,46 @@ const DEFAULT_SEASON_NAMES = ["Spring", "Summer", "Autumn", "Winter"];
 const DEFAULT_SEASON_COLORS = ["#a7d36d", "#e2b35d", "#d98859", "#7fa8d8"];
 const DEFAULT_MOON_PHASE_COUNT = 8;
 const DEFAULT_MOON_SIZE = 28;
+
+interface LeapRuleComputationSummary {
+  cycleYears: number;
+  residues: number[];
+  extraDays: number;
+}
+
+interface DefinitionComputationContext {
+  baseYearLength: number;
+  leapRuleSummaries: LeapRuleComputationSummary[];
+}
+
+interface YearComputationContext {
+  year: number;
+  months: FantasyMonth[];
+  monthStartDays: number[];
+  yearLength: number;
+  daysBeforeYear: number;
+  yearStartWeekdayIndex: number;
+}
+
+const DEFINITION_CONTEXT_CACHE = new WeakMap<
+  FantasyCalendarDefinition,
+  DefinitionComputationContext
+>();
+
+const YEAR_CONTEXT_CACHE = new WeakMap<
+  FantasyCalendarDefinition,
+  Map<number, YearComputationContext>
+>();
+
 const DEFAULT_TIME_CONFIG: FantasyTimeConfig = {
   enabled: false,
   hoursPerDay: 24,
   minutesPerHour: 60
+};
+
+const DEFAULT_YEAR_DISPLAY: FantasyYearDisplayConfig = {
+  negativeYearsMode: "signed",
+  largeYearFormat: "plain"
 };
 
 export const DEFAULT_WEATHER_PROFILE: FantasyWeatherProfileMapping = {
@@ -65,8 +102,10 @@ export const DEFAULT_CALENDAR_DEFINITION: FantasyCalendarDefinition = {
   eras: buildDefaultEras("Era"),
   yearNames: [],
   startWeekdayIndex: 0,
+  monthWeekdayMode: "continuous",
   seasons: buildDefaultSeasons(DEFAULT_MONTHS),
-  time: { ...DEFAULT_TIME_CONFIG }
+  time: { ...DEFAULT_TIME_CONFIG },
+  yearDisplay: { ...DEFAULT_YEAR_DISPLAY }
 };
 
 export const DEFAULT_CALENDAR_FILE: CalendarFile = {
@@ -91,7 +130,6 @@ export const DEFAULT_CALENDAR_FILE: CalendarFile = {
 export const DEFAULT_SETTINGS: TtrpgToolsTimeSettings = {
   dataFolder: "TTRPG/Time",
   activeCalendarId: DEFAULT_CALENDAR_FILE.id,
-  openOnStartup: true,
   dayViewDateFormat: "D-M-YYYY",
   showCalendarWeekNumbers: false,
   controlTimeButtons: []
@@ -107,7 +145,6 @@ export function normalizeSettings(raw: unknown): TtrpgToolsTimeSettings {
   return {
     dataFolder: readString(record.dataFolder, DEFAULT_SETTINGS.dataFolder),
     activeCalendarId: readOptionalString(record.activeCalendarId),
-    openOnStartup: readBoolean(record.openOnStartup, DEFAULT_SETTINGS.openOnStartup),
     dayViewDateFormat: readString(record.dayViewDateFormat, DEFAULT_SETTINGS.dayViewDateFormat),
     showCalendarWeekNumbers: readBoolean(record.showCalendarWeekNumbers, DEFAULT_SETTINGS.showCalendarWeekNumbers),
     controlTimeButtons: readTimeAdvanceButtons(record.controlTimeButtons)
@@ -149,6 +186,8 @@ export function normalizeCalendarFile(raw: unknown): CalendarFile {
     yearNames: rawDefinition.yearNames,
     startWeekdayIndex: rawDefinition.startWeekdayIndex,
     seasons: rawDefinition.seasons,
+    monthWeekdayMode: rawDefinition.monthWeekdayMode,
+    yearDisplay: rawDefinition.yearDisplay,
 	time: rawDefinition.time
   });
 
@@ -222,10 +261,12 @@ function normalizeDefinition(raw: unknown): FantasyCalendarDefinition {
     eras: readEras(record.eras, readString(record.eraLabel, DEFAULT_CALENDAR_DEFINITION.eraLabel), normalizedMonths),
     moons: readMoons(record.moons),
     yearNames: readNamedYears(record.yearNames),
+	monthWeekdayMode: readMonthWeekdayMode(record.monthWeekdayMode),
     startWeekdayIndex: mod(
       readNumber(record.startWeekdayIndex, DEFAULT_CALENDAR_DEFINITION.startWeekdayIndex),
       normalizedWeekdays.length
     ),
+	yearDisplay: readYearDisplay(record.yearDisplay),
     seasons: Array.isArray(record.seasons)
       ? readSeasons(record.seasons, normalizedMonths, seasonCycleLength)
       : buildDefaultSeasons(normalizedMonths, seasonCycleLength),
@@ -363,6 +404,7 @@ function readLeapDays(raw: unknown, months: FantasyMonth[]): FantasyLeapDayRule[
     return {
       id: readString(record.id, slugify(name || `leap-day-${index + 1}`)),
       name,
+	  placement: readLeapDayPlacement(record.placement),
       insertAfterMonthIndex: clamp(
         Math.trunc(readNumber(record.insertAfterMonthIndex, months.length - 1)),
         -1,
@@ -490,6 +532,7 @@ function readEras(
   return raw
     .map((entry, index) => {
       const record = asRecord(entry);
+	  const hasEnd = "endYear" in record || "endMonthIndex" in record || "endDay" in record;
       const shortName = readString(record.shortName, fallbackLabel || `ERA${index + 1}`);
       const name = readString(record.name, `Era ${index + 1}`);
       const startMonthIndex = mod(
@@ -500,6 +543,15 @@ function readEras(
         Math.max(1, Math.trunc(readNumber(record.startDay, 1))),
         months[startMonthIndex]?.days ?? 1
       );
+      const endMonthIndex = hasEnd
+        ? clamp(Math.trunc(readNumber(record.endMonthIndex, months.length - 1)), 0, Math.max(0, months.length - 1))
+        : undefined;
+      const endDay = hasEnd && typeof endMonthIndex === "number"
+        ? clamp(
+            Math.trunc(readNumber(record.endDay, months[endMonthIndex]?.days ?? 1)),
+            1,
+            months[endMonthIndex]?.days ?? 1
+          ) : undefined;
 
       return {
         id: readString(record.id, slugify(shortName || name || `era-${index + 1}`)),
@@ -507,6 +559,9 @@ function readEras(
         shortName,
         startYear: Math.trunc(readNumber(record.startYear, 0)),
         startMonthIndex,
+        endYear: hasEnd ? Math.trunc(readNumber(record.endYear, readNumber(record.startYear, 0))) : undefined,
+        endMonthIndex,
+        endDay,
         startDay
       };
     })
@@ -580,6 +635,25 @@ function readTone(value: unknown): DayMarker["tone"] {
   }
 
   return undefined;
+}
+
+function readLeapDayPlacement(value: unknown): FantasyLeapDayRule["placement"] {
+  return value === "append-to-month" ? "append-to-month" : "standalone";
+}
+
+function readMonthWeekdayMode(value: unknown): FantasyCalendarDefinition["monthWeekdayMode"] {
+  return value === "reset" ? "reset" : "continuous";
+}
+
+function readYearDisplay(raw: unknown): FantasyYearDisplayConfig {
+  const record = asRecord(raw);
+
+  return {
+    negativeYearsMode:
+      record.negativeYearsMode === "absolute" ? "absolute" : DEFAULT_YEAR_DISPLAY.negativeYearsMode,
+    largeYearFormat:
+      record.largeYearFormat === "abbreviated" ? "abbreviated" : DEFAULT_YEAR_DISPLAY.largeYearFormat
+  };
 }
 
 function readMoonCycleAnchor(value: unknown): FantasyMoon["cycleAnchor"] {
@@ -828,6 +902,8 @@ export function cloneCalendarDefinition(
       phaseLabels: [...moon.phaseLabels]
     })),
     yearNames: definition.yearNames.map((entry) => ({ ...entry })),
+    monthWeekdayMode: definition.monthWeekdayMode,
+    yearDisplay: { ...definition.yearDisplay },
     seasons: definition.seasons.map((season) => ({ ...season })),
     time: { ...definition.time }
   };
@@ -876,9 +952,10 @@ export function getMonth(
   monthIndex: number,
   year?: number
 ) {
-  const months = typeof year === "number"
-    ? getMonthsForYear(definition, year)
-    : definition.months;
+  const months =
+    typeof year === "number"
+      ? getYearContext(definition, year).months
+      : definition.months;
 
   return months[mod(monthIndex, months.length)];
 }
@@ -895,7 +972,31 @@ export function getMonthsForYear(
   definition: FantasyCalendarDefinition,
   year: number
 ): FantasyMonth[] {
+  return getYearContext(definition, year).months;
+}
+
+function buildMonthsForYear(
+  definition: FantasyCalendarDefinition,
+  year: number
+): FantasyMonth[] {
+  const baseMonths: FantasyMonth[] = cloneMonths(definition.months);
   const result: FantasyMonth[] = [];
+
+  definition.leapDays
+    .filter((rule) => rule.placement === "append-to-month")
+    .filter((rule) => isLeapCycleActive(rule, year))
+    .forEach((rule) => {
+      const targetMonthIndex = clamp(
+        rule.insertAfterMonthIndex,
+        0,
+        Math.max(0, baseMonths.length - 1)
+      );
+      const targetMonth = baseMonths[targetMonthIndex];
+      if (targetMonth) {
+        baseMonths[targetMonthIndex] = { ...targetMonth, days: targetMonth.days + rule.days };
+      }
+    });
+
   const activeInsertions = [
     ...definition.leapMonths
       .filter((rule) => isLeapCycleActive(rule, year))
@@ -906,6 +1007,7 @@ export function getMonthsForYear(
         month: { ...rule.month }
       })),
     ...definition.leapDays
+      .filter((rule) => rule.placement !== "append-to-month")
       .filter((rule) => isLeapCycleActive(rule, year))
       .map((rule) => ({
         insertAfterMonthIndex: rule.insertAfterMonthIndex,
@@ -938,12 +1040,12 @@ export function getMonthsForYear(
 
   appendInsertionsAfter(-1);
 
-  definition.months.forEach((month, index) => {
+  baseMonths.forEach((month, index) => {
     result.push({ ...month });
     appendInsertionsAfter(index);
   });
 
-  return result.length > 0 ? result : cloneMonths(definition.months);
+  return result.length > 0 ? result : baseMonths;
 }
 
 function isLeapCycleActive(
@@ -959,11 +1061,11 @@ export function getYearLength(
   definition: FantasyCalendarDefinition,
   year?: number
 ): number {
-  const months = typeof year === "number"
-    ? getMonthsForYear(definition, year)
-    : definition.months;
+  if (typeof year === "number") {
+    return getYearContext(definition, year).yearLength;
+  }
 
-  return months.reduce((sum, month) => sum + month.days, 0);
+  return getDefinitionComputationContext(definition).baseYearLength;
 }
 
 function clampMonthDayToMonths(date: FantasyMonthDay, months: FantasyMonth[]): FantasyMonthDay {
@@ -1004,19 +1106,17 @@ export function dayOfYearToMonthDay(
   year: number,
   dayOfYear: number
 ): FantasyMonthDay {
-  const months = getMonthsForYear(definition, year);
-  const yearLength = getYearLength(definition, year);
+  const context = getYearContext(definition, year);
+  const months = context.months;
+  const yearLength = context.yearLength;
   let remaining = mod(Math.trunc(dayOfYear) - 1, yearLength) + 1;
 
-  for (let monthIndex = 0; monthIndex < months.length; monthIndex++) {
+  for (let monthIndex = 0; monthIndex < months.length; monthIndex += 1) {
     const month = months[monthIndex];
-    if (remaining <= month.days) {
-      return {
-        monthIndex,
-        day: remaining
-      };
+    if (month && remaining <= month.days) {
+      return { monthIndex, day: remaining };
     }
-    remaining -= month.days;
+    remaining -= month?.days ?? 0;
   }
 
   return {
@@ -1098,11 +1198,9 @@ function getAbsoluteDayWithIntercalationCycleReset(
   }
 
   const cycleStartYear = getYearCycleStartYear(date.year, cycleYears);
-  let total = 0;
-
-  for (let year = cycleStartYear; year < date.year; year += 1) {
-    total += getYearLength(definition, year);
-  }
+  const total =
+    getDaysBeforeYear(definition, date.year) -
+    getDaysBeforeYear(definition, cycleStartYear);
 
   return total + getDayOfYear(definition, date) - 1;
 }
@@ -1155,6 +1253,9 @@ export function buildDefaultEras(label: string): FantasyEra[] {
       name: "Era 1",
       shortName,
       startYear: 0,
+      endYear: undefined,
+      endMonthIndex: undefined,
+      endDay: undefined,
       startMonthIndex: 0,
       startDay: 1
     }
@@ -1165,24 +1266,31 @@ export function getEraForDate(
   definition: FantasyCalendarDefinition,
   date: FantasyDate
 ): FantasyEra | null {
-  const eras = definition.eras;
-  let active: FantasyEra | null = null;
+  for (let index = definition.eras.length - 1; index >= 0; index -= 1) {
+    const era = definition.eras[index];
+    if (!era) {
+      continue;
+    }
 
-  for (const era of eras) {
-    if (
+    const startsBeforeOrOn =
       compareDateParts(date, {
         year: era.startYear,
         monthIndex: era.startMonthIndex,
         day: era.startDay
-      }) >= 0
-    ) {
-      active = era;
-    } else {
-      break;
+      }) >= 0;
+
+    if (!startsBeforeOrOn) {
+      continue;
+    }
+
+    if (typeof era.endYear !== "number") {
+      return era;
+    }
+    if (compareDateParts(date, buildEraEndDate(era, definition.months)) <= 0) {
+      return era;
     }
   }
-
-  return active;
+  return null;
 }
 
 export function getEraForYear(
@@ -1221,16 +1329,66 @@ export function clampDate(
   };
 }
 
+export type YearDisplayVariant = "verbose" | "compact";
+
+export function formatDisplayYear(
+  definition: FantasyCalendarDefinition,
+  year: number,
+  variant: YearDisplayVariant = "verbose"
+): string {
+  const displayYear =
+    definition.yearDisplay.negativeYearsMode === "absolute"
+      ? Math.abs(year)
+      : year;
+
+  if (definition.yearDisplay.largeYearFormat !== "abbreviated") {
+    return String(displayYear);
+  }
+
+  return abbreviateYear(displayYear, variant);
+}
+
+function abbreviateYear(value: number, variant: YearDisplayVariant): string {
+  const sign = value < 0 ? "-" : "";
+  const absoluteValue = Math.abs(value);
+  const scales = [
+    { limit: 1_000_000_000_000, compact: "T", verbose: "Trillion" },
+    { limit: 1_000_000_000, compact: "B", verbose: "Billion" },
+    { limit: 1_000_000, compact: "M", verbose: "Million" }
+  ];
+
+  for (const scale of scales) {
+    if (absoluteValue >= scale.limit) {
+      const scaledValue = formatAbbreviatedNumber(absoluteValue / scale.limit);
+      return variant === "compact"
+        ? `${sign}${scaledValue} ${scale.compact}`
+        : `${sign}${scaledValue} ${scale.verbose}`;
+    }
+  }
+
+  return `${value}`;
+}
+
+function formatAbbreviatedNumber(value: number): string {
+  const rounded =
+    value >= 100
+      ? Math.round(value)
+      : value >= 10
+        ? Math.round(value * 10) / 10
+        : Math.round(value * 100) / 100;
+
+  return String(rounded)
+    .replace(/\.0+$/g, "")
+    .replace(/(\.\d*[1-9])0+$/g, "$1");
+}
+
 export function getDayOfYear(
   definition: FantasyCalendarDefinition,
   date: FantasyDate
 ): number {
-  const months = getMonthsForYear(definition, date.year);
-  let total = 0;
-  for (let i = 0; i < date.monthIndex; i++) {
-    total += months[i]?.days ?? 0;
-  }
-  return total + date.day;
+  const normalized = clampDate(date, definition);
+  const context = getYearContext(definition, normalized.year);
+  return (context.monthStartDays[normalized.monthIndex] ?? 0) + normalized.day;
 }
 
 export function getAbsoluteDay(
@@ -1238,39 +1396,18 @@ export function getAbsoluteDay(
   date: FantasyDate
 ): number {
   const normalized = clampDate(date, definition);
-  let total = 0;
-
-  if (normalized.year >= 0) {
-    for (let year = 0; year < normalized.year; year += 1) {
-      total += getYearLength(definition, year);
-    }
-  } else {
-    for (let year = -1; year >= normalized.year; year -= 1) {
-      total -= getYearLength(definition, year);
-    }
-  }
-
-  return total + getDayOfYear(definition, normalized) - 1;
+  const context = getYearContext(definition, normalized.year);
+  return context.daysBeforeYear + getDayOfYear(definition, normalized) - 1;
 }
 
 export function absoluteDayToDate(
   definition: FantasyCalendarDefinition,
   absoluteDay: number
 ): FantasyDate {
-  let year = 0;
-  let remaining = Math.trunc(absoluteDay);
-
-  if (remaining >= 0) {
-    while (remaining >= getYearLength(definition, year)) {
-      remaining -= getYearLength(definition, year);
-      year += 1;
-    }
-  } else {
-    do {
-      year -= 1;
-      remaining += getYearLength(definition, year);
-    } while (remaining < 0);
-  }
+  const target = Math.trunc(absoluteDay);
+  const estimatedYear = estimateYearFromAbsoluteDay(definition, target);
+  const year = findYearForAbsoluteDay(definition, target, estimatedYear);
+  const remaining = target - getDaysBeforeYear(definition, year);
 
   return {
     year,
@@ -1282,21 +1419,15 @@ export function getWeekdayIndex(
   definition: FantasyCalendarDefinition,
   date: FantasyDate
 ): number {
-  return mod(
-    definition.startWeekdayIndex + getAbsoluteDay(definition, date),
-    definition.weekdays.length
-  );
+  const normalized = clampDate(date, definition);
+  return mod(getMonthStartWeekdayIndex(definition, normalized.year, normalized.monthIndex) + normalized.day - 1, definition.weekdays.length);
 }
 
 export function getWeekIndexInMonth(
   definition: FantasyCalendarDefinition,
   date: FantasyDate
 ): number {
-  const monthStartIndex = getWeekdayIndex(definition, {
-    year: date.year,
-    monthIndex: date.monthIndex,
-    day: 1
-  });
+  const monthStartIndex = getMonthStartWeekdayIndex(definition, date.year, date.monthIndex);
 
   return Math.floor((monthStartIndex + date.day - 1) / definition.weekdays.length);
 }
@@ -1309,13 +1440,30 @@ export function getWeekNumberInMonth(
 }
 
 export function getWeekOfYear(definition: FantasyCalendarDefinition, date: FantasyDate): number {
+  if (definition.monthWeekdayMode === "reset") {
+    let total = 0;
+    for (let monthIndex = 0; monthIndex < date.monthIndex; monthIndex += 1) {
+      total += getWeekCountInMonth(definition, date.year, monthIndex);
+    }
+    return total + getWeekNumberInMonth(definition, date);
+  }
+
   const yearStartIndex = getWeekdayIndex(definition, {
     year: date.year,
     monthIndex: 0,
     day: 1
   });
-
   return Math.floor((yearStartIndex + getDayOfYear(definition, date) - 1) / definition.weekdays.length) + 1;
+}
+
+function getWeekCountInMonth(
+  definition: FantasyCalendarDefinition,
+  year: number,
+  monthIndex: number
+): number {
+  const month = getMonth(definition, monthIndex, year);
+  const startWeekdayIndex = getMonthStartWeekdayIndex(definition, year, monthIndex);
+  return Math.ceil((startWeekdayIndex + month.days) / definition.weekdays.length);
 }
 
 export function shiftDay(
@@ -1323,7 +1471,54 @@ export function shiftDay(
   delta: number,
   definition: FantasyCalendarDefinition
 ): FantasyDate {
-  return absoluteDayToDate(definition, getAbsoluteDay(definition, date) + delta);
+  let current = clampDate(date, definition);
+  let remaining = Math.trunc(delta);
+
+  if (remaining === 0) {
+    return current;
+  }
+
+  while (remaining > 0) {
+    const months = getMonthsForYear(definition, current.year);
+    const daysInMonth = months[current.monthIndex]?.days ?? 1;
+
+    if (current.day < daysInMonth) {
+      current = { ...current, day: current.day + 1 };
+    } else if (current.monthIndex < months.length - 1) {
+      current = { ...current, monthIndex: current.monthIndex + 1, day: 1 };
+    } else {
+      current = { year: current.year + 1, monthIndex: 0, day: 1 };
+    }
+
+    remaining -= 1;
+  }
+
+  while (remaining < 0) {
+    if (current.day > 1) {
+      current = { ...current, day: current.day - 1 };
+    } else if (current.monthIndex > 0) {
+      const prevMonthIndex = current.monthIndex - 1;
+      const months = getMonthsForYear(definition, current.year);
+      current = {
+        ...current,
+        monthIndex: prevMonthIndex,
+        day: months[prevMonthIndex]?.days ?? 1
+      };
+    } else {
+      const prevYear = current.year - 1;
+      const prevMonths = getMonthsForYear(definition, prevYear);
+      const prevMonthIndex = Math.max(0, prevMonths.length - 1);
+      current = {
+        year: prevYear,
+        monthIndex: prevMonthIndex,
+        day: prevMonths[prevMonthIndex]?.days ?? 1
+      };
+    }
+
+    remaining += 1;
+  }
+
+  return current;
 }
 
 export function shiftMonth(
@@ -1390,11 +1585,7 @@ export function buildMonthGrid(
   markers: DayMarker[]
 ): MonthGrid {
   const month = getMonth(definition, monthIndex, year);
-  const startWeekdayIndex = getWeekdayIndex(definition, {
-    year,
-    monthIndex,
-    day: 1
-  });
+  const startWeekdayIndex = getMonthStartWeekdayIndex(definition, year, monthIndex);
 
   const rows: MonthGridCell[][] = [];
   const columns = definition.weekdays.length;
@@ -1486,15 +1677,16 @@ export function getNamedYear(
 
 export function formatYearLabel(
   definition: FantasyCalendarDefinition,
-  year: number
+  year: number,
+  variant: YearDisplayVariant = "verbose"
 ): string {
   const namedYear = getNamedYear(definition, year);
 
   if (!namedYear) {
-    return `${year}`;
+    return formatDisplayYear(definition, year, variant);
   }
 
-  return `${year} (${namedYear})`;
+  return `${formatDisplayYear(definition, year, variant)} (${namedYear})`;
 }
 
 export function formatLongDate(
@@ -1502,13 +1694,14 @@ export function formatLongDate(
   definition: FantasyCalendarDefinition
 ): string {
   const eraLabel = getEraShortLabel(definition, date);
-  return `${date.day}. ${getMonth(definition, date.monthIndex, date.year).name} ${formatYearLabel(definition, date.year)}${eraLabel ? ` ${eraLabel}` : ""}`;
+  return `${date.day}. ${getMonth(definition, date.monthIndex, date.year).name} ${formatYearLabel(definition, date.year, "verbose")}${eraLabel ? ` ${eraLabel}` : ""}`;
 }
 
 export function formatDateWithPattern(
   date: FantasyDate,
   definition: FantasyCalendarDefinition,
-  pattern: string
+  pattern: string,
+  yearVariant: YearDisplayVariant = "verbose"
 ): string {
   const normalized = clampDate(date, definition);
   const month = getMonth(definition, normalized.monthIndex, normalized.year);
@@ -1525,8 +1718,8 @@ export function formatDateWithPattern(
     ["WeekdayShort", weekdayShort],
     ["MonthName", month.name],
     ["MonthShort", monthShort],
-    ["YYYY", String(normalized.year)],
-    ["YY", String(normalized.year).slice(-2)],
+    ["YYYY", formatDisplayYear(definition, normalized.year, yearVariant)],
+    ["YY", String(Math.abs(normalized.year)).slice(-2).padStart(2, "0")],
     ["MM", String(normalized.monthIndex + 1).padStart(2, "0")],
     ["DD", String(normalized.day).padStart(2, "0")],
     ["YW", String(weekInYear).padStart(2, "0")],
@@ -1605,6 +1798,240 @@ function getMonthListLength(months: FantasyMonth[]): number {
   return Math.max(1, months.reduce((sum, month) => sum + month.days, 0));
 }
 
+function getDefinitionComputationContext(
+  definition: FantasyCalendarDefinition
+): DefinitionComputationContext {
+  const cached = DEFINITION_CONTEXT_CACHE.get(definition);
+  if (cached) {
+    return cached;
+  }
+
+  const baseYearLength = getMonthListLength(definition.months);
+  const leapRuleSummaries: LeapRuleComputationSummary[] = [
+    ...definition.leapMonths.map((rule) => {
+      const cycleYears = Math.max(1, Math.trunc(rule.cycleYears || 1));
+      return {
+        cycleYears,
+        residues: [...new Set(rule.leapYearPositions.map((value) => mod(value, cycleYears)))],
+        extraDays: Math.max(1, Math.trunc(rule.month.days || 1))
+      };
+    }),
+    ...definition.leapDays.map((rule) => {
+      const cycleYears = Math.max(1, Math.trunc(rule.cycleYears || 1));
+      return {
+        cycleYears,
+        residues: [...new Set(rule.leapYearPositions.map((value) => mod(value, cycleYears)))],
+        extraDays: Math.max(1, Math.trunc(rule.days || 1))
+      };
+    })
+  ];
+
+  const context: DefinitionComputationContext = {
+    baseYearLength,
+    leapRuleSummaries
+  };
+
+  DEFINITION_CONTEXT_CACHE.set(definition, context);
+  return context;
+}
+
+function getMonthStartWeekdayIndex(
+  definition: FantasyCalendarDefinition,
+  year: number,
+  monthIndex: number
+): number {
+  if (definition.monthWeekdayMode === "reset") {
+    return definition.startWeekdayIndex;
+  }
+
+  const context = getYearContext(definition, year);
+  return mod(context.yearStartWeekdayIndex + (context.monthStartDays[monthIndex] ?? 0), definition.weekdays.length);
+}
+
+function getYearContext(
+  definition: FantasyCalendarDefinition,
+  year: number
+): YearComputationContext {
+  const normalizedYear = Math.trunc(Number(year) || 0);
+  let cache = YEAR_CONTEXT_CACHE.get(definition);
+
+  if (!cache) {
+    cache = new Map<number, YearComputationContext>();
+    YEAR_CONTEXT_CACHE.set(definition, cache);
+  }
+
+  const cached = cache.get(normalizedYear);
+  if (cached) {
+    return cached;
+  }
+
+  const months = buildMonthsForYear(definition, normalizedYear);
+  const monthStartDays: number[] = [];
+  let runningTotal = 0;
+
+  months.forEach((month) => {
+    monthStartDays.push(runningTotal);
+    runningTotal += month.days;
+  });
+
+  const context: YearComputationContext = {
+    year: normalizedYear,
+    months,
+    monthStartDays,
+    yearLength: runningTotal,
+    daysBeforeYear: getDaysBeforeYear(definition, normalizedYear),
+    yearStartWeekdayIndex: mod(
+      definition.startWeekdayIndex + getDaysBeforeYear(definition, normalizedYear),
+      definition.weekdays.length
+    )
+  };
+
+  if (cache.size > 2048) {
+    for (const oldestKey of cache.keys()) {
+      cache.delete(oldestKey);
+	  break;
+    }
+  }
+
+  cache.set(normalizedYear, context);
+  return context;
+}
+
+function getDaysBeforeYear(
+  definition: FantasyCalendarDefinition,
+  year: number
+): number {
+  const normalizedYear = Math.trunc(Number(year) || 0);
+
+  if (normalizedYear === 0) {
+    return 0;
+  }
+
+  const definitionContext = getDefinitionComputationContext(definition);
+  let total = normalizedYear * definitionContext.baseYearLength;
+
+  definitionContext.leapRuleSummaries.forEach((rule) => {
+    total += rule.extraDays * countRuleOccurrencesBeforeYear(rule, normalizedYear);
+  });
+
+  return total;
+}
+
+function countRuleOccurrencesBeforeYear(
+  rule: LeapRuleComputationSummary,
+  year: number
+): number {
+  if (year > 0) {
+    return countResiduesInRange(rule.residues, rule.cycleYears, 0, year - 1);
+  }
+
+  if (year < 0) {
+    return -countResiduesInRange(rule.residues, rule.cycleYears, year, -1);
+  }
+
+  return 0;
+}
+
+function countResiduesInRange(
+  residues: number[],
+  modulus: number,
+  startInclusive: number,
+  endInclusive: number
+): number {
+  if (endInclusive < startInclusive) {
+    return 0;
+  }
+
+  return residues.reduce((sum, residue) => {
+    return sum + countIntegersInRangeByResidue(startInclusive, endInclusive, residue, modulus);
+  }, 0);
+}
+
+function countIntegersInRangeByResidue(
+  startInclusive: number,
+  endInclusive: number,
+  residue: number,
+  modulus: number
+): number {
+  return (
+    floorDiv(endInclusive - residue, modulus) -
+    floorDiv(startInclusive - 1 - residue, modulus)
+  );
+}
+
+function floorDiv(value: number, divisor: number): number {
+  return Math.floor(value / divisor);
+}
+
+function estimateYearFromAbsoluteDay(
+  definition: FantasyCalendarDefinition,
+  absoluteDay: number
+): number {
+  const baseYearLength = Math.max(
+    1,
+    getDefinitionComputationContext(definition).baseYearLength
+  );
+
+  return Math.floor(absoluteDay / baseYearLength);
+}
+
+function findYearForAbsoluteDay(
+  definition: FantasyCalendarDefinition,
+  absoluteDay: number,
+  estimatedYear: number
+): number {
+  const estimateStart = getDaysBeforeYear(definition, estimatedYear);
+
+  if (estimateStart > absoluteDay) {
+    let high = estimatedYear;
+    let step = 1;
+    let low = estimatedYear - step;
+
+    while (getDaysBeforeYear(definition, low) > absoluteDay) {
+      high = low;
+      step *= 2;
+      low = estimatedYear - step;
+    }
+
+    return binarySearchYear(definition, absoluteDay, low, high);
+  }
+
+  let low = estimatedYear;
+  let step = 1;
+  let high = estimatedYear + step;
+
+  while (getDaysBeforeYear(definition, high) <= absoluteDay) {
+    low = high;
+    step *= 2;
+    high = estimatedYear + step;
+  }
+
+  return binarySearchYear(definition, absoluteDay, low, high);
+}
+
+function binarySearchYear(
+  definition: FantasyCalendarDefinition,
+  absoluteDay: number,
+  lowYearInclusive: number,
+  highYearExclusive: number
+): number {
+  let low = lowYearInclusive;
+  let high = highYearExclusive;
+
+  while (low + 1 < high) {
+    const mid = Math.floor((low + high) / 2);
+    const midStart = getDaysBeforeYear(definition, mid);
+
+    if (midStart <= absoluteDay) {
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+
+  return low;
+}
+
 function getSeasonCycleLengthForMonths(
   mapping: FantasyWeatherProfileMapping,
   months: FantasyMonth[]
@@ -1628,6 +2055,23 @@ function monthDayToDayInMonths(
   }
 
   return total + normalized.day;
+}
+
+function buildEraEndDate(
+  era: FantasyEra,
+  months: FantasyMonth[]
+): Pick<FantasyDate, "year" | "monthIndex" | "day"> {
+  const monthIndex = clamp(
+    era.endMonthIndex ?? Math.max(0, months.length - 1),
+    0,
+    Math.max(0, months.length - 1)
+  );
+
+  return {
+    year: era.endYear ?? era.startYear,
+    monthIndex,
+    day: clamp(era.endDay ?? (months[monthIndex]?.days ?? 1), 1, months[monthIndex]?.days ?? 1)
+  };
 }
 
 function compareDateParts(

@@ -152,9 +152,8 @@
 .time-event-editor__panel,
 .time-calendar__empty {
   background: var(--time-panel-bg);
-  box-shadow:
-    0 10px 30px var(--time-shadow),
-    inset 0 0 0 1px rgba(207, 101, 95, 0.12);
+  box-shadow: 0 6px 18px var(--time-shadow);
+  border: 1px solid rgba(207, 101, 95, 0.12);
 }
 
 .time-calendar__empty {
@@ -399,6 +398,7 @@
 .time-control__meta,
 .time-control__clock-note {
   color: var(--time-muted-text);
+  overflow-wrap: anywhere;
 }
 
 .time-control__buttons {
@@ -643,6 +643,8 @@
 .time-calendar__rail-year {
   width: 100%;
   font-size: clamp(0.95rem, 4.2cqi, 1.1rem);
+  line-height: 1.05;
+  overflow-wrap: anywhere;
   font-weight: 700;
   text-align: center;
   color: var(--time-heading-soft);
@@ -720,6 +722,8 @@
 
 .time-month-section {
   margin-bottom: 32px;
+  content-visibility: auto;
+  contain-intrinsic-size: 520px;
 }
 
 .time-month-section__heading {
@@ -1556,6 +1560,114 @@
 }
 
 /* ==========================================================================
+   Calendar editor modal
+   ========================================================================== */
+
+.time-calendar-editor__compact-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.time-calendar-editor__compact-field,
+.time-calendar-editor__mini-field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.time-calendar-editor__compact-label {
+  font-size: 0.95rem;
+  color: var(--text-normal);
+}
+
+.time-calendar-editor__mini-label {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.time-calendar-editor__compact-input,
+.time-calendar-editor__mini-input {
+  box-sizing: border-box;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.time-calendar-editor__compact-input {
+  width: 100%;
+  height: 38px;
+  padding: 0 10px;
+}
+
+.time-calendar-editor__mini-input {
+  width: 100%;
+  max-width: 110px;
+  height: 34px;
+  padding: 0 8px;
+}
+
+.time-calendar-editor__shortcut-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.time-calendar-editor__shortcut-grid .time-manager__button {
+  min-height: 38px;
+  padding: 8px 10px;
+}
+
+.time-calendar-editor__setup-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 4px 0 14px;
+}
+
+.time-calendar-editor__setup-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--time-border, var(--background-modifier-border));
+  border-radius: 12px;
+  background: var(--time-card-bg, var(--background-secondary));
+}
+
+.time-calendar-editor__mini-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(72px, 110px));
+  gap: 8px;
+  align-items: end;
+}
+
+.time-calendar-editor__mini-grid--two {
+  grid-template-columns: repeat(2, minmax(72px, 110px));
+}
+
+.time-calendar-editor__checkbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.time-calendar-editor__checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+}
+
+.time-calendar-editor__checkbox-row input[type="checkbox"] {
+  margin: 0;
+}
+
+/* ==========================================================================
    Manager / editor lists
    ========================================================================== */
 
@@ -1657,7 +1769,16 @@
 }
 
 .time-collection-editor__row--era {
-  grid-template-columns: minmax(220px, 1.2fr) 110px 110px 140px 80px 38px;
+  grid-template-columns:
+    minmax(180px, 1.2fr)
+    110px
+    110px
+    140px
+    80px
+    110px
+    140px
+    80px
+    38px;
 }
 
 .time-collection-editor__row--moon {
@@ -1690,6 +1811,17 @@
 
 .time-collection-editor__row--leap-rule-header .time-collection-editor__column-label:last-child {
   visibility: hidden;
+}
+
+.time-collection-editor__row--leap-day-rule {
+  grid-template-columns:
+    minmax(170px, 1.2fr)
+    150px
+    minmax(170px, 1fr)
+    80px
+    90px
+    minmax(140px, 1fr)
+    38px;
 }
 
 .time-collection-editor__row--moon-header {
@@ -2001,6 +2133,15 @@
   .time-settings-button-header {
     grid-template-columns: minmax(0, 1fr);
   }
+  
+  .time-calendar-editor__compact-grid,
+  .time-calendar-editor__setup-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .time-calendar-editor__shortcut-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 
   .time-manager__item {
     grid-template-columns: 30px minmax(0, 1fr);
@@ -2013,6 +2154,17 @@
 
   .time-manager__footer {
     flex-direction: column;
+  }
+}
+
+@media (max-width: 420px) {
+  .time-calendar-editor__shortcut-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .time-calendar-editor__mini-grid,
+  .time-calendar-editor__mini-grid--two {
+    grid-template-columns: repeat(auto-fit, minmax(72px, 110px));
   }
 }
 

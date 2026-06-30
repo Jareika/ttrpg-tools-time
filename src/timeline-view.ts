@@ -1,6 +1,7 @@
 import { ItemView, Menu, Notice, WorkspaceLeaf } from "obsidian";
 import type TtrpgToolsTimePlugin from "./main";
-import { getEraShortLabel, getMonth } from "./calendar";
+import { confirmWithModal } from "./confirm-dialog";
+import { formatYearLabel, getEraShortLabel, getMonth } from "./calendar";
 import type {
   CalendarTimelineStyle,
   CalendarEventDefinition,
@@ -448,6 +449,25 @@ export class TimeTimelineView extends ItemView {
           item.start.year,
           item.event.id
         );
+      })
+    );
+	
+    menu.addItem((entry) =>
+      entry.setTitle("Delete event").setIcon("trash-2").onClick(() => {
+        void (async () => {
+          const confirmed = await confirmWithModal(this.plugin.app, {
+            title: "Delete event",
+            message: `Delete "${item.title}"?`,
+            confirmLabel: "Delete",
+            cancelLabel: "Cancel"
+          });
+
+          if (!confirmed) {
+            return;
+          }
+
+          await this.plugin.deleteEventById(calendar.id, item.start.year, item.event.id);
+        })();
       })
     );
 
@@ -957,14 +977,14 @@ function formatRangeLabel(
   timelineStyle?: ResolvedTimelineStyle
 ): string {
   const single = (date: FantasyDate) =>
-    `${date.day}. ${getTimelineMonthName(calendar, date, timelineStyle)} ${date.year}${formatEraSuffix(calendar, date)}`;
+    `${date.day}. ${getTimelineMonthName(calendar, date, timelineStyle)} ${formatYearLabel(calendar.definition, date.year, "verbose")}${formatEraSuffix(calendar, date)}`;
 
   if (!end || sameDate(start, end)) {
     return single(start);
   }
 
   if (start.year === end.year && start.monthIndex === end.monthIndex) {
-	return `${start.day}–${end.day}. ${getTimelineMonthName(calendar, start, timelineStyle)} ${start.year}${formatEraSuffix(calendar, start)}`;
+	return `${start.day}–${end.day}. ${getTimelineMonthName(calendar, start, timelineStyle)} ${formatYearLabel(calendar.definition, start.year, "verbose")}${formatEraSuffix(calendar, start)}`;
   }
 
   return `${single(start)} → ${single(end)}`;

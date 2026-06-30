@@ -40,33 +40,6 @@ export class TimeSettingTab extends PluginSettingTab {
     });
 
     new Setting(containerEl)
-      .setName("Open calendar side pane")
-      .setDesc("Open or focus the calendar view.")
-      .addButton((button) =>
-        button.setButtonText("Open").onClick(() => {
-          void this.plugin.activateView();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("Open timeline view")
-      .setDesc("Open or focus the event timeline view.")
-      .addButton((button) =>
-        button.setButtonText("Open").onClick(() => {
-          void this.plugin.activateTimelineView();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("Open timeline filter pane")
-      .setDesc("Open or focus the timeline tag filter pane. Click = include, double-click = exclude.")
-      .addButton((button) =>
-        button.setButtonText("Open").onClick(() => {
-          void this.plugin.activateTimelineFilterView();
-        })
-      );
-	  
-    new Setting(containerEl)
       .setName("Open control pane")
       .setDesc("Open or focus the control side pane.")
       .addButton((button) =>
@@ -119,24 +92,6 @@ export class TimeSettingTab extends PluginSettingTab {
         })
       );
 
-    new Setting(containerEl)
-      .setName("Reload JSON data")
-      .setDesc("Reload all calendar and tag-pack files from the vault.")
-      .addButton((button) =>
-        button.setButtonText("Reload").onClick(() => {
-          void this.reloadData();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("Open on startup")
-      .setDesc("Open the calendar view when the workspace is ready.")
-      .addToggle((toggle) =>
-        toggle.setValue(this.plugin.settings.openOnStartup).onChange((value) => {
-          void this.updateOpenOnStartup(value);
-        })
-      );
-	  
     new Setting(containerEl)
       .setName("Day view date format")
       .setDesc(
@@ -349,18 +304,6 @@ export class TimeSettingTab extends PluginSettingTab {
 
     await this.plugin.reloadDataFromDisk();
     this.display();
-  }
-
-  private async reloadData(): Promise<void> {
-    await this.plugin.reloadDataFromDisk();
-    this.display();
-  }
-
-  private async updateOpenOnStartup(value: boolean): Promise<void> {
-    await this.plugin.replaceSettings({
-      ...this.plugin.settings,
-      openOnStartup: value
-    });
   }
 
   private async updateDayViewDateFormat(value: string): Promise<void> {

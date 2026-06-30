@@ -2,7 +2,8 @@ import { App, MarkdownView, Notice, Plugin, TFile, WorkspaceLeaf } from "obsidia
 import {
   normalizeFantasyClockState,
   normalizeCalendarFile,
-  normalizeSettings
+  normalizeSettings,
+  sameDate
 } from "./calendar";
 import { CONTROL_VIEW_TYPE, TimeControlView } from "./control-view";
 import { CALENDAR_DAY_VIEW_TYPE, TimeDayView } from "./day-view";
@@ -86,6 +87,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
   private timelineLayoutMode: "vertical" | "horizontal" = "vertical";
   private readonly timelineIncludedTagRefs = new Set<string>();
   private readonly timelineExcludedTagRefs = new Set<string>();
+  private pendingActiveCalendarStateSaveTimer: number | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -265,14 +267,6 @@ export default class TtrpgToolsTimePlugin extends Plugin {
       }
     });
 
-    this.addCommand({
-      id: "reload-time-data",
-      name: "Reload JSON data",
-      callback: () => {
-        void this.reloadDataFromDisk();
-      }
-    });
-
     this.addSettingTab(new TimeSettingTab(this.app, this));
 	
     this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf) => {
@@ -285,19 +279,14 @@ export default class TtrpgToolsTimePlugin extends Plugin {
       void (async () => {
         await this.initializeData();
 
-        if (
-          this.settings.openOnStartup &&
-          this.app.workspace.getLeavesOfType(CALENDAR_VIEW_TYPE).length === 0
-        ) {
-          await this.activateView();
-        }
-
         this.refreshOpenViews();
       })();
     });
   }
 
   onunload(): void {
+    void this.flushPendingActiveCalendarStateSave();
+	
     this.app.workspace.getLeavesOfType(CALENDAR_VIEW_TYPE).forEach((leaf) => leaf.detach());
     this.app.workspace.getLeavesOfType(CALENDAR_DAY_VIEW_TYPE).forEach((leaf) => leaf.detach());
     this.app.workspace.getLeavesOfType(EVENT_EDITOR_VIEW_TYPE).forEach((leaf) => leaf.detach());
@@ -339,6 +328,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
   }
 
   async reloadDataFromDisk(): Promise<void> {
+	await this.flushPendingActiveCalendarStateSave();
     this.weatherPackCache.clear();
     this.weatherReferenceCache.clear();
     this.weatherYearCache.clear();
@@ -708,6 +698,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
   }
 
   async setActiveCalendarById(id: string): Promise<void> {
+	await this.flushPendingActiveCalendarStateSave();
     const calendar = await this.dataStore.loadCalendarById(id);
 
     if (!calendar) {
@@ -727,6 +718,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
   }
 
   async saveCalendar(calendar: CalendarFile, setActive = false): Promise<void> {
+	await this.flushPendingActiveCalendarStateSave();
     const normalized = normalizeCalendarFile(calendar);
     await this.dataStore.saveCalendar(normalized);
 
@@ -1004,14 +996,18 @@ export default class TtrpgToolsTimePlugin extends Plugin {
   }
 
   refreshOpenViews(): void {
-    [
+    this.refreshViews([
       CALENDAR_VIEW_TYPE,
       CALENDAR_DAY_VIEW_TYPE,
       EVENT_EDITOR_VIEW_TYPE,
 	  CONTROL_VIEW_TYPE,
       TIMELINE_VIEW_TYPE,
       TIMELINE_FILTER_VIEW_TYPE
-    ].forEach((viewType) => {
+    ]);
+  }
+
+  private refreshViews(viewTypes: string[]): void {
+    [...new Set(viewTypes)].forEach((viewType) => {
       this.app.workspace.getLeavesOfType(viewType).forEach((leaf) => {
         const candidate = leaf.view as { refresh?: () => void };
         if (typeof candidate.refresh === "function") {
@@ -1019,6 +1015,68 @@ export default class TtrpgToolsTimePlugin extends Plugin {
         }
       });
     });
+  }
+
+  private refreshViewsForCalendarStatePatch(
+    previousState: CalendarState,
+    patch: Partial<CalendarState>
+  ): void {
+    const viewTypes = new Set<string>();
+
+    if (
+      patch.activeView !== undefined &&
+      patch.activeView !== previousState.activeView
+    ) {
+      viewTypes.add(CALENDAR_VIEW_TYPE);
+    }
+
+    if (patch.cursorDate && !sameDate(previousState.cursorDate, patch.cursorDate)) {
+      viewTypes.add(CALENDAR_VIEW_TYPE);
+      viewTypes.add(CALENDAR_DAY_VIEW_TYPE);
+      viewTypes.add(CONTROL_VIEW_TYPE);
+    }
+
+    if (patch.todayDate && !sameDate(previousState.todayDate, patch.todayDate)) {
+      viewTypes.add(CALENDAR_VIEW_TYPE);
+      viewTypes.add(CALENDAR_DAY_VIEW_TYPE);
+      viewTypes.add(CONTROL_VIEW_TYPE);
+    }
+
+    if (viewTypes.size > 0) {
+      this.refreshViews([...viewTypes]);
+    }
+  }
+
+  private scheduleActiveCalendarStateSave(delayMs = 600): void {
+    if (this.pendingActiveCalendarStateSaveTimer !== null) {
+      window.clearTimeout(this.pendingActiveCalendarStateSaveTimer);
+    }
+
+    this.pendingActiveCalendarStateSaveTimer = window.setTimeout(() => {
+      this.pendingActiveCalendarStateSaveTimer = null;
+      void this.persistActiveCalendarStateToDisk();
+    }, delayMs);
+  }
+
+  private async flushPendingActiveCalendarStateSave(): Promise<void> {
+    if (this.pendingActiveCalendarStateSaveTimer !== null) {
+      window.clearTimeout(this.pendingActiveCalendarStateSaveTimer);
+      this.pendingActiveCalendarStateSaveTimer = null;
+      await this.persistActiveCalendarStateToDisk();
+    }
+  }
+
+  private async persistActiveCalendarStateToDisk(): Promise<void> {
+    if (!this.activeCalendar) {
+      return;
+    }
+
+    await this.dataStore.saveCalendar(this.activeCalendar);
+
+    if (this.settings.activeCalendarId !== this.activeCalendar.id) {
+      this.settings.activeCalendarId = this.activeCalendar.id;
+      await this.saveSettings();
+    }
   }
 
   async loadEventYear(calendarId: string, year: number): Promise<EventYearFile | null> {
@@ -1149,6 +1207,38 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     }
 
     return await this.loadSourceEventById(calendarId, eventId);
+  }
+  
+  async deleteEventById(
+    calendarId: string,
+    year: number,
+    eventId: string
+  ): Promise<boolean> {
+    const sourceEvent = await this.loadEventById(calendarId, year, eventId);
+
+    if (!sourceEvent) {
+      new Notice("Could not load event for deletion.");
+      return false;
+    }
+
+    const calendar =
+      this.activeCalendar?.id === sourceEvent.calendarId
+        ? this.activeCalendar
+        : await this.dataStore.loadCalendarById(sourceEvent.calendarId);
+
+    if (!calendar) {
+      new Notice("Could not resolve calendar for event deletion.");
+      return false;
+    }
+
+    await this.dataStore.deleteEventSource(sourceEvent.calendarId, sourceEvent.id);
+    for (const targetYear of getIndexedYearsForEventSource(sourceEvent, calendar)) {
+      await this.rebuildEventIndexYear(sourceEvent.calendarId, targetYear, calendar.definition);
+    }
+
+    this.refreshOpenViews();
+    new Notice(`Deleted event "${sourceEvent.title}".`);
+    return true;
   }
 
   async loadEventOccurrenceById(
@@ -1357,14 +1447,50 @@ export default class TtrpgToolsTimePlugin extends Plugin {
       return;
     }
 
+    const previousState = this.activeCalendar.state;
+    const didActiveViewChange =
+      patch.activeView !== undefined && patch.activeView !== previousState.activeView;
+    const didTodayChange =
+      patch.todayDate !== undefined && !sameDate(previousState.todayDate, patch.todayDate);
+    const didCursorChange =
+      patch.cursorDate !== undefined && !sameDate(previousState.cursorDate, patch.cursorDate);
+
+    if (!didActiveViewChange && !didTodayChange && !didCursorChange) {
+      return;
+    }
+
     const nextCalendar: CalendarFile = {
       ...this.activeCalendar,
       state: {
-        ...this.activeCalendar.state,
+        ...previousState,
         ...patch
       }
     };
-    await this.saveCalendar(nextCalendar, true);
+
+    this.activeCalendar = nextCalendar;
+
+    if (
+      patch.cursorDate &&
+      patch.cursorDate.year !== previousState.cursorDate.year
+    ) {
+      void this.ensureWeatherReferencesForCalendarYear(
+        nextCalendar,
+        patch.cursorDate.year
+      );
+    }
+
+    if (
+      patch.todayDate &&
+      patch.todayDate.year !== previousState.todayDate.year
+    ) {
+      void this.ensureWeatherReferencesForCalendarYear(
+        nextCalendar,
+        patch.todayDate.year
+      );
+    }
+
+    this.scheduleActiveCalendarStateSave();
+    this.refreshViewsForCalendarStatePatch(previousState, patch);
   }
   
   async ensureWeatherReferencesForCalendarYear(
@@ -1563,6 +1689,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
   }
 
   async deleteCalendarById(id: string): Promise<boolean> {
+	await this.flushPendingActiveCalendarStateSave();
     const calendars = await this.listCalendars();
     const target = calendars.find((calendar) => calendar.id === id);
 

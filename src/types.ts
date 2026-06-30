@@ -21,6 +21,10 @@ export type WeatherSourceType = "pack" | "event" | "manual";
 export type WeatherProfileCycleReset = "none" | "intercalation-cycle";
 export type MoonCycleAnchor = "absolute" | "month";
 export type TimelineAlign = "left" | "right";
+export type MonthWeekdayMode = "continuous" | "reset";
+export type LeapDayPlacement = "standalone" | "append-to-month";
+export type NegativeYearDisplayMode = "signed" | "absolute";
+export type LargeYearFormat = "plain" | "abbreviated";
 
 export type EventRecurrenceFrequency = "daily" | "weekly" | "monthly" | "yearly";
 export type EventRecurrenceEndMode = "never" | "count" | "until";
@@ -29,6 +33,11 @@ export interface FantasyTimeConfig {
   enabled: boolean;
   hoursPerDay: number;
   minutesPerHour: number;
+}
+
+export interface FantasyYearDisplayConfig {
+  negativeYearsMode: NegativeYearDisplayMode;
+  largeYearFormat: LargeYearFormat;
 }
 
 export interface TimelineStyleColors {
@@ -75,6 +84,7 @@ export interface FantasyLeapMonthRule {
 export interface FantasyLeapDayRule {
   id: string;
   name: string;
+  placement: LeapDayPlacement;
   insertAfterMonthIndex: number;
   days: number;
   cycleYears: number;
@@ -117,6 +127,9 @@ export interface FantasyEra {
   shortName: string;
   startYear: number;
   startMonthIndex: number;
+  endYear?: number;
+  endMonthIndex?: number;
+  endDay?: number;
   startDay: number;
 }
 
@@ -146,8 +159,10 @@ export interface FantasyCalendarDefinition {
   eras: FantasyEra[];
   yearNames: FantasyNamedYear[];
   startWeekdayIndex: number;
+  monthWeekdayMode: MonthWeekdayMode;
   seasons: FantasySeason[];
   time: FantasyTimeConfig;
+  yearDisplay: FantasyYearDisplayConfig;
 }
 
 export interface CalendarFile {
@@ -222,7 +237,6 @@ export interface FantasyClockState {
 export interface TtrpgToolsTimeSettings {
   dataFolder: string;
   activeCalendarId: string | null;
-  openOnStartup: boolean;
   dayViewDateFormat: string;
   showCalendarWeekNumbers: boolean;
   controlTimeButtons: TimeAdvanceButtonConfig[];
