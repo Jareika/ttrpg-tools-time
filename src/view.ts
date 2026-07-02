@@ -17,7 +17,7 @@ import {
   shiftYear
 } from "./calendar";
 import { getEventDotsForDate } from "./events";
-import { resolveWeatherForDate } from "./weather";
+import { formatTemperatureRangeForDisplay, resolveWeatherForDate } from "./weather";
 import type {
   CalendarFile,
   CalendarViewMode,
@@ -500,6 +500,11 @@ export class TimeCalendarView extends ItemView {
 
     const season = getSeasonForDate(calendar.definition, cellData.date);
     const weather = resolveWeatherForDate(calendar, cellData.date, weatherYear);
+    const temperatureRange = formatTemperatureRangeForDisplay(
+      weather.tempLow,
+      weather.tempHigh,
+      this.plugin.settings.temperatureUnit
+    );
     const eventDots = getEventDotsForDate(eventIndexYear, cellData.date);
 
     cell.createDiv({
@@ -527,7 +532,7 @@ export class TimeCalendarView extends ItemView {
       formatLongDate(cellData.date, calendar.definition),
       season ? `Season: ${season.name}` : null,
       eventDots.length > 0 ? `${eventDots.length} event${eventDots.length === 1 ? "" : "s"}` : null,
-      `${weather.tempLow}° to ${weather.tempHigh}°`,
+      temperatureRange,
       weather.conditionLabel,
       weather.windLabel,
       markerLabels.length > 0 ? `Entries: ${markerLabels.join(", ")}` : null

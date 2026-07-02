@@ -3,12 +3,16 @@ import type TtrpgToolsTimePlugin from "./main";
 import { slugify } from "./calendar";
 import type {
   FantasyMonth,
+  TemperatureUnit,
   WeatherPackFile,
   WeatherPackMonthProfile
 } from "./types";
 import {
   DEFAULT_WEATHER_PACK,
+  fromDisplayTemperature,
+  getTemperatureUnitLabel,
   getWeatherProfileMonths,
+  toDisplayTemperature,
   normalizeWeatherPackFile,
   resolveWeatherPackMonthProfiles
 } from "./weather";
@@ -31,6 +35,7 @@ export class WeatherPackEditorModal extends Modal {
   private readonly existing: WeatherPackFile | null;
   private readonly onSaved?: () => void;
   private readonly months: FantasyMonth[];
+  private readonly temperatureUnit: TemperatureUnit;
 
   private name: string;
   private id: string;
@@ -64,6 +69,7 @@ export class WeatherPackEditorModal extends Modal {
     this.existing = existing ?? null;
     this.onSaved = onSaved;
     this.months = buildWeatherEditorMonths(plugin, this.existing);
+	this.temperatureUnit = plugin.settings.temperatureUnit;
 
     const source = existing ?? DEFAULT_WEATHER_PACK;
 
@@ -149,11 +155,11 @@ export class WeatherPackEditorModal extends Modal {
 
     contentEl.createEl("h3", { text: "Temperature & seasonality" });
 
-    createNumberSetting(contentEl, "Temperature min", this.temperatureMin, (value) => {
+    createTemperatureSetting(contentEl, "Temperature min", this.temperatureMin, this.temperatureUnit, (value) => {
       this.temperatureMin = value;
     });
 
-    createNumberSetting(contentEl, "Temperature max", this.temperatureMax, (value) => {
+    createTemperatureSetting(contentEl, "Temperature max", this.temperatureMax, this.temperatureUnit, (value) => {
       this.temperatureMax = value;
     });
 
@@ -161,7 +167,7 @@ export class WeatherPackEditorModal extends Modal {
       this.seasonality = clamp(value, 0, 100);
     }, "0–100");
 
-    createNumberSetting(contentEl, "Snow temperature", this.snowTemperature, (value) => {
+    createTemperatureSetting(contentEl, "Snow temperature", this.snowTemperature, this.temperatureUnit, (value) => {
       this.snowTemperature = value;
     });
 
@@ -233,6 +239,7 @@ export class WeatherPackEditorModal extends Modal {
             this.app,
             this.months,
             this.monthProfiles,
+			this.temperatureUnit,
             (nextProfiles) => {
               this.monthProfiles = nextProfiles.map((profile) => ({ ...profile }));
               this.render();
@@ -327,17 +334,20 @@ export class WeatherPackEditorModal extends Modal {
 class WeatherPackMonthProfilesModal extends Modal {
   private readonly months: FantasyMonth[];
   private profiles: WeatherPackMonthProfile[];
+  private readonly temperatureUnit: TemperatureUnit;
   private readonly onSave: (profiles: WeatherPackMonthProfile[]) => void;
 
   constructor(
     app: App,
     months: FantasyMonth[],
     profiles: WeatherPackMonthProfile[],
+	temperatureUnit: TemperatureUnit,
     onSave: (profiles: WeatherPackMonthProfile[]) => void
   ) {
     super(app);
     this.months = months.map((month) => ({ ...month }));
     this.profiles = profiles.map((profile) => ({ ...profile }));
+	this.temperatureUnit = temperatureUnit;
     this.onSave = onSave;
   }
 
@@ -360,7 +370,7 @@ class WeatherPackMonthProfilesModal extends Modal {
     const table = contentEl.createDiv({ cls: "time-weather-pack-months__table" });
     const header = table.createDiv({ cls: "time-weather-pack-months__header" });
     createHeaderCell(header, "Month");
-    createHeaderCell(header, "Temp");
+    createHeaderCell(header, `Temp (${getTemperatureUnitLabel(this.temperatureUnit)})`);
     createHeaderCell(header, "Hum");
     createHeaderCell(header, "Prec");
     createHeaderCell(header, "Cloud");
@@ -388,9 +398,13 @@ class WeatherPackMonthProfilesModal extends Modal {
         text: month.name
       });
 
-      createRowNumberInput(row, String(profile.temperatureOffset), (value) => {
-        this.profiles[index].temperatureOffset = value;
-      });
+      createRowNumberInput(
+        row,
+        formatEditableTemperature(profile.temperatureOffset, this.temperatureUnit),
+        (value) => {
+          this.profiles[index].temperatureOffset = fromDisplayTemperature(value, this.temperatureUnit);
+        }
+      );
 
       createRowNumberInput(row, String(profile.humidity), (value) => {
         this.profiles[index].humidity = clamp(value, 0, 100);
@@ -1009,6 +1023,31 @@ function createNumberSetting(
         onChange(Number(nextValue) || 0);
       });
     });
+}
+
+function createTemperatureSetting(
+  parent: HTMLElement,
+  name: string,
+  value: number,
+  unit: TemperatureUnit,
+  onChange: (value: number) => void,
+  desc?: string
+): void {
+  new Setting(parent)
+    .setName(`${name} (${getTemperatureUnitLabel(unit)})`)
+    .setDesc(desc ?? "")
+    .addText((text) => {
+      text.inputEl.type = "number";
+      text.setValue(formatEditableTemperature(value, unit));
+      text.onChange((nextValue) => {
+        onChange(fromDisplayTemperature(Number(nextValue) || 0, unit));
+      });
+    });
+}
+
+function formatEditableTemperature(value: number, unit: TemperatureUnit): string {
+  const converted = Math.round(toDisplayTemperature(value, unit) * 10) / 10;
+  return String(converted);
 }
 
 function createHeaderCell(parent: HTMLElement, text: string): void {

@@ -19,6 +19,9 @@ import type {
   FantasyMoon,
   FantasyNamedYear,
   FantasySeason,
+  FrontmatterColorMappingRule,
+  FrontmatterExportSettings,
+  FrontmatterImportSettings,
   MonthGrid,
   MonthGridCell,
   MoonPhaseImageDefinition,
@@ -127,12 +130,26 @@ export const DEFAULT_CALENDAR_FILE: CalendarFile = {
   description: "Default calendar created on first launch."
 };
 
+export const DEFAULT_FRONTMATTER_IMPORT_SETTINGS: FrontmatterImportSettings = {
+  enabled: false,
+  fallbackTitleToFilename: true,
+  colorMappings: []
+};
+
+export const DEFAULT_FRONTMATTER_EXPORT_SETTINGS: FrontmatterExportSettings = {
+  enabled: false,
+  clearMissingFields: true
+};
+
 export const DEFAULT_SETTINGS: TtrpgToolsTimeSettings = {
   dataFolder: "TTRPG/Time",
   activeCalendarId: DEFAULT_CALENDAR_FILE.id,
   dayViewDateFormat: "D-M-YYYY",
   showCalendarWeekNumbers: false,
-  controlTimeButtons: []
+  temperatureUnit: "c",
+  controlTimeButtons: [],
+  frontmatterImport: cloneFrontmatterImportSettings(DEFAULT_FRONTMATTER_IMPORT_SETTINGS),
+  frontmatterExport: cloneFrontmatterExportSettings(DEFAULT_FRONTMATTER_EXPORT_SETTINGS)
 };
 
 export const DEFAULT_FANTASY_CLOCK_STATE: FantasyClockState = {
@@ -147,7 +164,10 @@ export function normalizeSettings(raw: unknown): TtrpgToolsTimeSettings {
     activeCalendarId: readOptionalString(record.activeCalendarId),
     dayViewDateFormat: readString(record.dayViewDateFormat, DEFAULT_SETTINGS.dayViewDateFormat),
     showCalendarWeekNumbers: readBoolean(record.showCalendarWeekNumbers, DEFAULT_SETTINGS.showCalendarWeekNumbers),
-    controlTimeButtons: readTimeAdvanceButtons(record.controlTimeButtons)
+    temperatureUnit: readTemperatureUnit(record.temperatureUnit),
+	controlTimeButtons: readTimeAdvanceButtons(record.controlTimeButtons),
+    frontmatterImport: readFrontmatterImportSettings(record.frontmatterImport),
+    frontmatterExport: readFrontmatterExportSettings(record.frontmatterExport)
   };
 }
 
@@ -765,6 +785,104 @@ function buildTimeAdvanceButtonLabel(
   return parts.join(" ").trim() || `Advance ${index + 1}`;
 }
 
+function readFrontmatterImportSettings(raw: unknown): FrontmatterImportSettings {
+  const record = asRecord(raw);
+
+  return {
+    enabled: readBoolean(record.enabled, DEFAULT_FRONTMATTER_IMPORT_SETTINGS.enabled),
+    titleProperty: readOptionalString(record.titleProperty),
+    startDateProperty: readOptionalString(record.startDateProperty),
+    endDateProperty: readOptionalString(record.endDateProperty),
+    startHourProperty: readOptionalString(record.startHourProperty),
+    startMinuteProperty: readOptionalString(record.startMinuteProperty),
+    endHourProperty: readOptionalString(record.endHourProperty),
+    endMinuteProperty: readOptionalString(record.endMinuteProperty),
+    descriptionProperty: readOptionalString(record.descriptionProperty),
+    imageProperty: readOptionalString(record.imageProperty),
+    weatherPackProperty: readOptionalString(record.weatherPackProperty),
+    tagProperty: readOptionalString(record.tagProperty),
+    syncIdProperty: readOptionalString(record.syncIdProperty),
+    colorProperty: readOptionalString(record.colorProperty),
+    recurrenceFrequencyProperty: readOptionalString(record.recurrenceFrequencyProperty),
+    recurrenceIntervalProperty: readOptionalString(record.recurrenceIntervalProperty),
+    recurrenceEndModeProperty: readOptionalString(record.recurrenceEndModeProperty),
+    recurrenceCountProperty: readOptionalString(record.recurrenceCountProperty),
+    recurrenceUntilProperty: readOptionalString(record.recurrenceUntilProperty),
+    fallbackTitleToFilename: readBoolean(
+      record.fallbackTitleToFilename,
+      DEFAULT_FRONTMATTER_IMPORT_SETTINGS.fallbackTitleToFilename
+    ),
+    colorMappings: readFrontmatterColorMappings(record.colorMappings)
+  };
+}
+
+function readFrontmatterExportSettings(raw: unknown): FrontmatterExportSettings {
+  const record = asRecord(raw);
+
+  return {
+    enabled: readBoolean(record.enabled, DEFAULT_FRONTMATTER_EXPORT_SETTINGS.enabled),
+    titleProperty: readOptionalString(record.titleProperty),
+    startDateProperty: readOptionalString(record.startDateProperty),
+    endDateProperty: readOptionalString(record.endDateProperty),
+    startHourProperty: readOptionalString(record.startHourProperty),
+    startMinuteProperty: readOptionalString(record.startMinuteProperty),
+    endHourProperty: readOptionalString(record.endHourProperty),
+    endMinuteProperty: readOptionalString(record.endMinuteProperty),
+    descriptionProperty: readOptionalString(record.descriptionProperty),
+    imageProperty: readOptionalString(record.imageProperty),
+    weatherPackProperty: readOptionalString(record.weatherPackProperty),
+    tagProperty: readOptionalString(record.tagProperty),
+    syncIdProperty: readOptionalString(record.syncIdProperty),
+    colorProperty: readOptionalString(record.colorProperty),
+    recurrenceFrequencyProperty: readOptionalString(record.recurrenceFrequencyProperty),
+    recurrenceIntervalProperty: readOptionalString(record.recurrenceIntervalProperty),
+    recurrenceEndModeProperty: readOptionalString(record.recurrenceEndModeProperty),
+    recurrenceCountProperty: readOptionalString(record.recurrenceCountProperty),
+    recurrenceUntilProperty: readOptionalString(record.recurrenceUntilProperty),
+    clearMissingFields: readBoolean(
+      record.clearMissingFields,
+      DEFAULT_FRONTMATTER_EXPORT_SETTINGS.clearMissingFields
+    )
+  };
+}
+
+function readFrontmatterColorMappings(raw: unknown): FrontmatterColorMappingRule[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw.map((entry, index) => {
+    const record = asRecord(entry);
+    const property = readString(record.property, "");
+    const value = readString(record.value, "");
+    const color = normalizeColor(readOptionalString(record.color), "#d46b65");
+
+    return {
+      id: readString(record.id, slugify(`${property || "property"}-${value || index + 1}`)),
+      property,
+      value,
+      color
+    };
+  }).filter((entry) => entry.property.length > 0 && entry.value.length > 0);
+}
+
+function cloneFrontmatterImportSettings(
+  value: FrontmatterImportSettings
+): FrontmatterImportSettings {
+  return {
+    ...value,
+    colorMappings: value.colorMappings.map((entry) => ({ ...entry }))
+  };
+}
+
+function cloneFrontmatterExportSettings(
+  value: FrontmatterExportSettings
+): FrontmatterExportSettings {
+  return {
+    ...value
+  };
+}
+
 function hasTimelineStyleValues(value: CalendarTimelineStyle): boolean {
   return (
     typeof value.name === "string" ||
@@ -816,6 +934,10 @@ function readBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
 
+function readTemperatureUnit(value: unknown): TtrpgToolsTimeSettings["temperatureUnit"] {
+  return value === "f" ? "f" : "c";
+}
+
 function readNumber(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
@@ -855,7 +977,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function clampMoonSize(value: number): number {
-  return clamp(Math.trunc(value || DEFAULT_MOON_SIZE), 12, 96);
+  return clamp(Math.trunc(value || DEFAULT_MOON_SIZE), 12, 300);
 }
 
 function cloneMonths(months: FantasyMonth[]): FantasyMonth[] {

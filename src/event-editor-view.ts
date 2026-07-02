@@ -1,6 +1,6 @@
 import { App, FuzzySuggestModal, ItemView, Notice, TFile, WorkspaceLeaf, setIcon, type FuzzyMatch } from "obsidian";
 import type TtrpgToolsTimePlugin from "./main";
-import { clampDate, getMonthsForYear, slugify } from "./calendar";
+import { clampDate, getAbsoluteDay, getMonthsForYear, shiftDay, slugify } from "./calendar";
 import { createEventId } from "./events";
 import { clampTimeOfDay } from "./moons";
 import type {
@@ -13,6 +13,7 @@ import type {
 
 export const EVENT_EDITOR_VIEW_TYPE = "time-event-editor-view";
 const DEFAULT_EVENT_COLOR = "#4e3e3e";
+type PatternRecurrenceDraft = Extract<NonNullable<CalendarEventDefinition["recurrence"]>, { kind: "pattern" }>;
 
 export class TimeEventEditorView extends ItemView {
   private readonly plugin: TtrpgToolsTimePlugin;
@@ -35,6 +36,7 @@ export class TimeEventEditorView extends ItemView {
   private imageRef = "";
   private saveAsPresetName = "";
   private recurrenceEnabled = false;
+  private recurrenceMode: "interval" | "pattern" = "interval";
   private recurrenceFrequency: EventRecurrenceFrequency = "yearly";
   private recurrenceInterval = 1;
   private recurrenceEndMode: EventRecurrenceEndMode = "never";
@@ -42,6 +44,8 @@ export class TimeEventEditorView extends ItemView {
   private recurrenceUntilYear = 1;
   private recurrenceUntilMonthIndex = 0;
   private recurrenceUntilDay = 1;
+  private recurrenceExcludedDates: FantasyDate[] = [];
+  private patternRecurrenceDraft: PatternRecurrenceDraft | null = null;
   private endYear = 1;
   private endMonthIndex = 0;
   private endDay = 1;
@@ -104,13 +108,31 @@ export class TimeEventEditorView extends ItemView {
     this.endHour = endTime?.hour ?? null;
     this.endMinute = endTime?.minute ?? null;
     this.recurrenceEnabled = Boolean(recurrence);
-    this.recurrenceFrequency = recurrence?.frequency ?? "yearly";
-    this.recurrenceInterval = recurrence?.interval ?? 1;
-    this.recurrenceEndMode = recurrence?.endMode ?? "never";
-    this.recurrenceCount = recurrence?.count ?? 10;
+	this.recurrenceMode = recurrence?.kind === "pattern" ? "pattern" : "interval";
+    this.patternRecurrenceDraft =
+      recurrence?.kind === "pattern"
+        ? clonePatternRecurrence(recurrence)
+        : null;
+    this.recurrenceFrequency =
+      recurrence?.kind === "interval"
+        ? recurrence.frequency
+        : "yearly";
+    this.recurrenceInterval =
+      recurrence?.kind === "interval"
+        ? recurrence.interval
+        : 1;
+    this.recurrenceEndMode =
+      recurrence?.kind === "interval"
+        ? recurrence.endMode
+        : "never";
+    this.recurrenceCount =
+      recurrence?.kind === "interval"
+        ? recurrence.count ?? 10
+        : 10;
     this.recurrenceUntilYear = recurrenceUntil.year;
     this.recurrenceUntilMonthIndex = recurrenceUntil.monthIndex;
     this.recurrenceUntilDay = recurrenceUntil.day;
+	this.recurrenceExcludedDates = recurrence?.excludedDates?.map((date) => ({ ...date })) ?? [];
     this.refresh();
   }
 
@@ -152,6 +174,11 @@ export class TimeEventEditorView extends ItemView {
     );
     this.applyStartDate(normalizedStartDate);
     this.applyEndDate(normalizedEndDate);
+    if (this.recurrenceEnabled && this.recurrenceMode === "pattern" && !this.patternRecurrenceDraft) {
+      this.patternRecurrenceDraft = createPatternRecurrenceDraftFromDate(normalizedStartDate);
+    }
+
+	const preservePatternRecurrence = this.recurrenceEnabled && this.recurrenceMode === "pattern";
 
     const panel = root.createDiv({ cls: "time-event-editor__panel" });
 
@@ -284,6 +311,7 @@ export class TimeEventEditorView extends ItemView {
       const input = field.createEl("input", { cls: "time-event-editor__input" });
       input.type = "number";
       input.value = String(this.startYear);
+	  input.disabled = preservePatternRecurrence;
       input.addEventListener("input", () => {
         this.startYear = Math.trunc(Number(input.value) || 0);
       });
@@ -298,6 +326,7 @@ export class TimeEventEditorView extends ItemView {
         option.selected = index === this.startMonthIndex;
         select.add(option);
       });
+	  select.disabled = preservePatternRecurrence;
       select.addEventListener("change", () => {
         this.startMonthIndex = Math.max(0, Number(select.value) || 0);
       });
@@ -308,6 +337,7 @@ export class TimeEventEditorView extends ItemView {
       input.type = "number";
       input.min = "1";
       input.value = String(this.startDay);
+	  input.disabled = preservePatternRecurrence;
       input.addEventListener("input", () => {
         this.startDay = Math.max(1, Math.trunc(Number(input.value) || 1));
       });
@@ -323,6 +353,7 @@ export class TimeEventEditorView extends ItemView {
       const input = field.createEl("input", { cls: "time-event-editor__input" });
       input.type = "number";
       input.value = String(this.endYear);
+	  input.disabled = preservePatternRecurrence;
       input.addEventListener("input", () => {
         this.endYear = Math.trunc(Number(input.value) || 0);
       });
@@ -337,6 +368,7 @@ export class TimeEventEditorView extends ItemView {
         option.selected = index === this.endMonthIndex;
         select.add(option);
       });
+	  select.disabled = preservePatternRecurrence;
       select.addEventListener("change", () => {
         this.endMonthIndex = Math.max(0, Number(select.value) || 0);
       });
@@ -347,6 +379,7 @@ export class TimeEventEditorView extends ItemView {
       input.type = "number";
       input.min = "1";
       input.value = String(this.endDay);
+	  input.disabled = preservePatternRecurrence;
       input.addEventListener("input", () => {
         this.endDay = Math.max(1, Math.trunc(Number(input.value) || 1));
       });
@@ -414,85 +447,301 @@ export class TimeEventEditorView extends ItemView {
     });
 
     if (this.recurrenceEnabled) {
-      const recurrenceGrid = form.createDiv({ cls: "time-event-editor__grid" });
-
-      this.renderField(recurrenceGrid, "Frequency", (field) => {
+      const recurrenceModeGrid = form.createDiv({ cls: "time-event-editor__grid time-event-editor__grid--two" });
+      this.renderField(recurrenceModeGrid, "Recurrence type", (field) => {
         const select = field.createEl("select", { cls: "time-event-editor__input" });
-        addSelectOption(select, "daily", "Daily");
-        addSelectOption(select, "weekly", "Weekly");
-        addSelectOption(select, "monthly", "Monthly");
-        addSelectOption(select, "yearly", "Yearly");
-        select.value = this.recurrenceFrequency;
+        addSelectOption(select, "interval", "Interval recurrence");
+        addSelectOption(select, "pattern", "Calendarium pattern recurrence");
+        select.value = this.recurrenceMode;
         select.addEventListener("change", () => {
-          this.recurrenceFrequency = select.value as EventRecurrenceFrequency;
-        });
-      });
-
-      this.renderField(recurrenceGrid, "Interval", (field) => {
-        const input = field.createEl("input", { cls: "time-event-editor__input" });
-        input.type = "number";
-        input.min = "1";
-        input.value = String(this.recurrenceInterval);
-        input.addEventListener("input", () => {
-          this.recurrenceInterval = Math.max(1, Math.trunc(Number(input.value) || 1));
-        });
-      });
-
-      this.renderField(recurrenceGrid, "End mode", (field) => {
-        const select = field.createEl("select", { cls: "time-event-editor__input" });
-        addSelectOption(select, "never", "Never");
-        addSelectOption(select, "count", "After count");
-        addSelectOption(select, "until", "Until date");
-        select.value = this.recurrenceEndMode;
-        select.addEventListener("change", () => {
-          this.recurrenceEndMode = select.value as EventRecurrenceEndMode;
+          this.recurrenceMode = select.value === "pattern" ? "pattern" : "interval";
+          if (this.recurrenceMode === "pattern" && !this.patternRecurrenceDraft) {
+            this.patternRecurrenceDraft = createPatternRecurrenceDraftFromDate({
+              year: this.startYear,
+              monthIndex: this.startMonthIndex,
+              day: this.startDay
+            });
+          }
           this.refresh();
         });
       });
 
-      if (this.recurrenceEndMode === "count") {
-        this.renderField(form, "Occurrence count", (field) => {
+      if (this.recurrenceMode === "pattern") {
+        const patternDraft =
+          this.patternRecurrenceDraft ??
+          createPatternRecurrenceDraftFromDate(normalizedStartDate);
+        this.patternRecurrenceDraft = patternDraft;
+        const hasMonthConstraint = typeof patternDraft.monthIndex === "number";
+        const hasYearConstraint = typeof patternDraft.year === "number";
+        const patternYear = patternDraft.year ?? 0;
+        const patternMonths = getMonthsForYear(calendar.definition, patternYear);
+        const selectedPatternMonthIndex =
+          hasMonthConstraint
+            ? Math.min(
+                Math.max(0, patternDraft.monthIndex ?? 0),
+                Math.max(0, patternMonths.length - 1)
+              )
+            : 0;
+
+        const patternGrid = form.createDiv({ cls: "time-event-editor__grid" });
+
+        this.renderField(patternGrid, "Pattern day", (field) => {
           const input = field.createEl("input", { cls: "time-event-editor__input" });
           input.type = "number";
           input.min = "1";
-          input.value = String(this.recurrenceCount);
+          input.value = String(patternDraft.day);
           input.addEventListener("input", () => {
-            this.recurrenceCount = Math.max(1, Math.trunc(Number(input.value) || 1));
+            if (!this.patternRecurrenceDraft) {
+              return;
+            }
+            this.patternRecurrenceDraft.day = Math.max(1, Math.trunc(Number(input.value) || 1));
           });
         });
-      }
 
-      if (this.recurrenceEndMode === "until") {
-        const untilGrid = form.createDiv({ cls: "time-event-editor__grid" });
+        this.renderField(patternGrid, "Month constraint", (field) => {
+          const toggleRow = field.createDiv({ cls: "time-event-editor__toggle-row" });
+          const toggle = toggleRow.createEl("input");
+          toggle.type = "checkbox";
+          toggle.checked = hasMonthConstraint;
+          toggle.addEventListener("change", () => {
+            if (!this.patternRecurrenceDraft) {
+              return;
+            }
 
-        this.renderField(untilGrid, "Until year", (field) => {
+            if (toggle.checked) {
+              const monthsForYear = getMonthsForYear(
+                calendar.definition,
+                this.patternRecurrenceDraft.year ?? 0
+              );
+              this.patternRecurrenceDraft.monthIndex = Math.min(
+                this.patternRecurrenceDraft.monthIndex ?? 0,
+                Math.max(0, monthsForYear.length - 1)
+              );
+            } else {
+              this.patternRecurrenceDraft.monthIndex = undefined;
+            }
+
+            this.refresh();
+          });
+
+          toggleRow.createEl("label", {
+            cls: "time-event-editor__toggle-label",
+            text: "Restrict to one month"
+          });
+
+          const select = field.createEl("select", { cls: "time-event-editor__input" });
+          patternMonths.forEach((month, index) => {
+            addSelectOption(select, String(index), month.name);
+          });
+          select.value = String(selectedPatternMonthIndex);
+          select.disabled = !hasMonthConstraint;
+          select.addEventListener("change", () => {
+            if (!this.patternRecurrenceDraft) {
+              return;
+            }
+            this.patternRecurrenceDraft.monthIndex = Math.max(0, Number(select.value) || 0);
+          });
+        });
+
+        this.renderField(patternGrid, "Year constraint", (field) => {
+          const toggleRow = field.createDiv({ cls: "time-event-editor__toggle-row" });
+          const toggle = toggleRow.createEl("input");
+          toggle.type = "checkbox";
+          toggle.checked = hasYearConstraint;
+          toggle.addEventListener("change", () => {
+            if (!this.patternRecurrenceDraft) {
+              return;
+            }
+
+            if (toggle.checked) {
+              this.patternRecurrenceDraft.year = this.patternRecurrenceDraft.year ?? this.startYear;
+            } else {
+              this.patternRecurrenceDraft.year = undefined;
+            }
+
+            this.refresh();
+          });
+
+          toggleRow.createEl("label", {
+            cls: "time-event-editor__toggle-label",
+            text: "Restrict to one year"
+          });
+
           const input = field.createEl("input", { cls: "time-event-editor__input" });
           input.type = "number";
-          input.value = String(this.recurrenceUntilYear);
-          input.addEventListener("input", () => {
-            this.recurrenceUntilYear = Math.trunc(Number(input.value) || 0);
+          input.value = hasYearConstraint ? String(patternDraft.year) : "";
+          input.disabled = !hasYearConstraint;
+          input.addEventListener("change", () => {
+            if (!this.patternRecurrenceDraft) {
+              return;
+            }
+
+            this.patternRecurrenceDraft.year = Math.trunc(Number(input.value) || 0);
+            this.refresh();
           });
         });
 
-        this.renderField(untilGrid, "Until month", (field) => {
+        this.renderField(patternGrid, "End mode", (field) => {
+          const select = field.createEl("select", { cls: "time-event-editor__input" });
+          addSelectOption(select, "never", "Never");
+          addSelectOption(select, "until", "Until date");
+          select.value = patternDraft.until ? "until" : "never";
+          select.addEventListener("change", () => {
+            if (!this.patternRecurrenceDraft) {
+              return;
+            }
+
+            if (select.value === "until") {
+              this.patternRecurrenceDraft.until = this.patternRecurrenceDraft.until ?? {
+                year: this.recurrenceUntilYear,
+                monthIndex: this.recurrenceUntilMonthIndex,
+                day: this.recurrenceUntilDay
+              };
+            } else {
+              this.patternRecurrenceDraft.until = undefined;
+            }
+
+            this.refresh();
+          });
+        });
+
+        if (patternDraft.until) {
+          const untilGrid = form.createDiv({ cls: "time-event-editor__grid" });
+          const untilDate = patternDraft.until;
+          const untilMonths = getMonthsForYear(calendar.definition, untilDate.year);
+
+          this.renderField(untilGrid, "Until year", (field) => {
+            const input = field.createEl("input", { cls: "time-event-editor__input" });
+            input.type = "number";
+            input.value = String(untilDate.year);
+            input.addEventListener("change", () => {
+              if (!this.patternRecurrenceDraft?.until) {
+                return;
+              }
+              this.patternRecurrenceDraft.until.year = Math.trunc(Number(input.value) || 0);
+              this.refresh();
+            });
+          });
+
+          this.renderField(untilGrid, "Until month", (field) => {
+            const select = field.createEl("select", { cls: "time-event-editor__input" });
+            untilMonths.forEach((month, index) => {
+              addSelectOption(select, String(index), month.name);
+            });
+            select.value = String(
+              Math.min(
+                Math.max(0, untilDate.monthIndex),
+                Math.max(0, untilMonths.length - 1)
+              )
+            );
+            select.addEventListener("change", () => {
+              if (!this.patternRecurrenceDraft?.until) {
+                return;
+              }
+              this.patternRecurrenceDraft.until.monthIndex = Math.max(0, Number(select.value) || 0);
+            });
+          });
+
+          this.renderField(untilGrid, "Until day", (field) => {
+            const input = field.createEl("input", { cls: "time-event-editor__input" });
+            input.type = "number";
+            input.min = "1";
+            input.value = String(untilDate.day);
+            input.addEventListener("input", () => {
+              if (!this.patternRecurrenceDraft?.until) {
+                return;
+              }
+              this.patternRecurrenceDraft.until.day = Math.max(1, Math.trunc(Number(input.value) || 1));
+            });
+          });
+        }
+
+        const note = form.createDiv({ cls: "time-settings-note" });
+        note.createEl("h3", { text: "Calendarium pattern recurrence" });
+        note.createDiv({
+          text: buildPatternRecurrenceSummary(calendar, patternDraft)
+        });
+        note.createDiv({
+          cls: "setting-item-description",
+          text: "Start and end date are derived from this pattern. The concrete anchor date is recalculated automatically on save."
+        });
+      } else {
+        const recurrenceGrid = form.createDiv({ cls: "time-event-editor__grid" });
+
+        this.renderField(recurrenceGrid, "Frequency", (field) => {
+          const select = field.createEl("select", { cls: "time-event-editor__input" });
+          addSelectOption(select, "daily", "Daily");
+          addSelectOption(select, "weekly", "Weekly");
+          addSelectOption(select, "monthly", "Monthly");
+          addSelectOption(select, "yearly", "Yearly");
+          select.value = this.recurrenceFrequency;
+          select.addEventListener("change", () => {
+            this.recurrenceFrequency = select.value as EventRecurrenceFrequency;
+          });
+        });
+        this.renderField(recurrenceGrid, "Interval", (field) => {
           const input = field.createEl("input", { cls: "time-event-editor__input" });
           input.type = "number";
           input.min = "1";
-          input.value = String(this.recurrenceUntilMonthIndex + 1);
+          input.value = String(this.recurrenceInterval);
           input.addEventListener("input", () => {
-            this.recurrenceUntilMonthIndex = Math.max(0, Math.trunc(Number(input.value) || 1) - 1);
+            this.recurrenceInterval = Math.max(1, Math.trunc(Number(input.value) || 1));
           });
         });
+        this.renderField(recurrenceGrid, "End mode", (field) => {
+          const select = field.createEl("select", { cls: "time-event-editor__input" });
+          addSelectOption(select, "never", "Never");
+          addSelectOption(select, "count", "After count");
+          addSelectOption(select, "until", "Until date");
+          select.value = this.recurrenceEndMode;
+          select.addEventListener("change", () => {
+            this.recurrenceEndMode = select.value as EventRecurrenceEndMode;
+            this.refresh();
+          });
+        });
+        if (this.recurrenceEndMode === "count") {
+          this.renderField(form, "Occurrence count", (field) => {
+            const input = field.createEl("input", { cls: "time-event-editor__input" });
+            input.type = "number";
+            input.min = "1";
+            input.value = String(this.recurrenceCount);
+            input.addEventListener("input", () => {
+              this.recurrenceCount = Math.max(1, Math.trunc(Number(input.value) || 1));
+            });
+          });
+        }
 
-        this.renderField(untilGrid, "Until day", (field) => {
-          const input = field.createEl("input", { cls: "time-event-editor__input" });
-          input.type = "number";
-          input.min = "1";
-          input.value = String(this.recurrenceUntilDay);
-          input.addEventListener("input", () => {
-            this.recurrenceUntilDay = Math.max(1, Math.trunc(Number(input.value) || 1));
+        if (this.recurrenceEndMode === "until") {
+          const untilGrid = form.createDiv({ cls: "time-event-editor__grid" });
+
+          this.renderField(untilGrid, "Until year", (field) => {
+            const input = field.createEl("input", { cls: "time-event-editor__input" });
+            input.type = "number";
+            input.value = String(this.recurrenceUntilYear);
+            input.addEventListener("input", () => {
+              this.recurrenceUntilYear = Math.trunc(Number(input.value) || 0);
+            });
           });
-        });
+
+          this.renderField(untilGrid, "Until month", (field) => {
+            const input = field.createEl("input", { cls: "time-event-editor__input" });
+            input.type = "number";
+            input.min = "1";
+            input.value = String(this.recurrenceUntilMonthIndex + 1);
+            input.addEventListener("input", () => {
+              this.recurrenceUntilMonthIndex = Math.max(0, Math.trunc(Number(input.value) || 1) - 1);
+            });
+          });
+          this.renderField(untilGrid, "Until day", (field) => {
+            const input = field.createEl("input", { cls: "time-event-editor__input" });
+            input.type = "number";
+            input.min = "1";
+            input.value = String(this.recurrenceUntilDay);
+            input.addEventListener("input", () => {
+              this.recurrenceUntilDay = Math.max(1, Math.trunc(Number(input.value) || 1));
+            });
+          });
+        }
       }
     }
 
@@ -709,6 +958,9 @@ export class TimeEventEditorView extends ItemView {
   private applyCurrentCalendarDateRange(date: FantasyDate): void {
     this.applyStartDate(date);
     this.applyEndDate(date);
+    if (this.recurrenceMode === "pattern") {
+      this.patternRecurrenceDraft = createPatternRecurrenceDraftFromDate(date);
+    }
   }
 
   private applyStartDate(date: FantasyDate): void {
@@ -739,6 +991,7 @@ export class TimeEventEditorView extends ItemView {
     this.saveAsPresetName = "";
     this.selectedTagRefs = new Set<string>();
     this.recurrenceEnabled = false;
+	this.recurrenceMode = "interval";
     this.recurrenceFrequency = "yearly";
     this.recurrenceInterval = 1;
     this.recurrenceEndMode = "never";
@@ -746,6 +999,8 @@ export class TimeEventEditorView extends ItemView {
     this.recurrenceUntilYear = date.year;
     this.recurrenceUntilMonthIndex = date.monthIndex;
     this.recurrenceUntilDay = date.day;
+	this.recurrenceExcludedDates = [];
+	this.patternRecurrenceDraft = null;
     this.applyCurrentCalendarDateRange(date);
     this.endHour = null;
     this.endMinute = null;
@@ -776,6 +1031,13 @@ export class TimeEventEditorView extends ItemView {
       new Notice("The end date must not be before the start date.");
       return;
     }
+	
+    const baseDurationDays = Math.max(
+      1,
+      getAbsoluteDay(calendar.definition, normalizedEndDate) -
+        getAbsoluteDay(calendar.definition, normalizedStartDate) +
+        1
+    );
 
     const hasAnyTimeValue =
       calendar.definition.time.enabled &&
@@ -820,16 +1082,43 @@ export class TimeEventEditorView extends ItemView {
     }
 	
     const recurrence = this.recurrenceEnabled
-      ? {
-          frequency: this.recurrenceFrequency,
-          interval: Math.max(1, Math.trunc(this.recurrenceInterval || 1)),
-          endMode: this.recurrenceEndMode,
-          count: this.recurrenceEndMode === "count" ? Math.max(1, Math.trunc(this.recurrenceCount || 1)) : undefined,
-          until: this.recurrenceEndMode === "until"
-            ? clampDate({ year: this.recurrenceUntilYear, monthIndex: this.recurrenceUntilMonthIndex, day: this.recurrenceUntilDay }, calendar.definition)
-            : undefined
-        }
+      ? this.recurrenceMode === "pattern"
+        ? clonePatternRecurrence(
+            this.patternRecurrenceDraft ??
+              createPatternRecurrenceDraftFromDate(normalizedStartDate)
+          )
+        : {
+            kind: "interval" as const,
+            frequency: this.recurrenceFrequency,
+            interval: Math.max(1, Math.trunc(this.recurrenceInterval || 1)),
+            endMode: this.recurrenceEndMode,
+            count: this.recurrenceEndMode === "count" ? Math.max(1, Math.trunc(this.recurrenceCount || 1)) : undefined,
+            until: this.recurrenceEndMode === "until"
+              ? clampDate({ year: this.recurrenceUntilYear, monthIndex: this.recurrenceUntilMonthIndex, day: this.recurrenceUntilDay }, calendar.definition)
+              : undefined,
+            excludedDates: this.recurrenceExcludedDates.length > 0
+              ? this.recurrenceExcludedDates.map((date) => ({ ...date }))
+              : undefined
+          }
       : undefined;
+	  
+    let finalStartDate = normalizedStartDate;
+    let finalEndDate = normalizedEndDate;
+
+    if (this.recurrenceEnabled && this.recurrenceMode === "pattern") {
+      const patternDraft =
+        this.patternRecurrenceDraft ??
+        createPatternRecurrenceDraftFromDate(normalizedStartDate);
+      const anchorDate = resolvePatternRecurrenceAnchorDate(calendar, patternDraft);
+
+      if (!anchorDate) {
+        new Notice("The current pattern recurrence does not resolve to a valid anchor date in this calendar.");
+        return;
+      }
+
+      finalStartDate = anchorDate;
+      finalEndDate = shiftDay(anchorDate, baseDurationDays - 1, calendar.definition);
+    }
 	  
     this.isSubmitting = true;
     this.refresh();
@@ -842,10 +1131,10 @@ export class TimeEventEditorView extends ItemView {
       id: eventId,
       calendarId: calendar.id,
       title,
-      date: normalizedStartDate,
-      endDate: sameFantasyDate(normalizedStartDate, normalizedEndDate)
+      date: finalStartDate,
+      endDate: sameFantasyDate(finalStartDate, finalEndDate)
         ? undefined
-        : normalizedEndDate,
+        : finalEndDate,
       startTime: normalizedStartTime,
       endTime: normalizedEndTime,
       description: this.description.trim().length > 0 ? this.description.trim() : undefined,
@@ -959,7 +1248,98 @@ function cloneCalendarEvent(event: CalendarEventDefinition): CalendarEventDefini
     endDate: event.endDate ? { ...event.endDate } : undefined,
     startTime: event.startTime ? { ...event.startTime } : undefined,
     endTime: event.endTime ? { ...event.endTime } : undefined,
-    tagRefs: [...event.tagRefs]
+    tagRefs: [...event.tagRefs],
+    recurrence: event.recurrence
+      ? {
+          ...event.recurrence,
+          until: event.recurrence.until ? { ...event.recurrence.until } : undefined,
+          excludedDates: event.recurrence.excludedDates?.map((date) => ({ ...date }))
+        }
+      : undefined
+  };
+}
+
+function clonePatternRecurrence(
+  recurrence: PatternRecurrenceDraft
+): PatternRecurrenceDraft {
+  return {
+    ...recurrence,
+    until: recurrence.until ? { ...recurrence.until } : undefined,
+    excludedDates: recurrence.excludedDates?.map((date) => ({ ...date }))
+  };
+}
+
+function createPatternRecurrenceDraftFromDate(
+  date: FantasyDate
+): PatternRecurrenceDraft {
+  return {
+    kind: "pattern",
+    day: date.day,
+    monthIndex: date.monthIndex,
+    year: date.year
+  };
+}
+
+function buildPatternRecurrenceSummary(
+  calendar: CalendarFile,
+  recurrence: PatternRecurrenceDraft
+): string {
+  if (typeof recurrence.year === "number" && typeof recurrence.monthIndex === "number") {
+    const monthName =
+      getMonthsForYear(calendar.definition, recurrence.year)[recurrence.monthIndex]?.name ??
+      String(recurrence.monthIndex + 1);
+    return `Concrete Calendarium pattern date: ${recurrence.day}. ${monthName} ${recurrence.year}`;
+  }
+
+  if (typeof recurrence.year === "number") {
+    return recurrence.until
+      ? `Every month on day ${recurrence.day} in ${recurrence.year}, until ${recurrence.until.day}-${recurrence.until.monthIndex + 1}-${recurrence.until.year}`
+      : `Every month on day ${recurrence.day} in ${recurrence.year}`;
+  }
+
+  if (typeof recurrence.monthIndex === "number") {
+    const monthName =
+      getMonthsForYear(calendar.definition, calendar.state.cursorDate.year)[recurrence.monthIndex]?.name ??
+      String(recurrence.monthIndex + 1);
+    return recurrence.until
+      ? `Every year on day ${recurrence.day} of ${monthName}, until ${recurrence.until.day}-${recurrence.until.monthIndex + 1}-${recurrence.until.year}`
+      : `Every year on day ${recurrence.day} of ${monthName}`;
+  }
+
+  return recurrence.until
+    ? `Every month on day ${recurrence.day}, until ${recurrence.until.day}-${recurrence.until.monthIndex + 1}-${recurrence.until.year}`
+    : `Every month on day ${recurrence.day}`;
+}
+
+function resolvePatternRecurrenceAnchorDate(
+  calendar: CalendarFile,
+  recurrence: PatternRecurrenceDraft
+): FantasyDate | null {
+  const year = recurrence.year ?? 0;
+  const months = getMonthsForYear(calendar.definition, year);
+
+  if (typeof recurrence.monthIndex === "number") {
+    const month = months[recurrence.monthIndex];
+    if (!month || recurrence.day < 1 || recurrence.day > month.days) {
+      return null;
+    }
+
+    return {
+      year,
+      monthIndex: recurrence.monthIndex,
+      day: recurrence.day
+    };
+  }
+
+  const firstMonthIndex = months.findIndex((month) => month.days >= recurrence.day);
+  if (firstMonthIndex < 0) {
+    return null;
+  }
+
+  return {
+    year,
+    monthIndex: firstMonthIndex,
+    day: recurrence.day
   };
 }
 

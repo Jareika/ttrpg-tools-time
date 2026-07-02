@@ -9,7 +9,7 @@ import {
   getSeasonForDate,
   shiftDay
 } from "./calendar";
-import { confirmWithModal } from "./confirm-dialog";
+import { chooseDeleteEventMode } from "./delete-event-modal";
 import { getEventIndexEntriesForDate } from "./events";
 import {
   formatFantasyTime,
@@ -18,11 +18,16 @@ import {
   resolveMoonsForMoment
 } from "./moons";
 import {
+  formatTemperatureForDisplay,
+  formatTemperatureRangeForDisplay,
+  fromDisplayTemperature,
   getWeatherConditionLabel,
   getWeatherDayEntry,
   getWeatherIconName,
+  getTemperatureUnitLabel,
   getWeatherStateLabel,
   resolveWeatherForDate,
+  toDisplayTemperature,
   WEATHER_CONDITION_OPTIONS
 } from "./weather";
 import { WeatherPackPickerModal } from "./weather-pack-modals";
@@ -54,7 +59,7 @@ export class TimeDayView extends ItemView {
   }
 
   getDisplayText(): string {
-    return "Ttrpg tools: time day";
+    return "Day view";
   }
 
   getIcon(): string {
@@ -96,6 +101,7 @@ export class TimeDayView extends ItemView {
 
     const markers = getMarkersForDate(calendar.markers, calendar.state.cursorDate);
     const weather = resolveWeatherForDate(calendar, calendar.state.cursorDate, weatherYear);
+	const temperatureUnit = this.plugin.settings.temperatureUnit;
     const season = getSeasonForDate(calendar.definition, calendar.state.cursorDate);
     const moons = resolveMoonsForDate(calendar, calendar.state.cursorDate);
 
@@ -138,10 +144,16 @@ export class TimeDayView extends ItemView {
 
     const weatherIcon = weatherMain.createSpan();
     setIcon(weatherIcon, weather.icon);
-    weatherMain.createSpan({ text: `${weather.tempHigh}°` });
+    weatherMain.createSpan({
+      text: formatTemperatureForDisplay(weather.tempHigh, temperatureUnit)
+    });
 
     const pop = weatherWrap.createDiv({ cls: "time-day__weather-pop" });
-    this.renderWeatherLine(pop, "thermometer", `${weather.tempLow}° to ${weather.tempHigh}°`);
+    this.renderWeatherLine(
+      pop,
+      "thermometer",
+      formatTemperatureRangeForDisplay(weather.tempLow, weather.tempHigh, temperatureUnit)
+    );
 
     const stateLabel = getWeatherStateLabel(weather);
     if (stateLabel) {
@@ -410,6 +422,11 @@ export class TimeDayView extends ItemView {
     menu.addItem((item) =>
       item.setTitle("Delete event").setIcon("trash-2").onClick(() => {
         void (async () => {
+          const occurrence = await this.plugin.loadEventOccurrenceById(
+            calendar.id,
+            calendar.state.cursorDate.year,
+            eventId
+          );
           const detail = await this.plugin.loadEventById(
             calendar.id,
             calendar.state.cursorDate.year,
@@ -417,18 +434,24 @@ export class TimeDayView extends ItemView {
           );
 
           const title = detail?.title ?? "this event";
-          const confirmed = await confirmWithModal(this.plugin.app, {
+          const deleteMode = await chooseDeleteEventMode(this.plugin.app, {
             title: "Delete event",
-            message: `Delete "${title}"?`,
-            confirmLabel: "Delete",
-            cancelLabel: "Cancel"
+            eventTitle: title,
+            occurrenceLabel: occurrence ? buildEventDateRangeLabel(calendar, occurrence) : undefined,
+            recurring: Boolean(detail?.recurrence)
           });
 
-          if (!confirmed) {
+          if (!deleteMode) {
             return;
           }
 
-          const deleted = await this.plugin.deleteEventById(calendar.id, calendar.state.cursorDate.year, eventId);
+          const deleted = await this.plugin.deleteEventById(
+            calendar.id,
+            calendar.state.cursorDate.year,
+            eventId,
+            deleteMode,
+            occurrence?.date ?? detail?.date ?? calendar.state.cursorDate
+          );
           if (deleted) this.refresh();
         })();
       })
@@ -506,6 +529,7 @@ export class TimeDayView extends ItemView {
 class DayWeatherEditorModal extends Modal {
   private tempLow: number;
   private tempHigh: number;
+  private readonly temperatureUnit;
   private condition: WeatherCondition;
   private windDirection: string;
   private windLabel: string;
@@ -524,9 +548,10 @@ class DayWeatherEditorModal extends Modal {
     private readonly onSaved?: () => void
   ) {
     super(plugin.app);
+	this.temperatureUnit = plugin.settings.temperatureUnit;
 
-    this.tempLow = currentEntry.tempLow;
-    this.tempHigh = currentEntry.tempHigh;
+    this.tempLow = toDisplayTemperature(currentEntry.tempLow, this.temperatureUnit);
+    this.tempHigh = toDisplayTemperature(currentEntry.tempHigh, this.temperatureUnit);
     this.condition = currentEntry.condition;
     this.windDirection = currentEntry.windDirection;
     this.windLabel = currentEntry.windLabel;
@@ -548,7 +573,7 @@ class DayWeatherEditorModal extends Modal {
     });
 
     new Setting(contentEl)
-      .setName("Temperature low")
+      .setName(`Temperature low (${getTemperatureUnitLabel(this.temperatureUnit)})`)
       .addText((text) => {
         text.inputEl.type = "number";
         text.setValue(String(this.tempLow));
@@ -558,7 +583,7 @@ class DayWeatherEditorModal extends Modal {
       });
 
     new Setting(contentEl)
-      .setName("Temperature high")
+      .setName(`Temperature high (${getTemperatureUnitLabel(this.temperatureUnit)})`)
       .addText((text) => {
         text.inputEl.type = "number";
         text.setValue(String(this.tempHigh));
@@ -669,8 +694,10 @@ class DayWeatherEditorModal extends Modal {
   }
 
   private async submit(): Promise<void> {
-    const low = Math.min(this.tempLow, this.tempHigh);
-    const high = Math.max(this.tempLow, this.tempHigh);
+    const lowDisplay = Math.min(this.tempLow, this.tempHigh);
+    const highDisplay = Math.max(this.tempLow, this.tempHigh);
+    const low = Math.round(fromDisplayTemperature(lowDisplay, this.temperatureUnit));
+    const high = Math.round(fromDisplayTemperature(highDisplay, this.temperatureUnit));
 
     await this.plugin.saveWeatherDayEntry(this.calendar.id, this.date, {
       tempLow: low,
@@ -829,7 +856,7 @@ class EventDetailModal extends Modal {
       text: buildEventDateRangeLabel(this.calendar, this.event)
     });
 	
-    const recurrenceLabel = buildEventRecurrenceLabel(this.event);
+    const recurrenceLabel = buildEventRecurrenceLabel(this.calendar, this.event);
     if (recurrenceLabel) {
       main.createEl("p", {
         cls: "time-event-editor__meta",
@@ -974,11 +1001,36 @@ function buildEventTimeRangeLabel(
   return end ? `${start} – ${end}` : start;
 }
 
-function buildEventRecurrenceLabel(event: CalendarEventDefinition): string | null {
+function buildEventRecurrenceLabel(
+  calendar: CalendarFile,
+  event: CalendarEventDefinition
+): string | null {
   const recurrence = event.recurrence;
 
   if (!recurrence) {
     return null;
+  }
+  
+  if (recurrence.kind === "pattern") {
+    if (typeof recurrence.year === "number" && typeof recurrence.monthIndex === "number") {
+      return `Calendarium date pattern • ${recurrence.day}. ${getMonthsForYear(calendar.definition, recurrence.year)[recurrence.monthIndex]?.name ?? recurrence.monthIndex + 1} ${recurrence.year}`;
+    }
+
+    if (typeof recurrence.year === "number") {
+      const base = `Every month on day ${recurrence.day} in ${recurrence.year}`;
+      return recurrence.until ? `${base} • until ${formatShortDate(recurrence.until)}` : base;
+    }
+
+    if (typeof recurrence.monthIndex === "number") {
+      const monthName =
+        getMonthsForYear(calendar.definition, calendar.state.cursorDate.year)[recurrence.monthIndex]?.name ??
+        String(recurrence.monthIndex + 1);
+      const base = `Every year on day ${recurrence.day} of ${monthName}`;
+      return recurrence.until ? `${base} • until ${formatShortDate(recurrence.until)}` : base;
+    }
+
+    const base = `Every month on day ${recurrence.day}`;
+    return recurrence.until ? `${base} • until ${formatShortDate(recurrence.until)}` : base;
   }
 
   const unit = recurrence.frequency === "daily"

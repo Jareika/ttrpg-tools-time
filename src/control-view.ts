@@ -1,9 +1,11 @@
 import { ItemView, Modal, Notice, Setting, WorkspaceLeaf, setIcon } from "obsidian";
-import { formatDateWithPattern } from "./calendar";
+import { clampDate, formatDateWithPattern, getMonthsForYear } from "./calendar";
+import { EventExplorerModal } from "./event-explorer-modal";
 import { formatFantasyTime } from "./moons";
 import type TtrpgToolsTimePlugin from "./main";
 import type {
   CalendarFile,
+  FantasyDate,
   TagPackFile,
   TimeAdvanceButtonConfig
 } from "./types";
@@ -19,6 +21,17 @@ interface TimelineTagInfo {
   tagName: string;
   tagRef: string;
   color: string;
+}
+
+interface WeatherRangeDraft {
+  id: string;
+  startYear: number;
+  startMonthIndex: number;
+  startDay: number;
+  endYear: number;
+  endMonthIndex: number;
+  endDay: number;
+  weatherPackId: string;
 }
 
 interface ControlButtonOptions {
@@ -148,6 +161,34 @@ export class TimeControlView extends ItemView {
         void this.plugin.activateEventEditorView();
       }
     });
+	
+    this.createActionButton(quickActions, {
+      icon: "search",
+      label: "Event explorer",
+      iconOnly: true,
+      disabled: !calendar,
+      onClick: () => {
+        if (!calendar) {
+          return;
+        }
+
+        new EventExplorerModal(this.plugin, calendar).open();
+      }
+    });
+
+    this.createActionButton(quickActions, {
+      icon: "cloud-drizzle",
+      label: "Apply weather packs to date ranges",
+      iconOnly: true,
+      disabled: !calendar,
+      onClick: () => {
+        if (!calendar) {
+          return;
+        }
+
+        new WeatherRangeBatchModal(this.plugin, calendar).open();
+      }
+    });
 
     this.createActionButton(quickActions, {
       icon: "cloud",
@@ -157,9 +198,38 @@ export class TimeControlView extends ItemView {
         this.plugin.openManageWeatherPacksModal();
       }
     });
+	
+    this.createActionButton(quickActions, {
+      icon: "hammer",
+      label: "Manage frontmatter",
+      iconOnly: true,
+      onClick: () => {
+        this.plugin.openFrontmatterManagerModal();
+      }
+    });
 
     this.createActionButton(quickActions, {
-      icon: "tags",
+      icon: "scan",
+      label: "Scan active note frontmatter",
+      iconOnly: true,
+      disabled: !calendar,
+      onClick: () => {
+        void this.plugin.scanActiveNoteFrontmatter();
+      }
+    });
+
+    this.createActionButton(quickActions, {
+      icon: "folder-search",
+      label: "Scan whole vault frontmatter",
+      iconOnly: true,
+      disabled: !calendar,
+      onClick: () => {
+        void this.plugin.scanVaultFrontmatter();
+      }
+    });
+
+    this.createActionButton(quickActions, {
+      icon: "code",
       label: "Manage tag packs",
       iconOnly: true,
       onClick: () => {
@@ -185,7 +255,7 @@ export class TimeControlView extends ItemView {
         this.plugin.openPluginSettings();
       }
     });
-
+	
     const timeButtons = this.plugin.getConfiguredTimeAdvanceButtons();
 
     if (timeButtons.length > 0) {
@@ -302,6 +372,250 @@ export class TimeControlView extends ItemView {
     }
 
     return button;
+  }
+}
+
+class WeatherRangeBatchModal extends Modal {
+  private readonly calendar: CalendarFile;
+  private rows: WeatherRangeDraft[] = [];
+
+  constructor(
+    private readonly plugin: TtrpgToolsTimePlugin,
+    calendar: CalendarFile
+  ) {
+    super(plugin.app);
+    this.calendar = calendar;
+  }
+
+  onOpen(): void {
+    prepareFlexibleModal(this);
+    void this.render();
+  }
+
+  private async render(): Promise<void> {
+    const { contentEl } = this;
+    const packs = await this.plugin.listVisibleWeatherPacks(this.calendar);
+    const defaultPackId =
+      packs.find((pack) => pack.id === this.calendar.defaultWeatherPackId)?.id ??
+      packs[0]?.id ??
+      "";
+
+    if (this.rows.length === 0) {
+      this.rows.push(createWeatherRangeDraft(this.calendar, defaultPackId));
+    } else {
+      this.rows = this.rows.map((row) => ({
+        ...row,
+        weatherPackId: packs.some((pack) => pack.id === row.weatherPackId)
+          ? row.weatherPackId
+          : defaultPackId
+      }));
+    }
+
+    clearEl(contentEl);
+    contentEl.addClass("time-modal");
+
+    contentEl.createEl("h2", {
+      text: "Apply weather packs to date ranges"
+    });
+
+    contentEl.createEl("p", {
+      cls: "setting-item-description",
+      text: "Define one or more date ranges and assign a weather pack to each. Later rows overwrite earlier ones if ranges overlap."
+    });
+
+    if (packs.length === 0) {
+      contentEl.createDiv({
+        cls: "time-manager__empty",
+        text: "No visible weather packs available for the active calendar."
+      });
+
+      const footer = contentEl.createDiv({ cls: "time-modal__footer" });
+
+      const closeButton = footer.createEl("button", {
+        cls: "time-manager__button",
+        text: "Close"
+      });
+      closeButton.type = "button";
+      closeButton.addEventListener("click", () => this.close());
+      return;
+    }
+
+    const list = contentEl.createDiv({ cls: "time-control-weather__list" });
+
+    this.rows.forEach((row, index) => {
+      const rowEl = list.createDiv({ cls: "time-control-weather__row" });
+
+      renderWeatherRangeDateBlock(
+        rowEl,
+        this.calendar,
+        "Start",
+        {
+          year: row.startYear,
+          monthIndex: row.startMonthIndex,
+          day: row.startDay
+        },
+        (nextDate, rerender) => {
+          this.rows[index].startYear = nextDate.year;
+          this.rows[index].startMonthIndex = nextDate.monthIndex;
+          this.rows[index].startDay = nextDate.day;
+
+          if (rerender) {
+            void this.render();
+          }
+        }
+      );
+
+      renderWeatherRangeDateBlock(
+        rowEl,
+        this.calendar,
+        "End",
+        {
+          year: row.endYear,
+          monthIndex: row.endMonthIndex,
+          day: row.endDay
+        },
+        (nextDate, rerender) => {
+          this.rows[index].endYear = nextDate.year;
+          this.rows[index].endMonthIndex = nextDate.monthIndex;
+          this.rows[index].endDay = nextDate.day;
+
+          if (rerender) {
+            void this.render();
+          }
+        }
+      );
+
+      const packField = rowEl.createDiv({
+        cls: "time-control-weather__pack-field"
+      });
+      packField.createDiv({
+        cls: "time-event-editor__block-title",
+        text: "Weather pack"
+      });
+
+      const packSelect = packField.createEl("select", {
+        cls: "time-inline-field__input"
+      });
+
+      packs.forEach((pack) => {
+        const option = packSelect.ownerDocument.createElement("option");
+        option.value = pack.id;
+        option.text = pack.name;
+        option.selected = pack.id === row.weatherPackId;
+        packSelect.add(option);
+      });
+
+      packSelect.value = row.weatherPackId;
+      packSelect.addEventListener("change", () => {
+        this.rows[index].weatherPackId = packSelect.value;
+      });
+
+      const deleteButton = rowEl.createEl("button", {
+        cls: "time-collection-editor__delete"
+      });
+      deleteButton.type = "button";
+      deleteButton.disabled = this.rows.length <= 1;
+      deleteButton.setAttr("aria-label", "Delete row");
+      deleteButton.title = "Delete row";
+      setIcon(deleteButton, "trash-2");
+      deleteButton.addEventListener("click", () => {
+        if (this.rows.length <= 1) {
+          return;
+        }
+
+        this.rows.splice(index, 1);
+        void this.render();
+      });
+    });
+
+    const footer = contentEl.createDiv({ cls: "time-modal__footer" });
+
+    const addButton = footer.createEl("button", {
+      cls: "time-manager__button",
+      text: "Add row"
+    });
+    addButton.type = "button";
+    addButton.addEventListener("click", () => {
+      this.rows.push(createWeatherRangeDraft(this.calendar, defaultPackId));
+      void this.render();
+    });
+
+    const applyButton = footer.createEl("button", {
+      cls: "time-manager__button mod-cta",
+      text: "Apply"
+    });
+    applyButton.type = "button";
+    applyButton.addEventListener("click", () => {
+      void this.submit();
+    });
+
+    const cancelButton = footer.createEl("button", {
+      cls: "time-manager__button",
+      text: "Cancel"
+    });
+    cancelButton.type = "button";
+    cancelButton.addEventListener("click", () => this.close());
+  }
+
+  private async submit(): Promise<void> {
+    const packs = await this.plugin.listVisibleWeatherPacks(this.calendar);
+    const validPackIds = new Set(packs.map((pack) => pack.id));
+    const normalizedRows = this.rows.map((row, index) => {
+      const start = clampDate(
+        {
+          year: row.startYear,
+          monthIndex: row.startMonthIndex,
+          day: row.startDay
+        },
+        this.calendar.definition
+      );
+      const end = clampDate(
+        {
+          year: row.endYear,
+          monthIndex: row.endMonthIndex,
+          day: row.endDay
+        },
+        this.calendar.definition
+      );
+
+      return {
+        index,
+        weatherPackId: row.weatherPackId,
+        start,
+        end
+      };
+    });
+
+    for (const row of normalizedRows) {
+      if (!validPackIds.has(row.weatherPackId)) {
+        new Notice(`Row ${row.index + 1}: please select a valid weather pack.`);
+        return;
+      }
+
+      if (compareFantasyDate(row.start, row.end) > 0) {
+        new Notice(`Row ${row.index + 1}: end date must not be before start date.`);
+        return;
+      }
+    }
+
+    for (const row of normalizedRows) {
+      await this.plugin.applyWeatherPackToRange(
+        this.calendar.id,
+        row.weatherPackId,
+        row.start,
+        row.end,
+        row.weatherPackId,
+        "pack",
+        false
+      );
+    }
+
+    this.plugin.refreshOpenViews();
+    this.close();
+
+    new Notice(
+      `Applied ${normalizedRows.length} weather range${normalizedRows.length === 1 ? "" : "s"}.`
+    );
   }
 }
 
@@ -710,6 +1024,129 @@ function buildTimeAdvanceTooltip(button: TimeAdvanceButtonConfig): string {
   ]
     .filter((entry): entry is string => Boolean(entry))
     .join(" • ");
+}
+
+function createWeatherRangeDraft(
+  calendar: CalendarFile,
+  weatherPackId: string
+): WeatherRangeDraft {
+  const cursorDate = calendar.state.cursorDate;
+
+  return {
+    id: createWeatherRangeDraftId(),
+    startYear: cursorDate.year,
+    startMonthIndex: cursorDate.monthIndex,
+    startDay: cursorDate.day,
+    endYear: cursorDate.year,
+    endMonthIndex: cursorDate.monthIndex,
+    endDay: cursorDate.day,
+    weatherPackId
+  };
+}
+
+function createWeatherRangeDraftId(): string {
+  return `weather-range-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function renderWeatherRangeDateBlock(
+  parent: HTMLElement,
+  calendar: CalendarFile,
+  label: string,
+  date: FantasyDate,
+  onChange: (nextDate: FantasyDate, rerender: boolean) => void
+): void {
+  const block = parent.createDiv({ cls: "time-control-weather__date-block" });
+  block.createDiv({
+    cls: "time-event-editor__block-title",
+    text: label
+  });
+
+  const grid = block.createDiv({ cls: "time-control-weather__date-grid" });
+
+  const yearField = grid.createDiv({ cls: "time-inline-field" });
+  yearField.createEl("label", {
+    cls: "time-inline-field__label",
+    text: "Year"
+  });
+  const yearInput = yearField.createEl("input", {
+    cls: "time-inline-field__input"
+  });
+  yearInput.type = "number";
+  yearInput.value = String(date.year);
+  yearInput.addEventListener("change", () => {
+    onChange(
+      {
+        ...date,
+        year: Math.trunc(Number(yearInput.value) || 0)
+      },
+      true
+    );
+  });
+
+  const monthField = grid.createDiv({ cls: "time-inline-field" });
+  monthField.createEl("label", {
+    cls: "time-inline-field__label",
+    text: "Month"
+  });
+  const monthSelect = monthField.createEl("select", {
+    cls: "time-inline-field__input"
+  });
+  const months = getMonthsForYear(calendar.definition, date.year);
+  const selectedMonthIndex = clampMonthIndex(date.monthIndex, months.length);
+
+  months.forEach((month, index) => {
+    const option = monthSelect.ownerDocument.createElement("option");
+    option.value = String(index);
+    option.text = month.name;
+    option.selected = index === selectedMonthIndex;
+    monthSelect.add(option);
+  });
+
+  monthSelect.value = String(selectedMonthIndex);
+  monthSelect.addEventListener("change", () => {
+    onChange(
+      {
+        ...date,
+        monthIndex: Math.max(0, Number(monthSelect.value) || 0)
+      },
+      false
+    );
+  });
+
+  const dayField = grid.createDiv({ cls: "time-inline-field" });
+  dayField.createEl("label", {
+    cls: "time-inline-field__label",
+    text: "Day"
+  });
+  const dayInput = dayField.createEl("input", {
+    cls: "time-inline-field__input"
+  });
+  dayInput.type = "number";
+  dayInput.min = "1";
+  dayInput.value = String(date.day);
+  dayInput.addEventListener("input", () => {
+    onChange(
+      {
+        ...date,
+        day: Math.max(1, Math.trunc(Number(dayInput.value) || 1))
+      },
+      false
+    );
+  });
+}
+
+function clampMonthIndex(monthIndex: number, monthCount: number): number {
+  if (monthCount <= 0) {
+    return 0;
+  }
+
+  return Math.min(Math.max(Math.trunc(monthIndex), 0), monthCount - 1);
+}
+
+function compareFantasyDate(left: FantasyDate, right: FantasyDate): number {
+  if (left.year !== right.year) return left.year - right.year;
+  if (left.monthIndex !== right.monthIndex) return left.monthIndex - right.monthIndex;
+  return left.day - right.day;
 }
 
 function formatYamlScalar(value: string): string {

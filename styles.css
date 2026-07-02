@@ -1559,6 +1559,42 @@
   margin-top: 0;
 }
 
+.time-control-weather__list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.time-control-weather__row {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1.15fr)
+    minmax(0, 1.15fr)
+    minmax(220px, 0.9fr)
+    38px;
+  align-items: end;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--time-border);
+  border-radius: 12px;
+  background: var(--time-card-bg);
+}
+
+.time-control-weather__date-block,
+.time-control-weather__pack-field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.time-control-weather__date-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
 /* ==========================================================================
    Calendar editor modal
    ========================================================================== */
@@ -1665,6 +1701,24 @@
 
 .time-calendar-editor__checkbox-row input[type="checkbox"] {
   margin: 0;
+}
+
+.time-frontmatter-block-note {
+  margin-top: -2px;
+  color: var(--text-muted);
+}
+
+.time-frontmatter-rule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.time-frontmatter-rule-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 54px 38px;
+  align-items: center;
+  gap: 8px;
 }
 
 /* ==========================================================================
@@ -1868,6 +1922,77 @@
 .time-season-editor__delete,
 .time-tag-editor__delete {
   padding: 8px 12px;
+}
+
+/* ==========================================================================
+   Event explorer
+   ========================================================================== */
+
+.time-event-explorer__search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  margin: 8px 0 12px;
+  align-items: end;
+}
+
+.time-event-explorer__controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px;
+  gap: 12px;
+  margin: 8px 0 12px;
+}
+
+.time-event-explorer__field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.time-event-explorer__label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--time-heading-soft);
+}
+
+.time-event-explorer__list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.time-event-explorer__item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--time-border);
+  border-radius: 12px;
+  background: var(--time-card-bg);
+}
+
+.time-event-explorer__title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--time-strong-text);
+}
+
+.time-event-explorer__date {
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: var(--time-muted-text);
+}
+
+.time-event-explorer__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 /* ==========================================================================
@@ -2130,12 +2255,21 @@
   .time-collection-editor__row--leap-rule,
   .time-collection-editor__row--moon-header,
   .time-season-editor__row,
+  .time-control-weather__row,
+  .time-control-weather__date-grid,
+  .time-event-explorer__controls,
+  .time-event-explorer__search-row,
+  .time-event-explorer__item,
   .time-settings-button-header {
     grid-template-columns: minmax(0, 1fr);
   }
   
   .time-calendar-editor__compact-grid,
   .time-calendar-editor__setup-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  
+  .time-frontmatter-rule-row {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -2154,6 +2288,10 @@
 
   .time-manager__footer {
     flex-direction: column;
+  }
+
+  .time-event-explorer__actions {
+    justify-content: flex-start;
   }
 }
 

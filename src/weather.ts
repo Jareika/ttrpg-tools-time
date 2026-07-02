@@ -9,6 +9,7 @@ import type {
   CalendarFile,
   FantasyDate,
   FantasyMonth,
+  TemperatureUnit,
   WeatherCondition,
   WeatherData,
   WeatherDayEntry,
@@ -134,6 +135,32 @@ export function getWeatherConditionLabel(condition: WeatherCondition): string {
 
 export function getWeatherIconName(condition: WeatherCondition): string {
   return CONDITION_ICONS[condition];
+}
+
+export function getTemperatureUnitLabel(unit: TemperatureUnit): string {
+  return unit === "f" ? "°F" : "°C";
+}
+
+export function toDisplayTemperature(value: number, unit: TemperatureUnit): number {
+  return unit === "f" ? (value * 9) / 5 + 32 : value;
+}
+
+export function fromDisplayTemperature(value: number, unit: TemperatureUnit): number {
+  return unit === "f" ? ((value - 32) * 5) / 9 : value;
+}
+
+export function formatTemperatureForDisplay(value: number, unit: TemperatureUnit): string {
+  return `${Math.round(toDisplayTemperature(value, unit))}${getTemperatureUnitLabel(unit)}`;
+}
+
+export function formatTemperatureRangeForDisplay(
+  low: number,
+  high: number,
+  unit: TemperatureUnit
+): string {
+  const min = Math.min(low, high);
+  const max = Math.max(low, high);
+  return `${formatTemperatureForDisplay(min, unit)} to ${formatTemperatureForDisplay(max, unit)}`;
 }
 
 export function isSkyOnlyWeatherCondition(condition: WeatherCondition): boolean {

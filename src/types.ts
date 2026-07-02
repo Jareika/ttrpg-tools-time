@@ -25,9 +25,73 @@ export type MonthWeekdayMode = "continuous" | "reset";
 export type LeapDayPlacement = "standalone" | "append-to-month";
 export type NegativeYearDisplayMode = "signed" | "absolute";
 export type LargeYearFormat = "plain" | "abbreviated";
+export type TemperatureUnit = "c" | "f";
 
 export type EventRecurrenceFrequency = "daily" | "weekly" | "monthly" | "yearly";
 export type EventRecurrenceEndMode = "never" | "count" | "until";
+export type EventDeleteMode = "single" | "following" | "all";
+
+export interface FrontmatterColorMappingRule {
+  id: string;
+  property: string;
+  value: string;
+  color: string;
+}
+
+export interface FrontmatterImportSettings {
+  enabled: boolean;
+  titleProperty?: string;
+  startDateProperty?: string;
+  endDateProperty?: string;
+  startHourProperty?: string;
+  startMinuteProperty?: string;
+  endHourProperty?: string;
+  endMinuteProperty?: string;
+  descriptionProperty?: string;
+  imageProperty?: string;
+  weatherPackProperty?: string;
+  tagProperty?: string;
+  syncIdProperty?: string;
+  colorProperty?: string;
+  recurrenceFrequencyProperty?: string;
+  recurrenceIntervalProperty?: string;
+  recurrenceEndModeProperty?: string;
+  recurrenceCountProperty?: string;
+  recurrenceUntilProperty?: string;
+  fallbackTitleToFilename: boolean;
+  colorMappings: FrontmatterColorMappingRule[];
+}
+
+export interface FrontmatterExportSettings {
+  enabled: boolean;
+  titleProperty?: string;
+  startDateProperty?: string;
+  endDateProperty?: string;
+  startHourProperty?: string;
+  startMinuteProperty?: string;
+  endHourProperty?: string;
+  endMinuteProperty?: string;
+  descriptionProperty?: string;
+  imageProperty?: string;
+  weatherPackProperty?: string;
+  tagProperty?: string;
+  syncIdProperty?: string;
+  colorProperty?: string;
+  recurrenceFrequencyProperty?: string;
+  recurrenceIntervalProperty?: string;
+  recurrenceEndModeProperty?: string;
+  recurrenceCountProperty?: string;
+  recurrenceUntilProperty?: string;
+  clearMissingFields: boolean;
+}
+
+export interface FrontmatterEventImportSource {
+  kind: "frontmatter";
+  syncKey: string;
+  notePath: string;
+  importedAt: string;
+  explicitSyncId?: string;
+}
 
 export interface FantasyTimeConfig {
   enabled: boolean;
@@ -239,16 +303,34 @@ export interface TtrpgToolsTimeSettings {
   activeCalendarId: string | null;
   dayViewDateFormat: string;
   showCalendarWeekNumbers: boolean;
+  temperatureUnit: TemperatureUnit;
   controlTimeButtons: TimeAdvanceButtonConfig[];
+  frontmatterImport: FrontmatterImportSettings;
+  frontmatterExport: FrontmatterExportSettings;
 }
 
-export interface EventRecurrenceRule {
+export interface IntervalEventRecurrenceRule {
+  kind: "interval";
   frequency: EventRecurrenceFrequency;
   interval: number;
   endMode: EventRecurrenceEndMode;
   count?: number;
   until?: FantasyDate;
+  excludedDates?: FantasyDate[];
 }
+
+export interface PatternEventRecurrenceRule {
+  kind: "pattern";
+  day: number;
+  monthIndex?: number;
+  year?: number;
+  until?: FantasyDate;
+  excludedDates?: FantasyDate[];
+}
+
+export type EventRecurrenceRule =
+  | IntervalEventRecurrenceRule
+  | PatternEventRecurrenceRule;
 
 export interface EventPresetFile {
   version: 1;
@@ -278,6 +360,7 @@ export interface CalendarEventDefinition {
   createdAt: string;
   recurrence?: EventRecurrenceRule;
   sourceEventId?: string;
+  importSource?: FrontmatterEventImportSource;
   updatedAt: string;
 }
 
@@ -306,6 +389,23 @@ export interface EventIndexYearFile {
   calendarId: string;
   year: number;
   days: Record<string, EventIndexDay>;
+}
+
+export interface EventRecurrenceIndexEntry {
+  id: string;
+  title: string;
+  color: string;
+  date: FantasyDate;
+  endDate?: FantasyDate;
+  recurrence: EventRecurrenceRule;
+  updatedAt: string;
+}
+
+export interface EventRecurrenceIndexFile {
+  version: 1;
+  kind: "event-recurrence-index";
+  calendarId: string;
+  items: EventRecurrenceIndexEntry[];
 }
 
 export interface WeatherPackFile {

@@ -2263,7 +2263,7 @@ class MoonEditorModal extends Modal {
       const sizeInput = row.createEl("input", { cls: "time-collection-editor__input" });
       sizeInput.type = "number";
       sizeInput.min = "12";
-      sizeInput.max = "96";
+      sizeInput.max = "300";
       sizeInput.placeholder = "Size";
       sizeInput.setAttr("aria-label", "Moon size");
       sizeInput.title = "Moon size";
@@ -3640,7 +3640,7 @@ function normalizeColor(value: string | undefined): string {
 }
 
 function normalizeMoonSize(value: number): number {
-  return clamp(Math.trunc(value || 28), 12, 96);
+  return clamp(Math.trunc(value || 28), 12, 300);
 }
 
 function normalizePositiveDecimal(value: number, fallback: number): number {

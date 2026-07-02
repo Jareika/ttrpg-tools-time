@@ -8,6 +8,7 @@ import {
 import {
   normalizeCalendarEventDefinition,
   normalizeEventIndexYearFile,
+  normalizeEventRecurrenceIndexFile,
   normalizeEventPresetFile,
   normalizeEventYearFile
 } from "./events";
@@ -20,6 +21,7 @@ import type {
   CalendarEventDefinition,
   CalendarFile,
   EventIndexYearFile,
+  EventRecurrenceIndexFile,
   EventPresetFile,
   EventYearFile,
   TagPackFile,
@@ -70,6 +72,10 @@ export class TimeDataStore {
   get eventDetailsFolder(): string {
     return normalizeStoragePath(`${this.baseFolder}/event-details`);
   }
+  
+  get eventDetailsLegacyBackupFolder(): string {
+    return normalizeStoragePath(`${this.baseFolder}/event-details-legacy-backup`);
+  }
 
   get eventPresetsFolder(): string {
     return normalizeStoragePath(`${this.baseFolder}/event-presets`);
@@ -90,6 +96,7 @@ export class TimeDataStore {
       this.eventIndexFolder,
 	  this.eventSourceFolder,
       this.eventDetailsFolder,
+	  this.eventDetailsLegacyBackupFolder,
       this.eventPresetsFolder
     ];
 
@@ -175,6 +182,29 @@ export class TimeDataStore {
     return events.sort((left, right) =>
       left.title.localeCompare(right.title, undefined, { sensitivity: "base" })
     );
+  }
+  
+  async hasLegacyEventMigrationMarker(calendarId: string): Promise<boolean> {
+    return await this.exists(this.buildLegacyEventMigrationMarkerPath(calendarId));
+  }
+
+  async saveLegacyEventMigrationMarker(
+    calendarId: string,
+    meta?: {
+      migratedAt?: string;
+      sourceCount?: number;
+      legacyYears?: number[];
+    }
+  ): Promise<void> {
+    const path = this.buildLegacyEventMigrationMarkerPath(calendarId);
+    await this.writeJson(path, {
+      version: 1,
+      kind: "legacy-event-migration-marker",
+      calendarId,
+      migratedAt: meta?.migratedAt ?? new Date().toISOString(),
+      sourceCount: Math.max(0, Math.trunc(meta?.sourceCount ?? 0)),
+      legacyYears: [...new Set(meta?.legacyYears ?? [])].sort((left, right) => left - right)
+    });
   }
 
   async loadCalendarById(id: string): Promise<CalendarFile | null> {
@@ -273,12 +303,31 @@ export class TimeDataStore {
 
     return normalizeEventIndexYearFile(await this.readJson(existing));
   }
+  
+  async loadEventRecurrenceIndex(calendarId: string): Promise<EventRecurrenceIndexFile | null> {
+    const path = this.buildEventRecurrenceIndexPath(calendarId);
+    const existing = this.app.vault.getAbstractFileByPath(path);
+
+    if (!(existing instanceof TFile)) {
+      return null;
+    }
+
+    return normalizeEventRecurrenceIndexFile(await this.readJson(existing));
+  }
 
   async saveEventIndexYear(file: EventIndexYearFile): Promise<void> {
     const normalized = normalizeEventIndexYearFile(file);
     const folder = normalizeStoragePath(`${this.eventIndexFolder}/${slugify(normalized.calendarId)}`);
     await ensureFolder(this.app, folder);
     const path = this.buildEventIndexYearPath(normalized.calendarId, normalized.year);
+    await this.writeJson(path, normalized);
+  }
+  
+  async saveEventRecurrenceIndex(file: EventRecurrenceIndexFile): Promise<void> {
+    const normalized = normalizeEventRecurrenceIndexFile(file);
+    const folder = normalizeStoragePath(`${this.eventIndexFolder}/${slugify(normalized.calendarId)}`);
+    await ensureFolder(this.app, folder);
+    const path = this.buildEventRecurrenceIndexPath(normalized.calendarId);
     await this.writeJson(path, normalized);
   }
 
@@ -375,6 +424,24 @@ export class TimeDataStore {
   buildEventSourceFolder(calendarId: string): string {
     return normalizeStoragePath(`${this.eventSourceFolder}/${slugify(calendarId)}`);
   }
+  
+  buildLegacyEventDetailsFolder(calendarId: string): string {
+    return normalizeStoragePath(`${this.eventDetailsFolder}/${slugify(calendarId)}`);
+  }
+
+  buildLegacyEventDetailsBackupFolder(calendarId: string, suffix?: string): string {
+    const baseName = slugify(calendarId);
+    const safeSuffix = suffix?.trim().length ? `-${suffix.trim()}` : "";
+    return normalizeStoragePath(
+      `${this.eventDetailsLegacyBackupFolder}/${baseName}${safeSuffix}`
+    );
+  }
+  
+  buildLegacyEventMigrationMarkerPath(calendarId: string): string {
+    return normalizeStoragePath(
+      `${this.eventSourceFolder}/.${slugify(calendarId)}.legacy-migrated.json`
+    );
+  }
 
   buildEventSourcePath(calendarId: string, id: string): string {
     return normalizeStoragePath(
@@ -385,6 +452,12 @@ export class TimeDataStore {
   buildEventIndexYearPath(calendarId: string, year: number): string {
     return normalizeStoragePath(
       `${this.eventIndexFolder}/${slugify(calendarId)}/${Math.trunc(year)}.index.json`
+    );
+  }
+  
+  buildEventRecurrenceIndexPath(calendarId: string): string {
+    return normalizeStoragePath(
+      `${this.eventIndexFolder}/${slugify(calendarId)}/recurrence.index.json`
     );
   }
 
@@ -412,6 +485,30 @@ export class TimeDataStore {
 
   async deleteEventIndexYear(calendarId: string, year: number): Promise<void> {
     await this.deleteFileIfPresent(this.buildEventIndexYearPath(calendarId, year));
+  }
+  
+  async deleteEventRecurrenceIndex(calendarId: string): Promise<void> {
+    await this.deleteFileIfPresent(this.buildEventRecurrenceIndexPath(calendarId));
+  }
+  
+  async moveLegacyEventDetailsFolderToBackup(calendarId: string): Promise<string | null> {
+    const sourcePath = this.buildLegacyEventDetailsFolder(calendarId);
+    const source = this.app.vault.getAbstractFileByPath(sourcePath);
+
+    if (!(source instanceof TFolder)) {
+      return null;
+    }
+
+    await ensureFolder(this.app, this.eventDetailsLegacyBackupFolder);
+
+    const preferredTargetPath = this.buildLegacyEventDetailsBackupFolder(
+      calendarId,
+      buildBackupTimestamp()
+    );
+    const targetPath = await this.buildAvailableFolderPath(preferredTargetPath);
+
+    await this.app.vault.rename(source, targetPath);
+    return targetPath;
   }
 
   private async exists(path: string): Promise<boolean> {
@@ -469,6 +566,24 @@ export class TimeDataStore {
       await this.app.fileManager.trashFile(existing);
     }
   }
+  
+  private async buildAvailableFolderPath(preferredPath: string): Promise<string> {
+    if (!(await this.exists(preferredPath))) {
+      return preferredPath;
+    }
+
+    let attempt = 2;
+
+    while (attempt < 10_000) {
+      const candidate = normalizeStoragePath(`${preferredPath}-${attempt}`);
+      if (!(await this.exists(candidate))) {
+        return candidate;
+      }
+      attempt += 1;
+    }
+
+    return normalizeStoragePath(`${preferredPath}-${Date.now().toString(36)}`);
+  }
 }
 
 function normalizeStoragePath(value: string): string {
@@ -511,4 +626,16 @@ async function ensureFolder(app: App, folderPath: string): Promise<void> {
       throw new Error(`Path "${currentPath}" already exists and is not a folder.`);
     }
   }
+}
+
+function buildBackupTimestamp(): string {
+  const now = new Date();
+  const year = String(now.getUTCFullYear());
+  const month = String(now.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(now.getUTCDate()).padStart(2, "0");
+  const hours = String(now.getUTCHours()).padStart(2, "0");
+  const minutes = String(now.getUTCMinutes()).padStart(2, "0");
+  const seconds = String(now.getUTCSeconds()).padStart(2, "0");
+
+  return `${year}${month}${day}-${hours}${minutes}${seconds}Z`;
 }

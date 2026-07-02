@@ -273,7 +273,7 @@ function getFiniteNumber(value: number, fallback: number): number {
 }
 
 function clampSize(value: number): number {
-  return Math.min(Math.max(Math.trunc(value), 12), 96);
+  return Math.min(Math.max(Math.trunc(value), 12), 300);
 }
 
 function clamp(value: number, min: number, max: number): number {

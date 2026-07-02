@@ -1,6 +1,6 @@
 import { App, PluginSettingTab, Setting, setIcon } from "obsidian";
 import type TtrpgToolsTimePlugin from "./main";
-import type { TimeAdvanceButtonConfig } from "./types";
+import type { TemperatureUnit, TimeAdvanceButtonConfig } from "./types";
 
 export class TimeSettingTab extends PluginSettingTab {
   plugin: TtrpgToolsTimePlugin;
@@ -45,6 +45,15 @@ export class TimeSettingTab extends PluginSettingTab {
       .addButton((button) =>
         button.setButtonText("Open").onClick(() => {
           void this.plugin.activateControlView();
+        })
+      );
+	  
+    new Setting(containerEl)
+      .setName("Manage frontmatter")
+      .setDesc("Configure manual frontmatter import mappings and scan behaviour.")
+      .addButton((button) =>
+        button.setButtonText("Open").onClick(() => {
+          this.plugin.openFrontmatterManagerModal();
         })
       );
 
@@ -113,6 +122,18 @@ export class TimeSettingTab extends PluginSettingTab {
         toggle.setValue(this.plugin.settings.showCalendarWeekNumbers).onChange((value) => {
           void this.updateShowCalendarWeekNumbers(value);
         }));
+		
+    new Setting(containerEl)
+      .setName("Temperature unit")
+      .setDesc("Display temperatures in weather UI and weather editors.")
+      .addDropdown((dropdown) => {
+        dropdown.addOption("c", "Celsius (°C)");
+        dropdown.addOption("f", "Fahrenheit (°F)");
+        dropdown.setValue(this.plugin.settings.temperatureUnit);
+        dropdown.onChange((value) => {
+          void this.updateTemperatureUnit(value === "f" ? "f" : "c");
+        });
+      });
 
     new Setting(containerEl).setName("Control pane & fantasy time").setHeading();
 
@@ -321,6 +342,15 @@ export class TimeSettingTab extends PluginSettingTab {
     });
     this.plugin.refreshOpenViews();
   }
+
+  private async updateTemperatureUnit(value: TemperatureUnit): Promise<void> {
+    await this.plugin.replaceSettings({
+      ...this.plugin.settings,
+      temperatureUnit: value
+    });
+    this.plugin.refreshOpenViews();
+  }
+
   private async updateControlTimeButtons(): Promise<void> {
     const nextButtons = this.pendingControlTimeButtons
       .map((button, index) => {

@@ -1,6 +1,6 @@
 import { ItemView, Menu, Notice, WorkspaceLeaf } from "obsidian";
 import type TtrpgToolsTimePlugin from "./main";
-import { confirmWithModal } from "./confirm-dialog";
+import { chooseDeleteEventMode } from "./delete-event-modal";
 import { formatYearLabel, getEraShortLabel, getMonth } from "./calendar";
 import type {
   CalendarTimelineStyle,
@@ -455,18 +455,29 @@ export class TimeTimelineView extends ItemView {
     menu.addItem((entry) =>
       entry.setTitle("Delete event").setIcon("trash-2").onClick(() => {
         void (async () => {
-          const confirmed = await confirmWithModal(this.plugin.app, {
+          const deleteMode = await chooseDeleteEventMode(this.plugin.app, {
             title: "Delete event",
-            message: `Delete "${item.title}"?`,
-            confirmLabel: "Delete",
-            cancelLabel: "Cancel"
+            eventTitle: item.title,
+            occurrenceLabel: formatRangeLabel(
+              calendar,
+              item.start,
+              item.end,
+              resolveTimelineStyle(calendar)
+            ),
+            recurring: Boolean(item.event.recurrence)
           });
 
-          if (!confirmed) {
+          if (!deleteMode) {
             return;
           }
 
-          await this.plugin.deleteEventById(calendar.id, item.start.year, item.event.id);
+          await this.plugin.deleteEventById(
+            calendar.id,
+            item.start.year,
+            item.event.id,
+            deleteMode,
+            item.start
+          );
         })();
       })
     );
