@@ -946,7 +946,7 @@ async function importWeatherPackFromDisk(
   plugin: TtrpgToolsTimePlugin,
   onImported?: () => void
 ): Promise<void> {
-  const input: HTMLInputElement = doc.createElement("input");
+  const input = doc.body.createEl("input");
   input.type = "file";
   input.accept = ".json,application/json";
 
@@ -954,6 +954,7 @@ async function importWeatherPackFromDisk(
     void (async () => {
       const file = input.files?.[0];
       if (!file) {
+		input.remove();
         return;
       }
 
@@ -982,9 +983,11 @@ async function importWeatherPackFromDisk(
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         new Notice(`Failed to import weather pack: ${message}`);
+      } finally {
+        input.remove();
       }
     })();
-  });
+  }, { once: true });
 
   input.click();
 }
@@ -994,10 +997,11 @@ function exportWeatherPack(doc: Document, pack: WeatherPackFile): void {
     type: "application/json"
   });
   const url = URL.createObjectURL(blob);
-  const anchor: HTMLAnchorElement = doc.createElement("a");
+  const anchor = doc.body.createEl("a");
   anchor.href = url;
   anchor.download = `${slugify(pack.id)}.weather-pack.json`;
   anchor.click();
+  anchor.remove();
 
   window.setTimeout(() => {
     URL.revokeObjectURL(url);

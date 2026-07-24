@@ -1114,10 +1114,8 @@ function renderFantasyDateInputs(
   });
 
   getMonthsForYear(calendar.definition, date.year).forEach((month, index) => {
-    const option = monthSelect.ownerDocument.createElement("option");
+    const option = monthSelect.createEl("option", { text: month.name });
     option.value = String(index);
-    option.text = month.name;
-    monthSelect.add(option);
   });
 
   monthSelect.value = String(date.monthIndex);

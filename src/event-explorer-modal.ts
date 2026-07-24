@@ -133,11 +133,9 @@ export class EventExplorerModal extends Modal {
     });
 
     years.forEach((year) => {
-      const option = yearSelect.ownerDocument.createElement("option");
+      const option = yearSelect.createEl("option", { text: String(year) });
       option.value = String(year);
-      option.text = String(year);
       option.selected = year === this.selectedYear;
-      yearSelect.add(option);
     });
 
     yearSelect.value = String(this.selectedYear ?? this.calendar.state.cursorDate.year);

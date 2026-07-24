@@ -215,17 +215,13 @@ export class TimeEventEditorView extends ItemView {
 
     this.renderField(quickGrid, "Preset", (field) => {
       const select = field.createEl("select", { cls: "time-event-editor__input" });
-      const emptyOption = select.ownerDocument.createElement("option");
+      const emptyOption = select.createEl("option", { text: "Presets" });
       emptyOption.value = "";
-      emptyOption.text = "Presets";
-      select.add(emptyOption);
 
       presets.forEach((preset) => {
-        const option = select.ownerDocument.createElement("option");
+        const option = select.createEl("option", { text: preset.name });
         option.value = preset.id;
-        option.text = preset.name;
         option.selected = preset.id === this.selectedPresetId;
-        select.add(option);
       });
 
       select.value = this.selectedPresetId;
@@ -251,17 +247,13 @@ export class TimeEventEditorView extends ItemView {
     this.renderField(quickGrid, "Weather source", (field) => {
       const select = field.createEl("select", { cls: "time-event-editor__input" });
 
-      const noneOption = select.ownerDocument.createElement("option");
+      const noneOption = select.createEl("option", { text: "Weather" });
       noneOption.value = "";
-      noneOption.text = "Weather";
-      select.add(noneOption);
 
       weatherPacks.forEach((pack) => {
-        const option = select.ownerDocument.createElement("option");
+        const option = select.createEl("option", { text: pack.name });
         option.value = pack.id;
-        option.text = pack.name;
         option.selected = pack.id === this.selectedWeatherPackId;
-        select.add(option);
       });
 
       select.value = this.selectedWeatherPackId;
@@ -320,11 +312,9 @@ export class TimeEventEditorView extends ItemView {
     this.renderField(startBlock, "Month", (field) => {
       const select = field.createEl("select", { cls: "time-event-editor__input" });
       getMonthsForYear(calendar.definition, this.startYear).forEach((month, index) => {
-        const option = select.ownerDocument.createElement("option");
+        const option = select.createEl("option", { text: month.name });
         option.value = String(index);
-        option.text = month.name;
         option.selected = index === this.startMonthIndex;
-        select.add(option);
       });
 	  select.disabled = preservePatternRecurrence;
       select.addEventListener("change", () => {
@@ -362,11 +352,9 @@ export class TimeEventEditorView extends ItemView {
     this.renderField(endBlock, "Month", (field) => {
       const select = field.createEl("select", { cls: "time-event-editor__input" });
       getMonthsForYear(calendar.definition, this.endYear).forEach((month, index) => {
-        const option = select.ownerDocument.createElement("option");
+        const option = select.createEl("option", { text: month.name });
         option.value = String(index);
-        option.text = month.name;
         option.selected = index === this.endMonthIndex;
-        select.add(option);
       });
 	  select.disabled = preservePatternRecurrence;
       select.addEventListener("change", () => {
@@ -1352,10 +1340,8 @@ function addSelectOption(
   value: string,
   label: string
 ): void {
-  const option = select.ownerDocument.createElement("option");
+  const option = select.createEl("option", { text: label });
   option.value = value;
-  option.text = label;
-  select.add(option);
 }
 
 function applyTagButtonState(

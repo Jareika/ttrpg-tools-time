@@ -498,11 +498,9 @@ class WeatherRangeBatchModal extends Modal {
       });
 
       packs.forEach((pack) => {
-        const option = packSelect.ownerDocument.createElement("option");
+        const option = packSelect.createEl("option", { text: pack.name });
         option.value = pack.id;
-        option.text = pack.name;
         option.selected = pack.id === row.weatherPackId;
-        packSelect.add(option);
       });
 
       packSelect.value = row.weatherPackId;
@@ -1095,11 +1093,9 @@ function renderWeatherRangeDateBlock(
   const selectedMonthIndex = clampMonthIndex(date.monthIndex, months.length);
 
   months.forEach((month, index) => {
-    const option = monthSelect.ownerDocument.createElement("option");
+    const option = monthSelect.createEl("option", { text: month.name });
     option.value = String(index);
-    option.text = month.name;
     option.selected = index === selectedMonthIndex;
-    monthSelect.add(option);
   });
 
   monthSelect.value = String(selectedMonthIndex);

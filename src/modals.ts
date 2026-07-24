@@ -1341,7 +1341,7 @@ class EraEditorModal extends Modal {
       });
 	  
       const startMonthSelect = createMonthSelect(
-        row.ownerDocument,
+        row,
         this.months.length > 0 ? this.months : [{ id: "month-1", name: "Month 1", days: 30 }],
         era.startMonthIndex,
         "time-collection-editor__input"
@@ -1349,7 +1349,6 @@ class EraEditorModal extends Modal {
       startMonthSelect.addEventListener("change", () => {
         this.eras[index].startMonthIndex = Math.trunc(Number(startMonthSelect.value) || 0);
       });
-      row.appendChild(startMonthSelect);
 
       const startDayInput = row.createEl("input", { cls: "time-collection-editor__input" });
       startDayInput.type = "number";
@@ -1367,11 +1366,10 @@ class EraEditorModal extends Modal {
         this.eras[index].endYear = parseNullableInt(endYearInput.value);
       });
 
-      const endMonthSelect = createOptionalMonthSelect(row.ownerDocument, this.months, era.endMonthIndex, "time-collection-editor__input");
+      const endMonthSelect = createOptionalMonthSelect(row, this.months, era.endMonthIndex, "time-collection-editor__input");
       endMonthSelect.addEventListener("change", () => {
         this.eras[index].endMonthIndex = endMonthSelect.value === "" ? null : Math.trunc(Number(endMonthSelect.value) || 0);
       });
-      row.appendChild(endMonthSelect);
 
       const endDayInput = row.createEl("input", { cls: "time-collection-editor__input" });
       endDayInput.type = "number";
@@ -1752,7 +1750,7 @@ class LeapMonthEditorModal extends Modal {
       });
 
       const insertSelect = createMonthInsertionSelect(
-        row.ownerDocument,
+        row,
         this.months,
         rule.insertAfterMonthIndex,
         "time-collection-editor__input"
@@ -1760,7 +1758,6 @@ class LeapMonthEditorModal extends Modal {
       insertSelect.addEventListener("change", () => {
         this.rules[index].insertAfterMonthIndex = Math.trunc(Number(insertSelect.value) || 0);
       });
-      row.appendChild(insertSelect);
 
       const daysInput = row.createEl("input", { cls: "time-collection-editor__input" });
       daysInput.type = "number";
@@ -1922,7 +1919,7 @@ class LeapDayEditorModal extends Modal {
       });
 
       const insertSelect = createMonthInsertionSelect(
-        row.ownerDocument,
+        row,
         this.months,
         rule.insertAfterMonthIndex,
         "time-collection-editor__input"
@@ -1930,7 +1927,6 @@ class LeapDayEditorModal extends Modal {
       insertSelect.addEventListener("change", () => {
         this.rules[index].insertAfterMonthIndex = Math.trunc(Number(insertSelect.value) || 0);
       });
-      row.appendChild(insertSelect);
 
       const daysInput = row.createEl("input", { cls: "time-collection-editor__input" });
       daysInput.type = "number";
@@ -2280,15 +2276,14 @@ class MoonEditorModal extends Modal {
       anchorSelect.setAttr("aria-label", "Moon cycle anchor");
       anchorSelect.title = "Moon cycle anchor";
 
-      const absoluteOption = row.ownerDocument.createElement("option");
+      const absoluteOption = anchorSelect.createEl("option", {
+        text: "Continuous"
+      });
       absoluteOption.value = "absolute";
-      absoluteOption.text = "Continuous";
-      anchorSelect.add(absoluteOption);
-
-      const monthOption = row.ownerDocument.createElement("option");
+      const monthOption = anchorSelect.createEl("option", {
+        text: "Month reset"
+      });
       monthOption.value = "month";
-      monthOption.text = "Month reset";
-      anchorSelect.add(monthOption);
 
       anchorSelect.value = moon.cycleAnchor;
       anchorSelect.addEventListener("change", () => {
@@ -3405,29 +3400,24 @@ function parseMonthLines(value: string): Array<{ id: string; name: string; days:
 }
 
 function createMonthInsertionSelect(
-  doc: Document,
+  parent: HTMLElement,
   months: Array<{ id: string; name: string; days: number }>,
   selectedIndex: number,
   className: string
 ): HTMLSelectElement {
-  const select = doc.createElement("select");
-
-  if (className.trim().length > 0) {
-    select.className = className;
-  }
-
-  const beforeOption = doc.createElement("option");
+  const select = parent.createEl("select", { cls: className });
+  const beforeOption = select.createEl("option", {
+    text: "Before first month"
+  });
   beforeOption.value = "-1";
-  beforeOption.text = "Before first month";
   beforeOption.selected = selectedIndex === -1;
-  select.add(beforeOption);
 
   months.forEach((month, index) => {
-    const option = doc.createElement("option");
+    const option = select.createEl("option", {
+      text: `After ${month.name}`
+    });
     option.value = String(index);
-    option.text = `After ${month.name}`;
     option.selected = index === selectedIndex;
-    select.add(option);
   });
 
   return select;
@@ -3469,47 +3459,36 @@ function getSeasonCycleLengthForDraft(
 }
 
 function createMonthSelect(
-  doc: Document,
+  parent: HTMLElement,
   months: Array<{ id: string; name: string; days: number }>,
   selectedIndex: number,
   className: string
 ): HTMLSelectElement {
-  const select = doc.createElement("select");
-  if (className.trim().length > 0) {
-    select.className = className;
-  }
+  const select = parent.createEl("select", { cls: className });
+
   months.forEach((month, index) => {
-    const option = doc.createElement("option");
+    const option = select.createEl("option", { text: month.name });
     option.value = String(index);
-    option.text = month.name;
     option.selected = index === selectedIndex;
-    select.add(option);
   });
+
   return select;
 }
 
 function createOptionalMonthSelect(
-  doc: Document,
+  parent: HTMLElement,
   months: Array<{ id: string; name: string; days: number }>,
   selectedIndex: number | null,
   className: string
 ): HTMLSelectElement {
-  const select = doc.createElement("select");
-  if (className.trim().length > 0) {
-    select.className = className;
-  }
-
-  const emptyOption = doc.createElement("option");
+  const select = parent.createEl("select", { cls: className });
+  const emptyOption = select.createEl("option", { text: "Open" });
   emptyOption.value = "";
-  emptyOption.text = "Open";
-  select.add(emptyOption);
 
   months.forEach((month, index) => {
-    const option = doc.createElement("option");
+    const option = select.createEl("option", { text: month.name });
     option.value = String(index);
-    option.text = month.name;
     option.selected = index === selectedIndex;
-    select.add(option);
   });
 
   select.value = selectedIndex == null ? "" : String(selectedIndex);
@@ -3926,8 +3905,6 @@ function doErasOverlap(
 }
 
 function addSelectOption(select: HTMLSelectElement, value: string, label: string): void {
-  const option = select.ownerDocument.createElement("option");
+  const option = select.createEl("option", { text: label });
   option.value = value;
-  option.text = label;
-  select.add(option);
 }

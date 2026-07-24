@@ -679,7 +679,6 @@ settings:
 }
 
 .time-calendar__rail {
-  width: clamp(56px, 18cqi, 82px);
   position: relative;
   overflow: hidden;
   width: clamp(56px, 18cqi, var(--time-rail-max-width));
