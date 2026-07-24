@@ -293,6 +293,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     });
 
     this.addSettingTab(new TimeSettingTab(this.app, this));
+	this.app.workspace.trigger("parse-style-settings");
 	
     this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf) => {
       if (leaf?.view instanceof MarkdownView) {

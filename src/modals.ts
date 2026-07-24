@@ -113,6 +113,7 @@ export class CalendarEditorModal extends Modal {
   private name: string;
   private id: string;
   private description: string;
+  private bannerImageRef: string;
   private eras: EraDraft[];
   private weekdays: string[];
   private months: MonthDraft[];
@@ -158,6 +159,7 @@ export class CalendarEditorModal extends Modal {
     this.name = definition?.name ?? "New Calendar";
     this.id = existing?.id ?? slugify(this.name);
     this.description = source?.description ?? "";
+	this.bannerImageRef = source?.bannerImageRef ?? "";
     this.eras = definition
       ? definition.eras.map((era) => ({ ...era }))
       : [
@@ -451,6 +453,54 @@ export class CalendarEditorModal extends Modal {
         }
       });
     }
+	
+    const bannerBlock = setupGrid.createDiv({
+      cls: "time-calendar-editor__setup-block"
+    });
+    bannerBlock.createDiv({
+      cls: "time-event-editor__block-title",
+      text: "Calendar banner"
+    });
+    bannerBlock.createDiv({
+      cls: "time-frontmatter-block-note",
+      text: "Optional background image for the left vertical banner in calendar view. Stored per calendar so future calendar switching can show different banner art."
+    });
+
+    const bannerRow = bannerBlock.createDiv({ cls: "time-event-editor__picker-row" });
+
+    const bannerInput = bannerRow.createEl("input", { cls: "time-event-editor__input" });
+    bannerInput.type = "text";
+    bannerInput.readOnly = true;
+    bannerInput.placeholder = "No banner image selected";
+    bannerInput.value = getDisplayFileName(this.bannerImageRef);
+    bannerInput.title = this.bannerImageRef || "No banner image selected";
+    bannerInput.addClass("time-event-editor__picker-display");
+
+    const browseBannerButton = bannerRow.createEl("button", {
+      cls: "time-event-editor__picker-button"
+    });
+    browseBannerButton.type = "button";
+    browseBannerButton.setAttr("aria-label", "Browse banner image");
+    browseBannerButton.title = "Browse";
+    setIcon(browseBannerButton, "folder-open");
+    browseBannerButton.addEventListener("click", () => {
+      new VaultImagePickerModal(this.app, (file) => {
+        this.bannerImageRef = file.path;
+        void this.render();
+      }).open();
+    });
+
+    const clearBannerButton = bannerRow.createEl("button", {
+      cls: "time-event-editor__picker-button"
+    });
+    clearBannerButton.type = "button";
+    clearBannerButton.setAttr("aria-label", "Clear banner image");
+    clearBannerButton.title = "Clear";
+    setIcon(clearBannerButton, "x");
+    clearBannerButton.addEventListener("click", () => {
+      this.bannerImageRef = "";
+      void this.render();
+    });
 
     const footer = contentEl.createDiv({ cls: "time-modal__footer" });
 
@@ -760,6 +810,7 @@ export class CalendarEditorModal extends Modal {
           day: this.todayDay
         }
       },
+      bannerImageRef: this.bannerImageRef.trim() || undefined,
 	  defaultWeatherPackId: this.defaultWeatherPackId,
 	  autoGenerateLinkedWeatherReferences: this.autoGenerateLinkedWeatherReferences,
 	  timeline: cloneCalendarTimelineStyle(this.timeline),
@@ -2582,6 +2633,16 @@ class VaultImagePickerModal extends FuzzySuggestModal<TFile> {
   onChooseItem(item: TFile): void {
     this.onChooseFile(item);
   }
+}
+
+function getDisplayFileName(path: string): string {
+  const trimmed = path.trim();
+
+  if (trimmed.length === 0) {
+    return "";
+  }
+
+  return trimmed.split("/").pop() ?? trimmed;
 }
 
 class NamedYearEditorModal extends Modal {

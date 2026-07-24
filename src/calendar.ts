@@ -230,6 +230,7 @@ export function normalizeCalendarFile(raw: unknown): CalendarFile {
       DEFAULT_CALENDAR_FILE.autoGenerateLinkedWeatherReferences ?? false
     ),
 	timeline: readTimelineStyle(record.timeline),
+	bannerImageRef: readOptionalString(record.bannerImageRef),
     markers: readMarkers(record.markers),
     description: readOptionalString(record.description)
   };
@@ -1044,6 +1045,7 @@ export function cloneCalendarFile(calendar: CalendarFile): CalendarFile {
     linkedWeatherPackIds: [...calendar.linkedWeatherPackIds],
     defaultWeatherPackId: calendar.defaultWeatherPackId,
     timeline: calendar.timeline ? cloneTimelineStyle(calendar.timeline) : undefined,
+	bannerImageRef: calendar.bannerImageRef,
     markers: cloneMarkers(calendar.markers),
     autoGenerateLinkedWeatherReferences: calendar.autoGenerateLinkedWeatherReferences
   };

@@ -242,6 +242,7 @@ export interface CalendarFile {
   autoGenerateLinkedWeatherReferences?: boolean;
   defaultWeatherPackId?: string;
   timeline?: CalendarTimelineStyle;
+  bannerImageRef?: string;
   description?: string;
 }
 

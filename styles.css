@@ -1,3 +1,85 @@
+/* @settings
+name: TTRPG Tools - Time
+id: ttrpg-tools-time
+settings:
+  -
+    id: ttrpg-time-calendar-view
+    title: Calendar view
+    type: heading
+    level: 2
+  -
+    id: ttrpg-time-calendar-view-banner-note
+    title: Banner images
+    type: info-text
+    description: Banner images are selected per calendar in the calendar editor. The options below are global calendar-view style overrides.
+  -
+    id: ttrpg-time-calendar-accent
+    title: Accent color
+    type: variable-themed-color
+    format: hex
+    default-light: '#cf655f'
+    default-dark: '#df8f88'
+  -
+    id: ttrpg-time-calendar-panel-radius
+    title: Panel radius
+    type: variable-number-slider
+    default: 18
+    min: 10
+    max: 30
+    step: 1
+    format: px
+  -
+    id: ttrpg-time-calendar-day-gap
+    title: Calendar grid gap
+    type: variable-number-slider
+    default: 14
+    min: 6
+    max: 24
+    step: 1
+    format: px
+  -
+    id: ttrpg-time-calendar-rail-max-width
+    title: Banner max width
+    type: variable-number-slider
+    default: 82
+    min: 56
+    max: 140
+    step: 1
+    format: px
+  -
+    id: ttrpg-time-calendar-day-radius
+    title: Day cell radius
+    type: variable-number-slider
+    default: 12
+    min: 6
+    max: 20
+    step: 1
+    format: px
+  -
+    id: ttrpg-time-calendar-rail-image-opacity
+    title: Banner image opacity
+    type: variable-number-slider
+    default: 18
+    min: 0
+    max: 100
+    step: 1
+  -
+    id: ttrpg-time-calendar-rail-image-size
+    title: Banner image fit
+    type: variable-select
+    default: cover
+    options:
+      -
+        label: Cover
+        value: cover
+      -
+        label: Contain
+        value: contain
+      -
+        label: Full height
+        value: 'auto 100%'
+*/
+
 /* ==========================================================================
    Scoped theme variables
    ========================================================================== */
@@ -7,10 +89,17 @@
 .workspace-leaf-content[data-type="time-control-view"],
 .workspace-leaf-content[data-type="time-event-editor-view"],
 .modal-container .modal.time-flex-modal {
-  --time-accent: #cf655f;
-  --time-accent-strong: #a63831;
+  --time-accent: var(--ttrpg-time-calendar-accent, #cf655f);
+  --time-accent-strong: color-mix(in srgb, var(--time-accent) 82%, black);
   --time-accent-soft: color-mix(in srgb, var(--time-accent) 12%, transparent);
   --time-accent-faint: color-mix(in srgb, var(--time-accent) 8%, transparent);
+  --time-panel-radius: var(--ttrpg-time-calendar-panel-radius, 18px);
+  --time-day-gap: var(--ttrpg-time-calendar-day-gap, 14px);
+  --time-day-cell-radius: var(--ttrpg-time-calendar-day-radius, 12px);
+  --time-rail-max-width: var(--ttrpg-time-calendar-rail-max-width, 82px);
+  --time-rail-image-opacity: calc(var(--ttrpg-time-calendar-rail-image-opacity, 18) / 100);
+  --time-rail-image-size: var(--ttrpg-time-calendar-rail-image-size, cover);
+  --time-rail-image-position: center center;
 
   --time-app-bg: var(--background-primary);
   --time-panel-bg: var(--background-primary);
@@ -70,10 +159,10 @@
 .theme-dark .workspace-leaf-content[data-type="time-control-view"],
 .theme-dark .workspace-leaf-content[data-type="time-event-editor-view"],
 .theme-dark .modal-container .modal.time-flex-modal {
-  --time-accent: #df8f88;
-  --time-accent-strong: #f0b6b0;
-  --time-accent-soft: rgba(223, 143, 136, 0.16);
-  --time-accent-faint: rgba(223, 143, 136, 0.1);
+  --time-accent: var(--ttrpg-time-calendar-accent, #df8f88);
+  --time-accent-strong: color-mix(in srgb, var(--time-accent) 70%, white);
+  --time-accent-soft: color-mix(in srgb, var(--time-accent) 16%, transparent);
+  --time-accent-faint: color-mix(in srgb, var(--time-accent) 10%, transparent);
 
   --time-app-bg: var(--background-primary);
   --time-panel-bg: var(--background-primary);
@@ -165,7 +254,7 @@
   width: 100%;
   min-height: 260px;
   padding: 24px;
-  border-radius: 18px;
+  border-radius: var(--time-panel-radius);
 }
 
 .time-calendar__empty h2 {
@@ -591,6 +680,9 @@
 
 .time-calendar__rail {
   width: clamp(56px, 18cqi, 82px);
+  position: relative;
+  overflow: hidden;
+  width: clamp(56px, 18cqi, var(--time-rail-max-width));
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -599,9 +691,34 @@
   box-sizing: border-box;
   padding: 18px 10px;
   border-left: 10px solid var(--time-accent);
-  border-radius: 12px;
-  background: linear-gradient(180deg, var(--time-accent-soft), transparent);
+  border-radius: max(10px, calc(var(--time-panel-radius) - 6px));
+  background: var(--time-panel-bg);
   box-shadow: inset 0 0 0 1px rgba(207, 101, 95, 0.08);
+}
+
+.time-calendar__rail::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--time-calendar-rail-image, none);
+  background-position: var(--time-rail-image-position);
+  background-repeat: no-repeat;
+  background-size: var(--time-rail-image-size);
+  opacity: var(--time-rail-image-opacity);
+  pointer-events: none;
+}
+
+.time-calendar__rail::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, var(--time-accent-soft), transparent);
+  pointer-events: none;
+}
+
+.time-calendar__rail > * {
+  position: relative;
+  z-index: 1;
 }
 
 .time-calendar__rail-day {
@@ -657,7 +774,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border-radius: 18px;
+  border-radius: var(--time-panel-radius);
 }
 
 .time-calendar__header {
@@ -751,7 +868,7 @@
 .time-month-grid {
   display: grid;
   grid-template-columns: repeat(var(--time-columns, 5), minmax(0, 1fr));
-  gap: 14px;
+  gap: var(--time-day-gap);
 }
 
 .time-weekday-row {
@@ -785,7 +902,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 12px;
+  border-radius: var(--time-day-cell-radius);
   background: var(--time-accent-faint);
   color: var(--time-heading-soft);
   font-weight: 700;
@@ -804,7 +921,7 @@
   gap: 8px;
   padding: 8px 8px 6px;
   border-top: 2px solid var(--time-season-color, #a7d36d);
-  border-radius: 12px;
+  border-radius: var(--time-day-cell-radius);
   background: var(--time-card-bg);
   color: var(--time-strong-text);
   cursor: pointer;
@@ -2048,7 +2165,7 @@
 
   .time-weekday-row,
   .time-month-grid {
-    gap: 10px;
+    gap: max(10px, calc(var(--time-day-gap) - 4px));
   }
 
   .time-day-cell {
@@ -2099,7 +2216,7 @@
 
   .time-weekday-row,
   .time-month-grid {
-    gap: 8px;
+    gap: max(8px, calc(var(--time-day-gap) - 6px));
   }
 
   .time-day-cell {

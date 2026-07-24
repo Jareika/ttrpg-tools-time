@@ -111,6 +111,15 @@ export class TimeCalendarView extends ItemView {
     const { definition, state } = calendar;
 
     const rail = parent.createDiv({ cls: "time-calendar__rail" });
+    const bannerImageRef = calendar.bannerImageRef?.trim();
+    if (bannerImageRef) {
+      const file = this.plugin.resolveStoredFileRef(bannerImageRef);
+      if (file) {
+        const imageUrl = this.plugin.app.vault.getResourcePath(file).replace(/"/g, '\\"');
+        rail.style.setProperty("--time-calendar-rail-image", `url("${imageUrl}")`);
+      }
+    }
+
     rail.createDiv({
       cls: "time-calendar__rail-day",
       text: String(state.cursorDate.day)
