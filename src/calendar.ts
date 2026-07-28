@@ -332,7 +332,8 @@ function readMonths(raw: unknown): FantasyMonth[] {
     return {
       id: readString(record.id, slugify(name || `month-${index + 1}`)),
       name,
-      days: Math.max(1, Math.trunc(readNumber(record.days, 1)))
+      days: Math.max(1, Math.trunc(readNumber(record.days, 1))),
+      color: readOptionalColor(record.color)
     };
   });
 }
@@ -396,7 +397,8 @@ function readLeapMonths(raw: unknown, months: FantasyMonth[]): FantasyLeapMonthR
       month: {
         id: readString(monthRecord.id, slugify(monthName || `leap-month-${index + 1}`)),
         name: monthName,
-        days: Math.max(1, Math.trunc(readNumber(monthRecord.days, 30)))
+        days: Math.max(1, Math.trunc(readNumber(monthRecord.days, 30))),
+        color: readOptionalColor(monthRecord.color)
       },
       cycleYears,
       leapYearPositions: leapYearPositions.length > 0 ? leapYearPositions : [cycleYears]
@@ -694,6 +696,8 @@ function readTimelineStyle(raw: unknown): CalendarTimelineStyle | undefined {
         : record.align === "left"
           ? "left"
           : undefined,
+    showMoons: record.showMoons === true ? true : undefined,
+    moonSize: readOptionalInteger(record.moonSize),
     maxSummaryLines: readOptionalInteger(record.maxSummaryLines),
     cardWidth: readOptionalInteger(record.cardWidth),
     cardHeight: readOptionalInteger(record.cardHeight),
@@ -888,6 +892,8 @@ function hasTimelineStyleValues(value: CalendarTimelineStyle): boolean {
   return (
     typeof value.name === "string" ||
     typeof value.align === "string" ||
+    value.showMoons === true ||
+    typeof value.moonSize === "number" ||
     typeof value.maxSummaryLines === "number" ||
     typeof value.cardWidth === "number" ||
     typeof value.cardHeight === "number" ||
@@ -929,6 +935,12 @@ function readString(value: unknown, fallback: string): string {
 
 function readOptionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function readOptionalColor(value: unknown): string | undefined {
+  return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value)
+    ? value
+    : undefined;
 }
 
 function readBoolean(value: unknown, fallback: boolean): boolean {

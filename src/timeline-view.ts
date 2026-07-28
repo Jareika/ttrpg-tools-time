@@ -2,11 +2,13 @@ import { ItemView, Menu, Notice, WorkspaceLeaf } from "obsidian";
 import type TtrpgToolsTimePlugin from "./main";
 import { chooseDeleteEventMode } from "./delete-event-modal";
 import { formatYearLabel, getEraShortLabel, getMonth } from "./calendar";
+import { resolveMoonsForDate } from "./moons";
 import type {
   CalendarTimelineStyle,
   CalendarEventDefinition,
   CalendarFile,
   FantasyDate,
+  MoonPhaseData,
   TimelineAlign,
   TagPackFile
 } from "./types";
@@ -20,6 +22,7 @@ const TL_BOX_HEIGHT = 289;
 const TL_SIDE_GAP_LEFT = 40;
 const TL_SIDE_GAP_RIGHT = 40;
 const TL_MAX_SUMMARY_LINES = 7;
+const TL_MOON_SIZE = 28;
 
 type HorizontalEdge = "media" | "box";
 
@@ -47,6 +50,8 @@ type TimelineTagInfo = {
 type ResolvedTimelineStyle = {
   name: string;
   align: TimelineAlign;
+  showMoons: boolean;
+  moonSize: number;
   maxSummaryLines: number;
   cardWidth: number;
   cardHeight: number;
@@ -123,16 +128,22 @@ export class TimeTimelineView extends ItemView {
 
     const panel = root.createDiv({ cls: "time-timeline__panel" });
     const header = panel.createDiv({ cls: "time-timeline__header" });
+    const headerTop = header.createDiv({ cls: "time-timeline__header-top" });
+    const headerText = headerTop.createDiv({ cls: "time-timeline__header-text" });
 
-    header.createEl("h2", {
+    headerText.createEl("h2", {
       cls: "time-timeline__title",
       text: timelineStyle.name
     });
 
-    header.createEl("p", {
+    headerText.createEl("p", {
       cls: "time-timeline__meta",
       text: buildTimelineMetaText(calendar, allItems.length, visibleItems.length, filters)
     });
+	
+    if (timelineStyle.showMoons) {
+      this.renderMoonStrip(headerTop, calendar, timelineStyle.moonSize);
+    }
 
     const toolbar = header.createDiv({ cls: "time-timeline__toolbar" });
 
@@ -223,6 +234,58 @@ export class TimeTimelineView extends ItemView {
     empty.createEl("p", {
       text: "Load or create a calendar first."
     });
+  }
+  
+  private renderMoonStrip(
+    parent: HTMLElement,
+    calendar: CalendarFile,
+    size: number
+  ): void {
+    const moons = resolveMoonsForDate(calendar, calendar.state.cursorDate);
+
+    if (moons.length === 0) {
+      return;
+    }
+
+    const panel = parent.createDiv({ cls: "time-timeline__moon-panel" });
+    panel.title = `Moon phases • ${formatRangeLabel(
+      calendar,
+      calendar.state.cursorDate,
+      undefined
+    )}`;
+
+    const list = panel.createDiv({ cls: "time-timeline__moon-list" });
+
+    moons.forEach((moon) => {
+      const item = list.createDiv({ cls: "time-timeline__moon" });
+      item.style.setProperty("--time-timeline-moon-size", `${size}px`);
+      item.title = `${moon.name} • ${moon.phaseLabel} • Day ${moon.cycleDay}/${moon.cycleDays}`;
+
+      if (moon.imageRef) {
+        const file = this.plugin.resolveStoredFileRef(moon.imageRef);
+
+        if (file) {
+          const image = item.createEl("img", {
+            cls: "time-timeline__moon-image"
+          });
+          image.src = this.plugin.app.vault.getResourcePath(file);
+          image.alt = `${moon.name} — ${moon.phaseLabel}`;
+          image.draggable = false;
+          return;
+        }
+      }
+
+      this.renderMoonFallback(item, moon);
+    });
+  }
+
+  private renderMoonFallback(parent: HTMLElement, moon: MoonPhaseData): void {
+    const fallback = parent.createDiv({ cls: "time-timeline__moon-fallback" });
+    fallback.textContent = String(moon.phaseIndex + 1);
+
+    if (moon.color) {
+      fallback.style.backgroundColor = moon.color;
+    }
   }
 
   private renderVerticalTimeline(
@@ -1020,6 +1083,8 @@ function resolveTimelineStyle(calendar: CalendarFile): ResolvedTimelineStyle {
   return {
     name: source?.name?.trim() || "Timeline",
     align: source?.align === "right" ? "right" : "left",
+    showMoons: source?.showMoons === true,
+    moonSize: resolvePositiveInteger(source?.moonSize, TL_MOON_SIZE),
     maxSummaryLines: resolvePositiveInteger(source?.maxSummaryLines, TL_MAX_SUMMARY_LINES),
     cardWidth: resolvePositiveInteger(source?.cardWidth, TL_CARD_WIDTH),
     cardHeight: resolvePositiveInteger(source?.cardHeight, TL_CARD_HEIGHT),

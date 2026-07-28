@@ -115,6 +115,8 @@ export interface TimelineStyleColors {
 export interface CalendarTimelineStyle {
   name?: string;
   align?: TimelineAlign;
+  showMoons?: boolean;
+  moonSize?: number;
   maxSummaryLines?: number;
   cardWidth?: number;
   cardHeight?: number;
@@ -134,6 +136,7 @@ export interface FantasyMonth {
   id: string;
   name: string;
   days: number;
+  color?: string;
 }
 
 export interface FantasyLeapMonthRule {

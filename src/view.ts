@@ -133,6 +133,15 @@ export class TimeCalendarView extends ItemView {
       cls: "time-calendar__rail-month",
       text: getMonth(definition, state.cursorDate.monthIndex, state.cursorDate.year).name
     });
+    const railMonth = rail.lastElementChild as HTMLElement;
+    const monthColor = getMonth(
+      definition,
+      state.cursorDate.monthIndex,
+      state.cursorDate.year
+    ).color;
+    if (monthColor) {
+      railMonth.style.setProperty("--time-month-color", monthColor);
+    }
     rail.createDiv({
       cls: "time-calendar__rail-year",
       text: formatDisplayYear(definition, state.cursorDate.year, "compact")
@@ -280,6 +289,10 @@ export class TimeCalendarView extends ItemView {
       cls: "time-view-title",
       text: month.name
     });
+    const title = intro.lastElementChild as HTMLElement;
+    if (month.color) {
+      title.style.setProperty("--time-month-color", month.color);
+    }
     intro.createDiv({
       cls: "time-view-meta",
       text: `Week ${getWeekIndexInMonth(definition, state.cursorDate) + 1} • ${formatDisplayYear(definition, state.cursorDate.year, "verbose")}${formatEraSuffix(definition, state.cursorDate)}`
@@ -327,6 +340,10 @@ export class TimeCalendarView extends ItemView {
       cls: "time-view-title",
       text: month.name
     });
+    const title = intro.lastElementChild as HTMLElement;
+    if (month.color) {
+      title.style.setProperty("--time-month-color", month.color);
+    }
     intro.createDiv({
       cls: "time-view-meta",
       text: `${formatDisplayYear(definition, state.cursorDate.year, "verbose")}${formatEraSuffix(definition, state.cursorDate)} • ${month.days} days`
@@ -411,6 +428,11 @@ export class TimeCalendarView extends ItemView {
         cls: "time-month-section__title",
         text: gridData.monthName
       });
+      const title = heading.lastElementChild as HTMLElement;
+      const month = getMonth(definition, monthIndex, year);
+      if (month.color) {
+        title.style.setProperty("--time-month-color", month.color);
+      }
 
       if (options.showMeta) {
         heading.createDiv({

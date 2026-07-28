@@ -59,6 +59,7 @@ interface MonthDraft {
   id: string;
   name: string;
   days: number;
+  color: string;
 }
 
 interface MoonDraft {
@@ -153,8 +154,14 @@ export class CalendarEditorModal extends Modal {
     const definition = source?.definition;
     const state = source?.state;
     const monthDefaults: MonthDraft[] = definition?.months?.length
-      ? definition.months.map((month) => ({ ...month }))
-      : parseMonthLines(DEFAULT_MONTH_LINES).map((month) => ({ ...month }));
+      ? definition.months.map((month) => ({
+          ...month,
+          color: month.color ?? ""
+        }))
+      : parseMonthLines(DEFAULT_MONTH_LINES).map((month) => ({
+          ...month,
+          color: ""
+        }));
 
     this.name = definition?.name ?? "New Calendar";
     this.id = existing?.id ?? slugify(this.name);
@@ -633,7 +640,8 @@ export class CalendarEditorModal extends Modal {
       return {
         id: slugify(month.id || safeName),
         name: safeName,
-        days: Math.max(1, Math.trunc(month.days || 1))
+        days: Math.max(1, Math.trunc(month.days || 1)),
+        color: normalizeOptionalColor(month.color)
       };
     });
 
@@ -1095,6 +1103,32 @@ class TimelineStyleModal extends Modal {
           this.draft.align = value === "right" ? "right" : "left";
         });
       });
+	  
+    new Setting(contentEl)
+      .setName("Show moon phases")
+      .setDesc("Shows the moon phases for the currently selected calendar date in the timeline header.")
+      .addToggle((toggle) => {
+        toggle.setValue(this.draft.showMoons === true);
+        toggle.onChange((value) => {
+          this.draft.showMoons = value || undefined;
+          this.render();
+        });
+      });
+
+    if (this.draft.showMoons) {
+      new Setting(contentEl)
+        .setName("Moon size")
+        .setDesc("Size of each moon icon in pixels.")
+        .addSlider((slider) => {
+          slider
+            .setLimits(12, 128, 1)
+            .setValue(this.draft.moonSize ?? 28)
+            .setDynamicTooltip()
+            .onChange((value) => {
+              this.draft.moonSize = Math.trunc(value);
+            });
+        });
+    }
 
     const addOptionalNumberField = (
       name: string,
@@ -1575,7 +1609,10 @@ class MonthEditorModal extends Modal {
     onSave: (months: MonthDraft[], monthWeekdayMode: MonthWeekdayMode) => void
   ) {
     super(app);
-    this.months = months.map((month) => ({ ...month }));
+    this.months = months.map((month) => ({
+      ...month,
+      color: month.color ?? ""
+    }));
 	this.monthWeekdayMode = monthWeekdayMode;
     this.onSave = onSave;
   }
@@ -1627,6 +1664,33 @@ class MonthEditorModal extends Modal {
       daysInput.addEventListener("input", () => {
         this.months[index].days = Math.max(1, Math.trunc(Number(daysInput.value) || 1));
       });
+	  
+      const colorInput = row.createEl("input", {
+        cls: "time-season-editor__color"
+      });
+      colorInput.type = "color";
+      colorInput.setAttr("aria-label", "Month color");
+      colorInput.title = "Month color";
+      colorInput.value = normalizeColor(month.color || "#d46b65");
+      colorInput.addEventListener("input", () => {
+        this.months[index].color = colorInput.value;
+        colorText.value = colorInput.value;
+      });
+
+      const colorText = row.createEl("input", {
+        cls: "time-collection-editor__input"
+      });
+      colorText.type = "text";
+      colorText.placeholder = "#d46b65";
+      colorText.setAttr("aria-label", "Month color hex value");
+      colorText.title = "Month color hex value";
+      colorText.value = month.color;
+      colorText.addEventListener("change", () => {
+        const next = normalizeOptionalColor(colorText.value);
+        this.months[index].color = next ?? "";
+        colorInput.value = normalizeColor(next ?? "#d46b65");
+        colorText.value = next ?? "";
+      });
 
       createDeleteIconButton(row, () => {
         this.months.splice(index, 1);
@@ -1639,7 +1703,8 @@ class MonthEditorModal extends Modal {
       this.months.push({
         id: "",
         name: `Month ${this.months.length + 1}`,
-        days: 30
+        days: 30,
+        color: ""
       });
       this.render();
     }, false, true);
@@ -1662,7 +1727,8 @@ class MonthEditorModal extends Modal {
       return {
         id: slugify(month.id || safeName),
         name: safeName,
-        days: Math.max(1, Math.trunc(month.days || 1))
+        days: Math.max(1, Math.trunc(month.days || 1)),
+        color: normalizeOptionalColor(month.color)
       };
     });
 
@@ -3800,6 +3866,8 @@ function normalizeCalendarTimelineStyle(
         : timeline.align === "left"
           ? "left"
           : undefined,
+    showMoons: timeline.showMoons === true ? true : undefined,
+    moonSize: normalizePositiveInteger(timeline.moonSize),
     maxSummaryLines: normalizeOptionalInteger(timeline.maxSummaryLines),
     cardWidth: normalizeOptionalInteger(timeline.cardWidth),
     cardHeight: normalizeOptionalInteger(timeline.cardHeight),
@@ -3854,7 +3922,16 @@ function normalizeOptionalInteger(value: number | undefined): number | undefined
 
 function normalizeOptionalColor(value: string | undefined): string | undefined {
   return typeof value === "string" && value.trim().length > 0
+    && /^#[0-9a-fA-F]{6}$/.test(value.trim())
     ? value.trim()
+    : undefined;
+}
+
+function normalizePositiveInteger(value: number | undefined): number | undefined {
+  return typeof value === "number" &&
+    Number.isFinite(value) &&
+    Math.trunc(value) > 0
+    ? Math.trunc(value)
     : undefined;
 }
 
@@ -3862,6 +3939,8 @@ function hasCalendarTimelineStyleValues(value: CalendarTimelineStyle): boolean {
   return (
     typeof value.name === "string" ||
     typeof value.align === "string" ||
+    value.showMoons === true ||
+    typeof value.moonSize === "number" ||
     typeof value.maxSummaryLines === "number" ||
     typeof value.cardWidth === "number" ||
     typeof value.cardHeight === "number" ||

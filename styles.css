@@ -20,6 +20,22 @@ settings:
     default-light: '#cf655f'
     default-dark: '#df8f88'
   -
+    id: ttrpg-time-calendar-title-color
+    title: Calendar title color
+    type: variable-themed-color
+    format: hex
+    default-light: '#a94f4a'
+    default-dark: '#efaaa3'
+  -
+    id: ttrpg-time-calendar-title-size
+    title: Calendar title size
+    type: variable-number-slider
+    default: 28
+    min: 16
+    max: 42
+    step: 1
+    format: px
+  -
     id: ttrpg-time-calendar-panel-radius
     title: Panel radius
     type: variable-number-slider
@@ -46,6 +62,41 @@ settings:
     max: 140
     step: 1
     format: px
+  -
+    id: ttrpg-time-calendar-rail-background
+    title: Banner background color
+    type: variable-themed-color
+    format: hex
+    default-light: '#fffaf5'
+    default-dark: '#202020'
+  -
+    id: ttrpg-time-calendar-rail-accent
+    title: Banner left stripe color
+    type: variable-themed-color
+    format: hex
+    default-light: '#cf655f'
+    default-dark: '#df8f88'
+  -
+    id: ttrpg-time-calendar-rail-title-color
+    title: Banner day and era color
+    type: variable-themed-color
+    format: hex
+    default-light: '#a94f4a'
+    default-dark: '#efaaa3'
+  -
+    id: ttrpg-time-calendar-rail-month-color
+    title: Banner month label color
+    type: variable-themed-color
+    format: hex
+    default-light: '#6f625c'
+    default-dark: '#c7bbb5'
+  -
+    id: ttrpg-time-calendar-rail-year-color
+    title: Banner year label color
+    type: variable-themed-color
+    format: hex
+    default-light: '#6f625c'
+    default-dark: '#c7bbb5'
   -
     id: ttrpg-time-calendar-day-radius
     title: Day cell radius
@@ -100,6 +151,14 @@ settings:
   --time-rail-image-opacity: calc(var(--ttrpg-time-calendar-rail-image-opacity, 18) / 100);
   --time-rail-image-size: var(--ttrpg-time-calendar-rail-image-size, cover);
   --time-rail-image-position: center center;
+  --time-calendar-title-color: var(--ttrpg-time-calendar-title-color, var(--time-accent-strong));
+  --time-calendar-title-size: var(--ttrpg-time-calendar-title-size, 28px);
+  --time-rail-background: var(--ttrpg-time-calendar-rail-background, var(--time-panel-bg));
+  --time-rail-accent: var(--ttrpg-time-calendar-rail-accent, var(--time-accent));
+  --time-rail-title-color: var(--ttrpg-time-calendar-rail-title-color, var(--time-accent));
+  --time-rail-month-color: var(--ttrpg-time-calendar-rail-month-color, var(--time-muted-text));
+  --time-rail-year-color: var(--ttrpg-time-calendar-rail-year-color, var(--time-heading-soft));
+  --time-rail-accent-soft: color-mix(in srgb, var(--time-rail-accent) 12%, transparent);
 
   --time-app-bg: var(--background-primary);
   --time-panel-bg: var(--background-primary);
@@ -689,9 +748,9 @@ settings:
   gap: 6px;
   box-sizing: border-box;
   padding: 18px 10px;
-  border-left: 10px solid var(--time-accent);
+  border-left: 10px solid var(--time-rail-accent);
   border-radius: max(10px, calc(var(--time-panel-radius) - 6px));
-  background: var(--time-panel-bg);
+  background: var(--time-rail-background);
   box-shadow: inset 0 0 0 1px rgba(207, 101, 95, 0.08);
 }
 
@@ -711,7 +770,7 @@ settings:
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, var(--time-accent-soft), transparent);
+  background: linear-gradient(180deg, var(--time-rail-accent-soft), transparent);
   pointer-events: none;
 }
 
@@ -726,7 +785,7 @@ settings:
   line-height: 0.95;
   font-weight: 700;
   text-align: center;
-  color: var(--time-rail-text);
+  color: var(--time-rail-title-color);
 }
 
 .time-calendar__rail-era {
@@ -735,7 +794,7 @@ settings:
   font-weight: 700;
   letter-spacing: 0.08em;
   text-align: center;
-  color: var(--time-rail-text);
+  color: var(--time-rail-title-color);
 }
 
 .time-calendar__rail-divider {
@@ -753,7 +812,7 @@ settings:
   letter-spacing: 0.06em;
   text-transform: uppercase;
   text-align: center;
-  color: var(--time-muted-text);
+  color: var(--time-month-color, var(--time-rail-month-color));
 }
 
 .time-calendar__rail-year {
@@ -763,7 +822,7 @@ settings:
   overflow-wrap: anywhere;
   font-weight: 700;
   text-align: center;
-  color: var(--time-heading-soft);
+  color: var(--time-rail-year-color);
 }
 
 .time-calendar__panel {
@@ -783,12 +842,12 @@ settings:
 
 .time-calendar__brand {
   margin-bottom: 12px;
-  font-size: clamp(1.1rem, 6cqi, 1.75rem);
+  font-size: clamp(1.1rem, 6cqi, var(--time-calendar-title-size));
   line-height: 1;
   font-weight: 700;
   letter-spacing: 0.02em;
   text-transform: uppercase;
-  color: var(--time-heading);
+  color: var(--time-calendar-title-color);
   overflow-wrap: anywhere;
 }
 
@@ -828,7 +887,7 @@ settings:
   line-height: 1.1;
   font-weight: 700;
   text-transform: uppercase;
-  color: var(--time-heading);
+  color: var(--time-month-color, var(--time-heading));
 }
 
 .time-view-meta {
@@ -855,7 +914,7 @@ settings:
   line-height: 1.1;
   font-weight: 700;
   text-transform: uppercase;
-  color: var(--time-heading);
+  color: var(--time-month-color, var(--time-heading));
 }
 
 .time-month-section__meta {
@@ -1931,7 +1990,7 @@ settings:
 }
 
 .time-collection-editor__row--month {
-  grid-template-columns: minmax(240px, 1fr) 120px 38px;
+  grid-template-columns: minmax(180px, 1fr) 110px 54px 110px 38px;
 }
 
 .time-collection-editor__row--named-year {
@@ -2385,6 +2444,18 @@ settings:
     grid-template-columns: minmax(0, 1fr);
   }
   
+  .time-timeline__header-top {
+    flex-direction: column;
+  }
+
+  .time-timeline__moon-panel {
+    max-width: 100%;
+  }
+
+  .time-timeline__moon-list {
+    justify-content: flex-start;
+  }
+  
   .time-frontmatter-rule-row {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -2471,6 +2542,61 @@ settings:
 .time-tag-filter__header {
   padding: 14px 16px 12px;
   border-bottom: 1px solid var(--time-border, var(--background-modifier-border));
+}
+
+.time-timeline__header-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.time-timeline__header-text {
+  min-width: 0;
+}
+
+.time-timeline__moon-panel {
+  flex: 0 0 auto;
+  max-width: 45%;
+}
+
+.time-timeline__moon-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.time-timeline__moon {
+  width: var(--time-timeline-moon-size, 28px);
+  height: var(--time-timeline-moon-size, 28px);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--background-secondary);
+  box-shadow:
+    inset 0 0 0 1px rgba(207, 101, 95, 0.18),
+    0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.time-timeline__moon-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+.time-timeline__moon-fallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  background: var(--time-accent, #cf655f);
+  color: #fff8ef;
+  font-size: clamp(0.62rem, 2.6cqi, 0.82rem);
+  font-weight: 700;
 }
 
 .time-tag-filter__header {
