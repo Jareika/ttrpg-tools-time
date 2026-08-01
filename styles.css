@@ -92,11 +92,53 @@ settings:
     default-dark: '#c7bbb5'
   -
     id: ttrpg-time-calendar-rail-year-color
-    title: Banner year label color
+    title: Banner year color
     type: variable-themed-color
     format: hex
     default-light: '#6f625c'
     default-dark: '#c7bbb5'
+  -
+    id: ttrpg-time-calendar-rail-year-size
+    title: Banner year size
+    type: variable-number-slider
+    default: 17
+    min: 10
+    max: 30
+    step: 1
+    format: px
+  -
+    id: ttrpg-time-calendar-rail-month-size
+    title: Banner month label size
+    type: variable-number-slider
+    default: 13
+    min: 9
+    max: 24
+    step: 1
+    format: px
+  -
+    id: ttrpg-time-calendar-rail-month-color-source
+    title: Banner month color source
+    type: variable-select
+    default: 'var(--time-month-color, var(--time-rail-month-color))'
+    options:
+      -
+        label: Per-month configured color
+        value: 'var(--time-month-color, var(--time-rail-month-color))'
+      -
+        label: Global banner month color
+        value: 'var(--time-rail-month-color)'
+  -
+    id: ttrpg-time-status-bar-display
+    title: Status bar
+    type: variable-select
+    default: revert
+    options:
+      -
+        label: Show (theme default)
+        value: revert
+      -
+        label: Hide
+        value: none
   -
     id: ttrpg-time-calendar-day-radius
     title: Day cell radius
@@ -129,6 +171,36 @@ settings:
       -
         label: Full height
         value: 'auto 100%'
+  -
+    id: ttrpg-time-calendar-holiday-accent
+    title: Holiday accent color
+    type: variable-themed-color
+    format: hex
+    default-light: '#93b84c'
+    default-dark: '#b7d878'
+  -
+    id: ttrpg-time-calendar-holiday-start
+    title: Holiday gradient start color
+    type: variable-themed-color
+    format: hex
+    default-light: '#f2eaa7'
+    default-dark: '#4b522b'
+  -
+    id: ttrpg-time-calendar-holiday-end
+    title: Holiday gradient end color
+    type: variable-themed-color
+    format: hex
+    default-light: '#fff7e8'
+    default-dark: '#2d3324'
+  -
+    id: ttrpg-time-calendar-holiday-icon-size
+    title: Holiday icon size
+    type: variable-number-slider
+    default: 24
+    min: 14
+    max: 48
+    step: 1
+    format: px
 */
 
 /* ==========================================================================
@@ -158,7 +230,14 @@ settings:
   --time-rail-title-color: var(--ttrpg-time-calendar-rail-title-color, var(--time-accent));
   --time-rail-month-color: var(--ttrpg-time-calendar-rail-month-color, var(--time-muted-text));
   --time-rail-year-color: var(--ttrpg-time-calendar-rail-year-color, var(--time-heading-soft));
+  --time-rail-year-size: var(--ttrpg-time-calendar-rail-year-size, 17px);
+  --time-rail-month-size: var(--ttrpg-time-calendar-rail-month-size, 13px);
+  --time-rail-month-color-source: var(--ttrpg-time-calendar-rail-month-color-source, var(--time-month-color, var(--time-rail-month-color)));
   --time-rail-accent-soft: color-mix(in srgb, var(--time-rail-accent) 12%, transparent);
+  --time-holiday-accent: var(--ttrpg-time-calendar-holiday-accent, #93b84c);
+  --time-holiday-start: var(--ttrpg-time-calendar-holiday-start, #f2eaa7);
+  --time-holiday-end: var(--ttrpg-time-calendar-holiday-end, #fff7e8);
+  --time-holiday-icon-size: var(--ttrpg-time-calendar-holiday-icon-size, 24px);
 
   --time-app-bg: var(--background-primary);
   --time-panel-bg: var(--background-primary);
@@ -288,6 +367,10 @@ settings:
 
 .time-event-editor {
   padding: 14px;
+}
+
+body .status-bar {
+  display: var(--ttrpg-time-status-bar-display, revert);
 }
 
 /* ==========================================================================
@@ -706,6 +789,34 @@ settings:
    Settings: time buttons
    ========================================================================== */
 
+.time-plugin-settings .time-settings-custom-row {
+  display: block;
+  padding: 0;
+  border-top: 0;
+}
+
+.time-plugin-settings .time-settings-custom-row > .time-settings-note {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 0 18px;
+}
+
+.time-settings-time-buttons-card,
+.time-settings-overview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.time-settings-overview-spacer {
+  margin-top: 8px;
+}
+
+.time-settings-overview-list {
+  margin: 0;
+  padding-left: 24px;
+}
+
 .time-settings-button-list {
   display: flex;
   flex-direction: column;
@@ -724,6 +835,10 @@ settings:
   display: flex;
   gap: 10px;
   margin-top: 12px;
+}
+
+.time-settings-button-header {
+  margin-top: 2px;
 }
 
 /* ==========================================================================
@@ -808,16 +923,16 @@ settings:
   flex: 1;
   writing-mode: vertical-rl;
   transform: rotate(180deg);
-  font-size: 0.82rem;
+  font-size: var(--time-rail-month-size);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   text-align: center;
-  color: var(--time-month-color, var(--time-rail-month-color));
+  color: var(--time-rail-month-color-source);
 }
 
 .time-calendar__rail-year {
   width: 100%;
-  font-size: clamp(0.95rem, 4.2cqi, 1.1rem);
+  font-size: var(--time-rail-year-size);
   line-height: 1.05;
   overflow-wrap: anywhere;
   font-weight: 700;
@@ -1016,6 +1131,58 @@ settings:
   box-shadow: inset 0 0 0 2px var(--time-cursor-outline);
 }
 
+.time-day-cell--intercalary {
+  position: relative;
+  justify-content: center;
+  gap: 4px;
+  overflow: hidden;
+  border-top-color: var(--time-intercalary-day-color, var(--time-holiday-accent));
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--time-intercalary-day-color, var(--time-holiday-accent)) 25%, transparent),
+      transparent 58%
+    ),
+    linear-gradient(
+      135deg,
+      var(--time-holiday-start),
+      var(--time-holiday-end)
+    );
+}
+
+.time-day-cell--intercalary:hover {
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--time-intercalary-day-color, var(--time-holiday-accent)) 38%, transparent),
+      transparent 58%
+    ),
+    linear-gradient(
+      135deg,
+      var(--time-holiday-start),
+      var(--time-holiday-end)
+    );
+}
+
+.time-day-cell__holiday-icon {
+  width: var(--time-holiday-icon-size);
+  height: var(--time-holiday-icon-size);
+  display: grid;
+  place-items: center;
+  color: var(--time-intercalary-day-color, var(--time-holiday-accent));
+}
+
+.time-day-cell__holiday-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.time-day-cell__holiday-image {
+  width: min(78%, 42px);
+  height: min(78%, 42px);
+  object-fit: contain;
+}
+
 .time-day-cell__number {
   font-size: clamp(1rem, 5.8cqi, 1.55rem);
   line-height: 1;
@@ -1027,6 +1194,15 @@ settings:
   align-items: center;
   gap: 6px;
   min-height: 10px;
+}
+
+.time-day-cell--intercalary .time-day-cell__markers--intercalary {
+  position: absolute;
+  right: 6px;
+  bottom: 5px;
+  left: 6px;
+  justify-content: center;
+  pointer-events: none;
 }
 
 .time-day-marker {
@@ -1049,6 +1225,111 @@ settings:
 
 .time-day-marker--event {
   box-shadow: inset 0 0 0 1px rgba(74, 64, 60, 0.16);
+}
+
+.time-intercalary-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  min-height: 118px;
+  margin: 12px 0 26px;
+  padding: 18px;
+  border: 1px dashed var(--time-intercalary-day-color, var(--time-accent));
+  border-radius: var(--time-day-cell-radius);
+  text-align: center;
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--time-intercalary-day-color, var(--time-accent)) 14%, transparent),
+      transparent
+    ),
+    linear-gradient(
+      135deg,
+      var(--time-holiday-start),
+      var(--time-holiday-end)
+    );
+  cursor: pointer;
+}
+
+.time-intercalary-day.is-today {
+  border-color: var(--time-today-bg);
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--time-intercalary-day-color, var(--time-accent)) 20%, transparent),
+      transparent
+    ),
+    linear-gradient(
+      135deg,
+      var(--time-holiday-start),
+      var(--time-holiday-end)
+    ),
+    var(--time-today-bg);
+}
+
+.time-intercalary-day.is-cursor {
+  box-shadow: inset 0 0 0 2px var(--time-cursor-outline);
+}
+
+.time-intercalary-day__icon {
+  width: calc(var(--time-holiday-icon-size) * 1.25);
+  height: calc(var(--time-holiday-icon-size) * 1.25);
+  margin-bottom: 2px;
+  color: var(--time-intercalary-day-color, var(--time-holiday-accent));
+}
+
+.time-intercalary-day__icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.time-intercalary-day__image {
+  width: min(100%, 72px);
+  height: 48px;
+  margin-bottom: 6px;
+  object-fit: contain;
+}
+
+.time-intercalary-day:hover {
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--time-intercalary-day-color, var(--time-accent)) 22%, transparent),
+      transparent
+    ),
+    linear-gradient(
+      135deg,
+      var(--time-holiday-start),
+      var(--time-holiday-end)
+    );
+}
+
+.time-intercalary-day__title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--time-heading);
+}
+
+.time-intercalary-day__markers {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 10px;
+  margin-top: 8px;
+}
+
+.time-intercalary-day__markers .time-day-marker {
+  width: 10px;
+  height: 10px;
+}
+
+.time-intercalary-day__meta {
+  margin-top: 6px;
+  color: var(--time-muted-text);
 }
 
 /* ==========================================================================
@@ -1985,6 +2266,27 @@ settings:
   gap: 8px;
 }
 
+.time-intercalary-day-editor__row {
+  display: grid;
+  gap: 8px;
+  align-items: center;
+}
+
+.time-intercalary-day-editor__row--named {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) 170px 170px 100px minmax(100px, 0.7fr) 76px 70px 38px;
+}
+
+.time-intercalary-day-editor__row--leap {
+  grid-template-columns: minmax(150px, 1fr) 160px 160px 94px minmax(90px, 0.7fr) 76px 60px 70px minmax(100px, 0.8fr) minmax(100px, 0.8fr) 38px;
+}
+
+.time-intercalary-day-editor__row--header {
+  margin-bottom: 2px;
+  gap: 8px;
+  align-items: center;
+}
+
 .time-collection-editor__row--weekday {
   grid-template-columns: minmax(240px, 1fr) 38px;
 }
@@ -2429,6 +2731,9 @@ settings:
   .time-collection-editor__row--moon,
   .time-collection-editor__row--leap-rule,
   .time-collection-editor__row--moon-header,
+  .time-intercalary-day-editor__row,
+  .time-intercalary-day-editor__row--named,
+  .time-intercalary-day-editor__row--leap,
   .time-season-editor__row,
   .time-control-weather__row,
   .time-control-weather__date-grid,
@@ -2437,6 +2742,10 @@ settings:
   .time-event-explorer__item,
   .time-settings-button-header {
     grid-template-columns: minmax(0, 1fr);
+  }
+  
+  .time-settings-button-header {
+    display: none;
   }
   
   .time-calendar-editor__compact-grid,

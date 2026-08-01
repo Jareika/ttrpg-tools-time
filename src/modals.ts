@@ -23,8 +23,10 @@ import type {
   FantasyYearDisplayConfig,
   MonthWeekdayMode,
   FantasyLeapDayRule,
+  FantasyIntercalaryDayRule,
   FantasyLeapMonthRule,
   FantasyWeatherProfileMapping,
+  IntercalaryDayDisplayPosition,
   MoonCycleAnchor,
   MoonPhaseImageDefinition,
   TimelineAlign,
@@ -133,6 +135,7 @@ export class CalendarEditorModal extends Modal {
   private minutesPerHour: number;
   private leapMonths: FantasyLeapMonthRule[];
   private leapDays: FantasyLeapDayRule[];
+  private intercalaryDays: FantasyIntercalaryDayRule[];
   private weatherProfile: FantasyWeatherProfileMapping;
   private defaultWeatherPackId: string;
   private readonly selectedTagPackIds: Set<string>;
@@ -227,6 +230,11 @@ export class CalendarEditorModal extends Modal {
       ...rule,
       leapYearPositions: [...rule.leapYearPositions]
     }));
+    this.intercalaryDays = (definition?.intercalaryDays ?? []).map((rule) => ({
+      ...rule,
+      activeYearPositions: [...rule.activeYearPositions],
+      skipYearsDivisibleBy: [...rule.skipYearsDivisibleBy]
+    }));
     this.weatherProfile = definition?.weatherProfile
       ? { ...definition.weatherProfile }
       : { ...DEFAULT_WEATHER_PROFILE };
@@ -305,6 +313,10 @@ export class CalendarEditorModal extends Modal {
 
     createManagerButton(shortcutGrid, "Leap & weather", () => {
       this.openLeapSettingsModal();
+    });
+	
+    createManagerButton(shortcutGrid, "Named days", () => {
+      this.openIntercalaryDayEditorModal();
     });
 
     createManagerButton(shortcutGrid, "Moons", () => {
@@ -558,10 +570,12 @@ export class CalendarEditorModal extends Modal {
       this.months,
       this.leapMonths,
       this.leapDays,
+	  this.intercalaryDays,
       this.weatherProfile,
       (nextSettings) => {
         this.leapMonths = cloneLeapMonthRules(nextSettings.leapMonths);
         this.leapDays = cloneLeapDayRules(nextSettings.leapDays);
+		this.intercalaryDays = nextSettings.intercalaryDays;
         this.weatherProfile = { ...nextSettings.weatherProfile };
         void this.render();
       }
@@ -625,6 +639,19 @@ export class CalendarEditorModal extends Modal {
       this.seasons,
       (nextSeasons) => {
         this.seasons = nextSeasons;
+        void this.render();
+      }
+    ).open();
+  }
+  
+  private openIntercalaryDayEditorModal(): void {
+    new IntercalaryDayEditorModal(
+      this.app,
+      this.months,
+      this.intercalaryDays,
+	  "named",
+      (nextRules) => {
+        this.intercalaryDays = nextRules;
         void this.render();
       }
     ).open();
@@ -771,6 +798,37 @@ export class CalendarEditorModal extends Modal {
         leapYearPositions: sanitizeLeapYearPositions(rule.leapYearPositions, cycleYears)
       };
     });
+	
+    const sanitizedIntercalaryDays = this.intercalaryDays.map((rule, index) => {
+      const safeName =
+        rule.name.trim().length > 0 ? rule.name.trim() : `Named Day ${index + 1}`;
+      const cycleYears = Math.max(1, Math.trunc(rule.cycleYears || 1));
+
+      return {
+        id: slugify(rule.id || safeName),
+        name: safeName,
+        insertAfterMonthIndex: clamp(
+          rule.insertAfterMonthIndex,
+          -1,
+          Math.max(-1, sanitizedMonths.length - 1)
+        ),
+        order: Math.trunc(rule.order || index),
+        weekdayMode: rule.weekdayMode === "none" ? "none" : "normal",
+        displayPosition:
+          rule.weekdayMode === "none"
+            ? "standalone"
+            : normalizeIntercalaryDayDisplayPosition(rule.displayPosition),
+        cycleYears,
+        activeYearPositions: sanitizeLeapYearPositions(
+          rule.activeYearPositions,
+          cycleYears
+        ),
+        skipYearsDivisibleBy: sanitizePositiveIntegers(rule.skipYearsDivisibleBy),
+        color: normalizeOptionalColor(rule.color),
+        icon: rule.icon?.trim() || undefined,
+        imageRef: rule.imageRef?.trim() || undefined
+      };
+    });
 
     if (!this.existing && (await this.plugin.calendarExists(id))) {
       new Notice(`A calendar with the ID "${id}" already exists.`);
@@ -792,6 +850,7 @@ export class CalendarEditorModal extends Modal {
         months: sanitizedMonths,
         leapMonths: sanitizedLeapMonths,
         leapDays: sanitizedLeapDays,
+		intercalaryDays: sanitizedIntercalaryDays,
         weatherProfile: this.weatherProfile,
         moons: sanitizedMoons,
         yearNames: sanitizedNamedYears,
@@ -1123,7 +1182,7 @@ class TimelineStyleModal extends Modal {
           slider
             .setLimits(12, 128, 1)
             .setValue(this.draft.moonSize ?? 28)
-            .setDynamicTooltip()
+            .setDisplayFormat((value) => `${Math.trunc(value)} px`)
             .onChange((value) => {
               this.draft.moonSize = Math.trunc(value);
             });
@@ -1902,175 +1961,10 @@ class LeapMonthEditorModal extends Modal {
   }
 }
 
-class LeapDayEditorModal extends Modal {
-  private readonly months: MonthDraft[];
-  private rules: FantasyLeapDayRule[];
-  private readonly onSave: (rules: FantasyLeapDayRule[]) => void;
-
-  constructor(
-    app: App,
-    months: MonthDraft[],
-    rules: FantasyLeapDayRule[],
-    onSave: (rules: FantasyLeapDayRule[]) => void
-  ) {
-    super(app);
-    this.months = months.map((month) => ({ ...month }));
-    this.rules = rules.map((rule) => ({
-      ...rule,
-      leapYearPositions: [...rule.leapYearPositions]
-    }));
-    this.onSave = onSave;
-  }
-
-  onOpen(): void {
-    prepareFlexibleModal(this);
-    this.render();
-  }
-
-  private render(): void {
-    const { contentEl } = this;
-    contentEl.empty();
-    contentEl.addClass("time-modal");
-
-    contentEl.createEl("h2", { text: "Configure leap days" });
-    contentEl.createEl("p", {
-      cls: "setting-item-description",
-      text: "Leap days are inserted as intercalary day blocks."
-    });
-
-    const list = contentEl.createDiv({ cls: "time-collection-editor__list" });
-
-    if (this.rules.length === 0) {
-      list.createDiv({
-        cls: "time-collection-editor__empty",
-        text: "No leap day rules defined yet."
-      });
-    }
-	
-    if (this.rules.length > 0) {
-      const header = list.createDiv({
-        cls: "time-collection-editor__row time-collection-editor__row--leap-day-rule time-collection-editor__row--leap-day-rule-header"
-      });
-
-      ["Name", "Placement", "Insert after", "Days", "Cycle", "Year Positions", ""].forEach((label) => {
-        header.createDiv({
-          cls: "time-collection-editor__column-label",
-          text: label
-        });
-      });
-    }
-
-    this.rules.forEach((rule, index) => {
-      const row = list.createDiv({
-        cls: "time-collection-editor__row time-collection-editor__row--leap-day-rule"
-      });
-
-      const nameInput = row.createEl("input", { cls: "time-collection-editor__input" });
-      nameInput.type = "text";
-      nameInput.placeholder = "Leap day name";
-      nameInput.value = rule.name;
-      nameInput.addEventListener("input", () => {
-        this.rules[index].name = nameInput.value;
-      });
-	  
-      const placementSelect = row.createEl("select", { cls: "time-collection-editor__input" });
-      addSelectOption(placementSelect, "standalone", "Standalone day block");
-      addSelectOption(placementSelect, "append-to-month", "Append to month");
-      placementSelect.value = rule.placement ?? "standalone";
-      placementSelect.addEventListener("change", () => {
-        this.rules[index].placement =
-          placementSelect.value === "append-to-month"
-            ? "append-to-month"
-            : "standalone";
-      });
-
-      const insertSelect = createMonthInsertionSelect(
-        row,
-        this.months,
-        rule.insertAfterMonthIndex,
-        "time-collection-editor__input"
-      );
-      insertSelect.addEventListener("change", () => {
-        this.rules[index].insertAfterMonthIndex = Math.trunc(Number(insertSelect.value) || 0);
-      });
-
-      const daysInput = row.createEl("input", { cls: "time-collection-editor__input" });
-      daysInput.type = "number";
-      daysInput.min = "1";
-      daysInput.placeholder = "Days";
-      daysInput.value = String(rule.days);
-      daysInput.addEventListener("input", () => {
-        this.rules[index].days = Math.max(1, Math.trunc(Number(daysInput.value) || 1));
-      });
-
-      const cycleInput = row.createEl("input", { cls: "time-collection-editor__input" });
-      cycleInput.type = "number";
-      cycleInput.min = "1";
-      cycleInput.placeholder = "Cycle";
-      cycleInput.value = String(rule.cycleYears);
-      cycleInput.addEventListener("input", () => {
-        const cycleYears = Math.max(1, Math.trunc(Number(cycleInput.value) || 1));
-        this.rules[index].cycleYears = cycleYears;
-        this.rules[index].leapYearPositions = sanitizeLeapYearPositions(
-          this.rules[index].leapYearPositions,
-          cycleYears
-        );
-      });
-
-      const positionsInput = row.createEl("input", { cls: "time-collection-editor__input" });
-      positionsInput.type = "text";
-      positionsInput.placeholder = "Positions, e.g. 4";
-      positionsInput.value = formatLeapYearPositions(rule.leapYearPositions);
-      positionsInput.addEventListener("change", () => {
-        this.rules[index].leapYearPositions = parseLeapYearPositions(
-          positionsInput.value,
-          this.rules[index].cycleYears
-        );
-        positionsInput.value = formatLeapYearPositions(this.rules[index].leapYearPositions);
-      });
-
-      createDeleteIconButton(row, () => {
-        this.rules.splice(index, 1);
-        this.render();
-      });
-    });
-
-    const toolbar = contentEl.createDiv({ cls: "time-collection-editor__toolbar" });
-    createManagerButton(toolbar, "Add leap day", () => {
-      const name = `Leap Day ${this.rules.length + 1}`;
-      this.rules.push({
-        id: slugify(name),
-        name,
-		placement: "standalone",
-        insertAfterMonthIndex: Math.max(0, this.months.length - 1),
-        days: 1,
-        cycleYears: 4,
-        leapYearPositions: [4]
-      });
-      this.render();
-    }, false, true);
-
-    const footer = contentEl.createDiv({ cls: "time-modal__footer" });
-    new Setting(footer).addButton((button) => {
-      button.setButtonText("Save");
-      button.setCta();
-      button.onClick(() => this.submit());
-    });
-    new Setting(footer).addButton((button) => {
-      button.setButtonText("Cancel");
-      button.onClick(() => this.close());
-    });
-  }
-
-  private submit(): void {
-    this.onSave(this.rules);
-    this.close();
-  }
-}
-
 interface LeapSettingsModalResult {
   leapMonths: FantasyLeapMonthRule[];
   leapDays: FantasyLeapDayRule[];
+  intercalaryDays: FantasyIntercalaryDayRule[];
   weatherProfile: FantasyWeatherProfileMapping;
 }
 
@@ -2078,6 +1972,7 @@ class LeapSettingsModal extends Modal {
   private readonly months: MonthDraft[];
   private leapMonths: FantasyLeapMonthRule[];
   private leapDays: FantasyLeapDayRule[];
+  private intercalaryDays: FantasyIntercalaryDayRule[];
   private weatherProfile: FantasyWeatherProfileMapping;
   private readonly onSave: (result: LeapSettingsModalResult) => void;
 
@@ -2086,6 +1981,7 @@ class LeapSettingsModal extends Modal {
     months: MonthDraft[],
     leapMonths: FantasyLeapMonthRule[],
     leapDays: FantasyLeapDayRule[],
+	intercalaryDays: FantasyIntercalaryDayRule[],
     weatherProfile: FantasyWeatherProfileMapping,
     onSave: (result: LeapSettingsModalResult) => void
   ) {
@@ -2093,6 +1989,11 @@ class LeapSettingsModal extends Modal {
     this.months = months.map((month) => ({ ...month }));
     this.leapMonths = cloneLeapMonthRules(leapMonths);
     this.leapDays = cloneLeapDayRules(leapDays);
+    this.intercalaryDays = intercalaryDays.map((rule) => ({
+      ...rule,
+      activeYearPositions: [...rule.activeYearPositions],
+      skipYearsDivisibleBy: [...rule.skipYearsDivisibleBy]
+    }));
     this.weatherProfile = { ...weatherProfile };
     this.onSave = onSave;
   }
@@ -2139,17 +2040,20 @@ class LeapSettingsModal extends Modal {
       });
 
     new Setting(contentEl)
-      .setName("Leap days")
-      .setDesc(`${this.leapDays.length} leap day rule${this.leapDays.length === 1 ? "" : "s"} defined.`)
+      .setName("Intercalary leap days")
+      .setDesc(
+        `${this.intercalaryDays.filter((rule) => !isAnnualNamedDayRule(rule)).length} conditional intercalary day rule(s) defined.`
+      )
       .addButton((button) => {
         button.setButtonText("Configure");
         button.onClick(() => {
-          new LeapDayEditorModal(
+          new IntercalaryDayEditorModal(
             this.app,
             this.months,
-            this.leapDays,
+            this.intercalaryDays,
+            "leap",
             (nextRules) => {
-              this.leapDays = cloneLeapDayRules(nextRules);
+              this.intercalaryDays = nextRules;
               this.render();
             }
           ).open();
@@ -2232,13 +2136,319 @@ class LeapSettingsModal extends Modal {
       button.onClick(() => {
         this.onSave({
           leapMonths: cloneLeapMonthRules(this.leapMonths),
-          leapDays: cloneLeapDayRules(this.leapDays),
+		  leapDays: cloneLeapDayRules(this.leapDays),
+          intercalaryDays: this.intercalaryDays,
           weatherProfile: { ...this.weatherProfile }
         });
         this.close();
       });
     });
 
+    new Setting(footer).addButton((button) => {
+      button.setButtonText("Cancel");
+      button.onClick(() => this.close());
+    });
+  }
+}
+
+class IntercalaryDayEditorModal extends Modal {
+  private readonly months: MonthDraft[];
+  private rules: FantasyIntercalaryDayRule[];
+  private readonly mode: "named" | "leap";
+  private readonly retainedRules: FantasyIntercalaryDayRule[];
+  private readonly onSave: (rules: FantasyIntercalaryDayRule[]) => void;
+
+  constructor(
+    app: App,
+    months: MonthDraft[],
+    rules: FantasyIntercalaryDayRule[],
+	mode: "named" | "leap",
+    onSave: (rules: FantasyIntercalaryDayRule[]) => void
+  ) {
+    super(app);
+    this.months = months.map((month) => ({ ...month }));
+    this.mode = mode;
+    this.rules = rules
+      .filter((rule) =>
+        mode === "named"
+          ? isAnnualNamedDayRule(rule)
+          : !isAnnualNamedDayRule(rule)
+      )
+      .map((rule) => ({
+        ...rule,
+        activeYearPositions: [...rule.activeYearPositions],
+        skipYearsDivisibleBy: [...rule.skipYearsDivisibleBy]
+      }));
+    this.retainedRules = rules
+      .filter((rule) =>
+        mode === "named"
+          ? !isAnnualNamedDayRule(rule)
+          : isAnnualNamedDayRule(rule)
+      )
+      .map((rule) => ({
+      ...rule,
+      activeYearPositions: [...rule.activeYearPositions],
+      skipYearsDivisibleBy: [...rule.skipYearsDivisibleBy]
+    }));
+    this.onSave = onSave;
+  }
+
+  onOpen(): void {
+    prepareFlexibleModal(this);
+    this.render();
+  }
+
+  private render(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("time-modal");
+
+    contentEl.createEl("h2", {
+      text: this.mode === "named"
+        ? "Configure named days"
+        : "Configure intercalary leap days"
+    });
+    contentEl.createEl("p", {
+      cls: "setting-item-description",
+      text: this.mode === "named"
+        ? "Named days occur every year. Weekday-based days can be shown directly in the previous or next month grid."
+        : "Leap days use the same intercalary-day system, but only occur in configured cycle years."
+    });
+
+    const list = contentEl.createDiv({ cls: "time-collection-editor__list" });
+
+    if (this.rules.length > 0) {
+      const header = list.createDiv({
+        cls: `time-intercalary-day-editor__row time-intercalary-day-editor__row--header time-intercalary-day-editor__row--${this.mode}`
+      });
+
+      const labels = this.mode === "named"
+        ? ["Name", "Calendar position", "Display position", "Weekday flow", "Icon", "Image", "Order", ""]
+        : ["Name", "Calendar position", "Display position", "Weekday flow", "Icon", "Image", "Order", "Cycle", "Active years", "Skip multiples", ""];
+
+      labels.forEach((label) => {
+        header.createDiv({
+          cls: "time-collection-editor__column-label",
+          text: label
+        });
+      });
+    }
+
+    if (this.rules.length === 0) {
+      list.createDiv({
+        cls: "time-collection-editor__empty",
+        text: this.mode === "named"
+          ? "No named days defined yet."
+          : "No intercalary leap days defined yet."
+      });
+    }
+
+    this.rules.forEach((rule, index) => {
+      const row = list.createDiv({
+        cls: `time-intercalary-day-editor__row time-intercalary-day-editor__row--${this.mode}`
+      });
+
+      const nameInput = row.createEl("input", {
+        cls: "time-collection-editor__input"
+      });
+      nameInput.type = "text";
+      nameInput.placeholder = "Day name";
+      nameInput.value = rule.name;
+      nameInput.addEventListener("input", () => {
+        this.rules[index].name = nameInput.value;
+      });
+
+      const positionSelect = createMonthInsertionSelect(
+        row,
+        this.months,
+        rule.insertAfterMonthIndex,
+        "time-collection-editor__input"
+      );
+      positionSelect.addEventListener("change", () => {
+        this.rules[index].insertAfterMonthIndex = Math.trunc(
+          Number(positionSelect.value) || 0
+        );
+      });
+	  
+      const displayPosition = row.createEl("select", {
+        cls: "time-collection-editor__input"
+      });
+      addSelectOption(displayPosition, "standalone", "Standalone card");
+      addSelectOption(displayPosition, "after-previous-month", "End of previous month");
+      addSelectOption(displayPosition, "before-next-month", "Start of next month");
+      displayPosition.value = rule.displayPosition;
+      displayPosition.disabled = rule.weekdayMode === "none";
+      displayPosition.addEventListener("change", () => {
+        this.rules[index].displayPosition =
+          normalizeIntercalaryDayDisplayPosition(displayPosition.value);
+      });
+
+      const weekdaySelect = row.createEl("select", {
+        cls: "time-collection-editor__input"
+      });
+      addSelectOption(weekdaySelect, "normal", "Weekday");
+      addSelectOption(weekdaySelect, "none", "No weekday");
+      weekdaySelect.value = rule.weekdayMode;
+      weekdaySelect.addEventListener("change", () => {
+        this.rules[index].weekdayMode =
+          weekdaySelect.value === "none" ? "none" : "normal";
+        if (this.rules[index].weekdayMode === "none") {
+          this.rules[index].displayPosition = "standalone";
+        }
+        this.render();
+      });
+
+      const iconInput = row.createEl("input", {
+        cls: "time-collection-editor__input"
+      });
+      iconInput.type = "text";
+      iconInput.placeholder = "sparkles";
+      iconInput.value = rule.icon ?? "";
+      iconInput.title = "Any Obsidian icon name. Used when no image is selected.";
+      iconInput.addEventListener("input", () => {
+        this.rules[index].icon = iconInput.value.trim() || undefined;
+      });
+
+      const imageButton = row.createEl("button", {
+        cls: "time-manager__button",
+        text: rule.imageRef ? "Change" : "Choose"
+      });
+      imageButton.type = "button";
+      imageButton.title = rule.imageRef ?? "Choose a vault image";
+      imageButton.addEventListener("click", () => {
+        new VaultImagePickerModal(this.app, (file) => {
+          this.rules[index].imageRef = file.path;
+          this.render();
+        }).open();
+      });
+
+      const orderInput = row.createEl("input", {
+        cls: "time-collection-editor__input"
+      });
+      orderInput.type = "number";
+      orderInput.value = String(rule.order);
+      orderInput.title = "Order when multiple days share one calendar position";
+      orderInput.addEventListener("input", () => {
+        this.rules[index].order = Math.trunc(Number(orderInput.value) || 0);
+      });
+
+      if (this.mode === "leap") {
+        const cycleInput = row.createEl("input", {
+          cls: "time-collection-editor__input"
+        });
+        cycleInput.type = "number";
+        cycleInput.min = "2";
+        cycleInput.value = String(rule.cycleYears);
+        cycleInput.title = "Cycle years";
+        cycleInput.addEventListener("input", () => {
+          const cycleYears = Math.max(2, Math.trunc(Number(cycleInput.value) || 2));
+          this.rules[index].cycleYears = cycleYears;
+          this.rules[index].activeYearPositions = sanitizeLeapYearPositions(
+            this.rules[index].activeYearPositions,
+            cycleYears
+          );
+        });
+
+        const positionsInput = row.createEl("input", {
+          cls: "time-collection-editor__input"
+        });
+        positionsInput.type = "text";
+        positionsInput.placeholder = "e.g. 4";
+        positionsInput.value = formatLeapYearPositions(rule.activeYearPositions);
+        positionsInput.title = "Active positions in cycle";
+        positionsInput.addEventListener("change", () => {
+          this.rules[index].activeYearPositions = parseLeapYearPositions(
+            positionsInput.value,
+            this.rules[index].cycleYears
+          );
+          positionsInput.value = formatLeapYearPositions(
+            this.rules[index].activeYearPositions
+          );
+        });
+
+        const skipInput = row.createEl("input", {
+          cls: "time-collection-editor__input"
+        });
+        skipInput.type = "text";
+        skipInput.placeholder = "e.g. 100";
+        skipInput.value = formatPositiveIntegers(rule.skipYearsDivisibleBy);
+        skipInput.title = "Never add in years divisible by these values";
+        skipInput.addEventListener("change", () => {
+          this.rules[index].skipYearsDivisibleBy = parsePositiveIntegers(skipInput.value);
+          skipInput.value = formatPositiveIntegers(
+            this.rules[index].skipYearsDivisibleBy
+          );
+        });
+      }
+
+      createDeleteIconButton(row, () => {
+        this.rules.splice(index, 1);
+        this.render();
+      });
+    });
+
+    const toolbar = contentEl.createDiv({ cls: "time-collection-editor__toolbar" });
+    createManagerButton(
+      toolbar,
+      this.mode === "named" ? "Add named day" : "Add leap day",
+      () => {
+      const name = this.mode === "named"
+        ? `Named Day ${this.rules.length + 1}`
+        : `Leap Day ${this.rules.length + 1}`;
+      this.rules.push({
+        id: slugify(name),
+        name,
+        insertAfterMonthIndex: Math.max(-1, this.months.length - 1),
+		displayPosition: "standalone",
+        order: this.rules.length,
+        weekdayMode: "none",
+        cycleYears: this.mode === "named" ? 1 : 4,
+        activeYearPositions: this.mode === "named" ? [1] : [4],
+        skipYearsDivisibleBy: []
+      });
+      this.render();
+      },
+      false,
+      true
+    );
+
+    const footer = contentEl.createDiv({ cls: "time-modal__footer" });
+    new Setting(footer).addButton((button) => {
+      button.setButtonText("Save");
+      button.setCta();
+      button.onClick(() => {
+        const sanitizedRules = this.rules.map((rule, index) => {
+          const cycleYears = this.mode === "named"
+            ? 1
+            : Math.max(2, Math.trunc(rule.cycleYears || 2));
+
+          return {
+            ...rule,
+            id: slugify(rule.id || rule.name || `intercalary-day-${index + 1}`),
+            name: rule.name.trim() || `Intercalary Day ${index + 1}`,
+            displayPosition:
+              rule.weekdayMode === "none"
+                ? "standalone"
+                : normalizeIntercalaryDayDisplayPosition(rule.displayPosition),
+            cycleYears,
+            activeYearPositions: this.mode === "named"
+              ? [1]
+              : sanitizeLeapYearPositions(rule.activeYearPositions, cycleYears),
+            skipYearsDivisibleBy: this.mode === "named"
+              ? []
+              : sanitizePositiveIntegers(rule.skipYearsDivisibleBy),
+            icon: rule.icon?.trim() || undefined,
+            imageRef: rule.imageRef?.trim() || undefined
+          };
+        });
+
+        this.onSave([
+          ...this.retainedRules,
+          ...sanitizedRules
+        ]);
+        this.close();
+      });
+    });
     new Setting(footer).addButton((button) => {
       button.setButtonText("Cancel");
       button.onClick(() => this.close());
@@ -3513,6 +3723,27 @@ function formatLeapYearPositions(values: number[]): string {
   return values.join(", ");
 }
 
+function parsePositiveIntegers(value: string): number[] {
+  return sanitizePositiveIntegers(
+    value
+      .split(/[,\s]+/g)
+      .map((entry) => Math.trunc(Number(entry)))
+      .filter((entry) => Number.isFinite(entry))
+  );
+}
+
+function sanitizePositiveIntegers(values: number[]): number[] {
+  return [...new Set(
+    values
+      .map((value) => Math.trunc(value))
+      .filter((value) => value > 0)
+  )].sort((left, right) => left - right);
+}
+
+function formatPositiveIntegers(values: number[]): string {
+  return values.join(", ");
+}
+
 function getSeasonCycleLengthForDraft(
   weatherProfile: FantasyWeatherProfileMapping,
   months: Array<{ days: number }>
@@ -3759,6 +3990,23 @@ function normalizeFiniteDecimal(value: number, fallback: number): number {
 
 function normalizeMoonCycleAnchor(value: string | undefined): MoonCycleAnchor {
   return value === "month" ? "month" : "absolute";
+}
+
+function normalizeIntercalaryDayDisplayPosition(
+  value: string | undefined
+): IntercalaryDayDisplayPosition {
+  return value === "after-previous-month" || value === "before-next-month"
+    ? value
+    : "standalone";
+}
+
+function isAnnualNamedDayRule(rule: FantasyIntercalaryDayRule): boolean {
+  return (
+    rule.cycleYears === 1 &&
+    rule.activeYearPositions.length === 1 &&
+    rule.activeYearPositions[0] === 1 &&
+    rule.skipYearsDivisibleBy.length === 0
+  );
 }
 
 function sanitizeMoonPhaseImages(

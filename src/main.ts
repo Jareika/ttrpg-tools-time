@@ -1,9 +1,11 @@
 import { App, MarkdownView, Notice, Plugin, TFile, WorkspaceLeaf } from "obsidian";
 import {
+  clampDate,
   normalizeFantasyClockState,
   normalizeCalendarFile,
   normalizeSettings,
-  sameDate
+  sameDate,
+  shiftDay
 } from "./calendar";
 import { CONTROL_VIEW_TYPE, TimeControlView } from "./control-view";
 import { CALENDAR_DAY_VIEW_TYPE, TimeDayView } from "./day-view";
@@ -77,7 +79,6 @@ import {
   normalizeWeatherPackFile,
   weatherDayKey
 } from "./weather";
-import { shiftDay } from "./calendar";
 import {
   applyEventToFrontmatter,
   buildFrontmatterImportCandidate,
@@ -613,6 +614,31 @@ export default class TtrpgToolsTimePlugin extends Plugin {
       const candidate = leaf.view as { editEvent?: (event: CalendarEventDefinition) => void };
       candidate.editEvent?.(eventToEdit);
     }
+  }
+  
+  async activateEventEditorForDate(date: FantasyDate): Promise<void> {
+    const calendar = this.activeCalendar;
+
+    if (!calendar) {
+      new Notice("No active calendar loaded.");
+      return;
+    }
+
+    const normalizedDate = clampDate(date, calendar.definition);
+
+    await this.updateActiveCalendarState({
+      cursorDate: { ...normalizedDate }
+    });
+
+    await this.activateEventEditorView();
+
+    const leaf = this.app.workspace.getLeavesOfType(EVENT_EDITOR_VIEW_TYPE)[0];
+    if (!leaf) {
+      return;
+    }
+
+    const editor = leaf.view as { createEventForDate?: (seedDate: FantasyDate) => void };
+    editor.createEventForDate?.({ ...normalizedDate });
   }
 
   async activateEventEditorForEvent(

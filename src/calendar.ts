@@ -9,6 +9,7 @@ import type {
   FantasyCalendarDefinition,
   FantasyLeapDayRule,
   FantasyLeapMonthRule,
+  FantasyIntercalaryDayRule,
   FantasyTimeConfig,
   FantasyWeatherProfileMapping,
   FantasyMonthDay,
@@ -48,10 +49,12 @@ interface LeapRuleComputationSummary {
   cycleYears: number;
   residues: number[];
   extraDays: number;
+  extraWeekdayDays: number;
 }
 
 interface DefinitionComputationContext {
   baseYearLength: number;
+  baseWeekdayLength: number;
   leapRuleSummaries: LeapRuleComputationSummary[];
 }
 
@@ -59,6 +62,7 @@ interface YearComputationContext {
   year: number;
   months: FantasyMonth[];
   monthStartDays: number[];
+  monthStartWeekdayOffsets: number[];
   yearLength: number;
   daysBeforeYear: number;
   yearStartWeekdayIndex: number;
@@ -100,6 +104,7 @@ export const DEFAULT_CALENDAR_DEFINITION: FantasyCalendarDefinition = {
   months: cloneMonths(DEFAULT_MONTHS),
   leapMonths: [],
   leapDays: [],
+  intercalaryDays: [],
   weatherProfile: { ...DEFAULT_WEATHER_PROFILE },
   moons: [],
   eras: buildDefaultEras("Era"),
@@ -202,6 +207,7 @@ export function normalizeCalendarFile(raw: unknown): CalendarFile {
     moons: rawDefinition.moons,
     leapMonths: rawDefinition.leapMonths,
 	leapDays: rawDefinition.leapDays,
+	intercalaryDays: rawDefinition.intercalaryDays,
     weatherProfile: rawDefinition.weatherProfile,
     yearNames: rawDefinition.yearNames,
     startWeekdayIndex: rawDefinition.startWeekdayIndex,
@@ -269,6 +275,16 @@ function normalizeDefinition(raw: unknown): FantasyCalendarDefinition {
   const normalizedMonths = months.length > 0 ? months : cloneMonths(DEFAULT_MONTHS);
   const weatherProfile = readWeatherProfile(record.weatherProfile, normalizedMonths);
   const seasonCycleLength = getSeasonCycleLengthForMonths(weatherProfile, normalizedMonths);
+  const leapDays = readLeapDays(record.leapDays, normalizedMonths);
+  const configuredIntercalaryDays = readIntercalaryDays(
+    record.intercalaryDays,
+    normalizedMonths
+  );
+  const migratedStandaloneLeapDays = migrateStandaloneLeapDays(leapDays);
+  const intercalaryDays = mergeIntercalaryDays(
+    configuredIntercalaryDays,
+    migratedStandaloneLeapDays
+  );
 
   return {
     id: readString(record.id, DEFAULT_CALENDAR_DEFINITION.id),
@@ -277,7 +293,8 @@ function normalizeDefinition(raw: unknown): FantasyCalendarDefinition {
     weekdays: normalizedWeekdays,
     months: normalizedMonths,
     leapMonths: readLeapMonths(record.leapMonths, normalizedMonths),
-    leapDays: readLeapDays(record.leapDays, normalizedMonths),
+    leapDays: leapDays.filter((rule) => rule.placement === "append-to-month"),
+    intercalaryDays,
     weatherProfile,
     eras: readEras(record.eras, readString(record.eraLabel, DEFAULT_CALENDAR_DEFINITION.eraLabel), normalizedMonths),
     moons: readMoons(record.moons),
@@ -438,6 +455,66 @@ function readLeapDays(raw: unknown, months: FantasyMonth[]): FantasyLeapDayRule[
       leapYearPositions: leapYearPositions.length > 0 ? leapYearPositions : [cycleYears]
     };
   });
+}
+
+function readIntercalaryDays(
+  raw: unknown,
+  months: FantasyMonth[]
+): FantasyIntercalaryDayRule[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw.map((entry, index) => {
+    const record = asRecord(entry);
+    const name = readString(record.name, `Named Day ${index + 1}`);
+    const cycleYears = Math.max(1, Math.trunc(readNumber(record.cycleYears, 1)));
+    const rawPositions = Array.isArray(record.activeYearPositions)
+      ? record.activeYearPositions
+      : [];
+    const activeYearPositions = [...new Set(
+      rawPositions
+        .map((value) => Math.trunc(readNumber(value, 0)))
+        .filter((value) => value >= 1 && value <= cycleYears)
+    )].sort((left, right) => left - right);
+
+    return {
+      id: readString(record.id, slugify(name || `named-day-${index + 1}`)),
+      name,
+      insertAfterMonthIndex: clamp(
+        Math.trunc(readNumber(record.insertAfterMonthIndex, months.length - 1)),
+        -1,
+        Math.max(-1, months.length - 1)
+      ),
+      order: Math.trunc(readNumber(record.order, index)),
+      weekdayMode: record.weekdayMode === "none" ? "none" : "normal",
+      displayPosition: readIntercalaryDayDisplayPosition(
+        record.displayPosition,
+        record.weekdayMode
+      ),
+      cycleYears,
+      activeYearPositions:
+        activeYearPositions.length > 0
+          ? activeYearPositions
+          : [cycleYears],
+      skipYearsDivisibleBy: readPositiveIntegerArray(record.skipYearsDivisibleBy),
+      color: readOptionalColor(record.color),
+      icon: readOptionalString(record.icon),
+      imageRef: readOptionalString(record.imageRef)
+    };
+  });
+}
+
+function readPositiveIntegerArray(value: unknown): number[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return [...new Set(
+    value
+      .map((entry) => Math.trunc(readNumber(entry, 0)))
+      .filter((entry) => entry > 0)
+  )].sort((left, right) => left - right);
 }
 
 function readWeatherProfile(
@@ -662,6 +739,19 @@ function readTone(value: unknown): DayMarker["tone"] {
 
 function readLeapDayPlacement(value: unknown): FantasyLeapDayRule["placement"] {
   return value === "append-to-month" ? "append-to-month" : "standalone";
+}
+
+function readIntercalaryDayDisplayPosition(
+  value: unknown,
+  weekdayMode: unknown
+): FantasyIntercalaryDayRule["displayPosition"] {
+  if (weekdayMode === "none") {
+    return "standalone";
+  }
+
+  return value === "after-previous-month" || value === "before-next-month"
+    ? value
+    : "standalone";
 }
 
 function readMonthWeekdayMode(value: unknown): FantasyCalendarDefinition["monthWeekdayMode"] {
@@ -1030,6 +1120,11 @@ export function cloneCalendarDefinition(
       leapYearPositions: [...rule.leapYearPositions]
     })),
     weatherProfile: { ...definition.weatherProfile },
+    intercalaryDays: definition.intercalaryDays.map((rule) => ({
+      ...rule,
+      activeYearPositions: [...rule.activeYearPositions],
+      skipYearsDivisibleBy: [...rule.skipYearsDivisibleBy]
+    })),
     eras: definition.eras.map((era) => ({ ...era })),
     moons: definition.moons.map((moon) => ({
       ...moon,
@@ -1096,6 +1191,79 @@ export function getMonth(
   return months[mod(monthIndex, months.length)];
 }
 
+export function isIntercalaryMonth(month: FantasyMonth): boolean {
+  return month.kind === "intercalary-day";
+}
+
+export function isIntercalaryDate(
+  definition: FantasyCalendarDefinition,
+  date: FantasyDate
+): boolean {
+  return isIntercalaryMonth(getMonth(definition, date.monthIndex, date.year));
+}
+
+export function getIntercalaryDayRuleForDate(
+  definition: FantasyCalendarDefinition,
+  date: FantasyDate
+): FantasyIntercalaryDayRule | null {
+  const month = getMonth(definition, date.monthIndex, date.year);
+
+  if (!isIntercalaryMonth(month) || !month.intercalaryDayId) {
+    return null;
+  }
+
+  return definition.intercalaryDays.find(
+    (rule) => rule.id === month.intercalaryDayId
+  ) ?? null;
+}
+
+export function isInlineIntercalaryDate(
+  definition: FantasyCalendarDefinition,
+  date: FantasyDate
+): boolean {
+  const rule = getIntercalaryDayRuleForDate(definition, date);
+
+  return Boolean(
+    rule &&
+      rule.weekdayMode === "normal" &&
+      rule.displayPosition !== "standalone"
+  );
+}
+
+export function getInlineIntercalaryHostMonthIndex(
+  definition: FantasyCalendarDefinition,
+  date: FantasyDate
+): number | null {
+  const rule = getIntercalaryDayRuleForDate(definition, date);
+
+  if (
+    !rule ||
+    rule.weekdayMode !== "normal" ||
+    rule.displayPosition === "standalone"
+  ) {
+    return null;
+  }
+
+  const months = getMonthsForYear(definition, date.year);
+
+  if (rule.displayPosition === "after-previous-month") {
+    for (let index = date.monthIndex - 1; index >= 0; index -= 1) {
+      if (!isIntercalaryMonth(months[index] ?? { id: "", name: "", days: 1 })) {
+        return index;
+      }
+    }
+    return null;
+  }
+
+  for (let index = date.monthIndex + 1; index < months.length; index += 1) {
+    if (!isIntercalaryMonth(months[index] ?? { id: "", name: "", days: 1 })) {
+      return index;
+    }
+  }
+
+  return null;
+}
+
 export function getDaysInMonth(
   definition: FantasyCalendarDefinition,
   monthIndex: number,
@@ -1117,6 +1285,7 @@ function buildMonthsForYear(
 ): FantasyMonth[] {
   const baseMonths: FantasyMonth[] = cloneMonths(definition.months);
   const result: FantasyMonth[] = [];
+  const maxMonthIndex = Math.max(-1, baseMonths.length - 1);
 
   definition.leapDays
     .filter((rule) => rule.placement === "append-to-month")
@@ -1133,32 +1302,60 @@ function buildMonthsForYear(
       }
     });
 
-  const activeInsertions = [
+  const activeInsertions: Array<{
+    insertAfterMonthIndex: number;
+    category: number;
+    order: number;
+    name: string;
+    month: FantasyMonth;
+  }> = [
     ...definition.leapMonths
       .filter((rule) => isLeapCycleActive(rule, year))
-      .map((rule) => ({
+      .map((rule, index) => ({
         insertAfterMonthIndex: rule.insertAfterMonthIndex,
-        order: 0,
+        category: 0,
+        order: index,
         name: rule.name,
         month: { ...rule.month }
       })),
     ...definition.leapDays
       .filter((rule) => rule.placement !== "append-to-month")
       .filter((rule) => isLeapCycleActive(rule, year))
-      .map((rule) => ({
+      .map((rule, index) => ({
         insertAfterMonthIndex: rule.insertAfterMonthIndex,
-        order: 1,
+        category: 1,
+        order: index,
         name: rule.name,
         month: {
           id: rule.id,
           name: rule.name,
           days: rule.days
         }
+      })),
+    ...definition.intercalaryDays
+      .filter((rule) => isIntercalaryDayActive(rule, year))
+      .map((rule) => ({
+        insertAfterMonthIndex: clamp(rule.insertAfterMonthIndex, -1, maxMonthIndex),
+        category: 2,
+        order: rule.order,
+        name: rule.name,
+        month: {
+          id: `intercalary-${rule.id}`,
+          name: rule.name,
+          days: 1,
+          color: rule.color,
+          kind: "intercalary-day" as const,
+          intercalaryDayId: rule.id,
+          weekdayMode: rule.weekdayMode
+        }
       }))
   ]
     .sort((left, right) => {
       if (left.insertAfterMonthIndex !== right.insertAfterMonthIndex) {
         return left.insertAfterMonthIndex - right.insertAfterMonthIndex;
+      }
+      if (left.category !== right.category) {
+        return left.category - right.category;
       }
       if (left.order !== right.order) {
         return left.order - right.order;
@@ -1191,6 +1388,22 @@ function isLeapCycleActive(
   const cycleYears = Math.max(1, Math.trunc(rule.cycleYears || 1));
   const cyclePosition = mod(year - 1, cycleYears) + 1;
   return rule.leapYearPositions.includes(cyclePosition);
+}
+
+function isIntercalaryDayActive(
+  rule: FantasyIntercalaryDayRule,
+  year: number
+): boolean {
+  if (
+    rule.skipYearsDivisibleBy.some(
+      (divisor) => divisor > 0 && mod(year, divisor) === 0
+    )
+  ) {
+    return false;
+  }
+
+  const cyclePosition = mod(year - 1, rule.cycleYears) + 1;
+  return rule.activeYearPositions.includes(cyclePosition);
 }
 
 export function getYearLength(
@@ -1346,7 +1559,10 @@ function getIntercalationCycleYears(
 ): number | null {
   const cycleYears = [
     ...definition.leapMonths.map((rule) => Math.max(1, Math.trunc(rule.cycleYears || 1))),
-    ...definition.leapDays.map((rule) => Math.max(1, Math.trunc(rule.cycleYears || 1)))
+    ...definition.leapDays.map((rule) => Math.max(1, Math.trunc(rule.cycleYears || 1))),
+    ...definition.intercalaryDays.map((rule) =>
+      Math.max(1, Math.trunc(rule.cycleYears || 1))
+    )
   ];
 
   if (cycleYears.length === 0) {
@@ -1722,50 +1938,73 @@ export function buildMonthGrid(
 ): MonthGrid {
   const month = getMonth(definition, monthIndex, year);
   const startWeekdayIndex = getMonthStartWeekdayIndex(definition, year, monthIndex);
+  const columns = definition.weekdays.length;
+  const baseMonthIndex = definition.months.findIndex(
+    (candidate) => candidate.id === month.id
+  );
+  const leadingNamedDays = getInlineIntercalaryDaysForBaseMonth(
+    definition,
+    year,
+    baseMonthIndex - 1,
+    "before-next-month"
+  );
+  const trailingNamedDays = getInlineIntercalaryDaysForBaseMonth(
+    definition,
+    year,
+    baseMonthIndex,
+    "after-previous-month"
+  );
+  const leadingEmptyCells = mod(
+    startWeekdayIndex - leadingNamedDays.length,
+    columns
+  );
+  const cells: MonthGridCell[] = [];
+
+  for (let index = 0; index < leadingEmptyCells; index += 1) {
+    cells.push(createEmptyMonthGridCell());
+  }
+
+  leadingNamedDays.forEach((namedDay) => {
+    cells.push(createIntercalaryMonthGridCell(
+      definition,
+      namedDay,
+      cursorDate,
+      todayDate,
+      markers
+    ));
+  });
+
+  for (let day = 1; day <= month.days; day += 1) {
+    const date = { year, monthIndex, day };
+
+    cells.push({
+      day,
+      date,
+      isToday: sameDate(date, todayDate),
+      isCursor: sameDate(date, cursorDate),
+      markers: getMarkersForDate(markers, date),
+      seasonColor: getSeasonForDate(definition, date)?.color
+    });
+  }
+
+  trailingNamedDays.forEach((namedDay) => {
+    cells.push(createIntercalaryMonthGridCell(
+      definition,
+      namedDay,
+      cursorDate,
+      todayDate,
+      markers
+    ));
+  });
 
   const rows: MonthGridCell[][] = [];
-  const columns = definition.weekdays.length;
-  const totalCells = startWeekdayIndex + month.days;
-  const totalRows = Math.ceil(totalCells / columns);
+  const totalRows = Math.ceil(cells.length / columns);
 
-  for (let rowIndex = 0; rowIndex < totalRows; rowIndex++) {
+  for (let rowIndex = 0; rowIndex < totalRows; rowIndex += 1) {
     const row: MonthGridCell[] = [];
 
-    for (let columnIndex = 0; columnIndex < columns; columnIndex++) {
-      const flatIndex = rowIndex * columns + columnIndex;
-      const day = flatIndex - startWeekdayIndex + 1;
-
-      const monthStartDate = { year, monthIndex, day: 1 };
-      const monthEndDate = { year, monthIndex, day: month.days };
-
-      if (day < 1 || day > month.days) {
-        const boundarySeason = getSeasonForDate(
-          definition,
-          day < 1
-            ? monthStartDate
-            : monthEndDate
-        );
-        row.push({
-          day: null,
-          date: null,
-          isToday: false,
-          isCursor: false,
-          markers: [],
-          seasonColor: boundarySeason?.color
-        });
-        continue;
-      }
-
-      const date = { year, monthIndex, day };
-
-      row.push({
-        day,
-        date,
-        isToday: sameDate(date, todayDate),
-        isCursor: sameDate(date, cursorDate),
-        markers: getMarkersForDate(markers, date),
-        seasonColor: getSeasonForDate(definition, date)?.color
-      });
+    for (let columnIndex = 0; columnIndex < columns; columnIndex += 1) {
+      row.push(cells[rowIndex * columns + columnIndex] ?? createEmptyMonthGridCell());
     }
 
     rows.push(row);
@@ -1794,9 +2033,124 @@ export function getWeekRow(
     todayDate,
     markers
   );
+  
+  const matchingRow = monthGrid.rows.find((row) =>
+    row.some((cell) => sameDate(cell.date, date))
+  );
+
+  if (matchingRow) {
+    return matchingRow;
+  }
 
   const rowIndex = getWeekIndexInMonth(definition, date);
   return monthGrid.rows[rowIndex] ?? [];
+}
+
+function createEmptyMonthGridCell(): MonthGridCell {
+  return {
+    day: null,
+    date: null,
+    isToday: false,
+    isCursor: false,
+    markers: []
+  };
+}
+
+function createIntercalaryMonthGridCell(
+  definition: FantasyCalendarDefinition,
+  namedDay: {
+    date: FantasyDate;
+    rule: FantasyIntercalaryDayRule;
+  },
+  cursorDate: FantasyDate,
+  todayDate: FantasyDate,
+  markers: DayMarker[]
+): MonthGridCell {
+  return {
+    day: null,
+    date: namedDay.date,
+    isToday: sameDate(namedDay.date, todayDate),
+    isCursor: sameDate(namedDay.date, cursorDate),
+    markers: getMarkersForDate(markers, namedDay.date),
+    seasonColor: getSeasonForDate(definition, namedDay.date)?.color,
+    intercalaryDay: {
+      date: namedDay.date,
+      name: namedDay.rule.name,
+      color: namedDay.rule.color,
+      icon: namedDay.rule.icon,
+      imageRef: namedDay.rule.imageRef,
+      weekdayMode: namedDay.rule.weekdayMode,
+      displayPosition: namedDay.rule.displayPosition
+    }
+  };
+}
+
+function getInlineIntercalaryDaysForBaseMonth(
+  definition: FantasyCalendarDefinition,
+  year: number,
+  insertAfterMonthIndex: number,
+  displayPosition: FantasyIntercalaryDayRule["displayPosition"]
+): Array<{ date: FantasyDate; rule: FantasyIntercalaryDayRule }> {
+  if (insertAfterMonthIndex < -1 || insertAfterMonthIndex >= definition.months.length) {
+    return [];
+  }
+
+  const months = getMonthsForYear(definition, year);
+
+  return definition.intercalaryDays
+    .filter((rule) => isIntercalaryDayActive(rule, year))
+    .filter((rule) => rule.weekdayMode === "normal")
+    .filter((rule) => rule.displayPosition === displayPosition)
+    .filter((rule) => rule.insertAfterMonthIndex === insertAfterMonthIndex)
+    .map((rule) => {
+      const monthIndex = months.findIndex(
+        (month) =>
+          month.kind === "intercalary-day" &&
+          month.intercalaryDayId === rule.id
+      );
+
+      return monthIndex >= 0
+        ? {
+            date: { year, monthIndex, day: 1 },
+            rule
+          }
+        : null;
+    })
+    .filter(
+      (entry): entry is { date: FantasyDate; rule: FantasyIntercalaryDayRule } =>
+        entry !== null
+    )
+    .sort((left, right) => left.rule.order - right.rule.order);
+}
+
+function migrateStandaloneLeapDays(
+  leapDays: FantasyLeapDayRule[]
+): FantasyIntercalaryDayRule[] {
+  return leapDays
+    .filter((rule) => rule.placement === "standalone")
+    .map((rule, index) => ({
+      id: rule.id,
+      name: rule.name,
+      insertAfterMonthIndex: rule.insertAfterMonthIndex,
+      displayPosition: "standalone" as const,
+      order: index,
+      weekdayMode: "normal" as const,
+      cycleYears: rule.cycleYears,
+      activeYearPositions: [...rule.leapYearPositions],
+      skipYearsDivisibleBy: []
+    }));
+}
+
+function mergeIntercalaryDays(
+  configured: FantasyIntercalaryDayRule[],
+  migrated: FantasyIntercalaryDayRule[]
+): FantasyIntercalaryDayRule[] {
+  const byId = new Map<string, FantasyIntercalaryDayRule>();
+
+  migrated.forEach((rule) => byId.set(rule.id, rule));
+  configured.forEach((rule) => byId.set(rule.id, rule));
+
+  return [...byId.values()];
 }
 
 export function formatShortDate(date: FantasyDate): string {
@@ -1829,8 +2183,14 @@ export function formatLongDate(
   date: FantasyDate,
   definition: FantasyCalendarDefinition
 ): string {
+  const month = getMonth(definition, date.monthIndex, date.year);
   const eraLabel = getEraShortLabel(definition, date);
-  return `${date.day}. ${getMonth(definition, date.monthIndex, date.year).name} ${formatYearLabel(definition, date.year, "verbose")}${eraLabel ? ` ${eraLabel}` : ""}`;
+
+  if (isIntercalaryMonth(month)) {
+    return `${month.name} ${formatYearLabel(definition, date.year, "verbose")}${eraLabel ? ` ${eraLabel}` : ""}`;
+  }
+
+  return `${date.day}. ${month.name} ${formatYearLabel(definition, date.year, "verbose")}${eraLabel ? ` ${eraLabel}` : ""}`;
 }
 
 export function formatDateWithPattern(
@@ -1840,29 +2200,42 @@ export function formatDateWithPattern(
   yearVariant: YearDisplayVariant = "verbose"
 ): string {
   const normalized = clampDate(date, definition);
+  const template = pattern.trim().length > 0 ? pattern : DEFAULT_SETTINGS.dayViewDateFormat;
   const month = getMonth(definition, normalized.monthIndex, normalized.year);
+  const isNamedDay = isIntercalaryMonth(month);
+
+  if (isNamedDay && !template.includes("NamedDayName")) {
+    const eraLabel = getEraShortLabel(definition, normalized);
+    return `${month.name} ${formatDisplayYear(definition, normalized.year, yearVariant)}${eraLabel ? ` ${eraLabel}` : ""}`;
+  }
+
   const weekdayIndex = getWeekdayIndex(definition, normalized);
-  const weekdayName = definition.weekdays[weekdayIndex] ?? `Day ${weekdayIndex + 1}`;
+  const weekdayName =
+    month.weekdayMode === "none"
+      ? ""
+      : definition.weekdays[weekdayIndex] ?? `Day ${weekdayIndex + 1}`;
   const monthShort = month.name.slice(0, Math.min(3, month.name.length));
   const weekdayShort = weekdayName.slice(0, Math.min(3, weekdayName.length));
   const weekInMonth = getWeekNumberInMonth(definition, normalized);
   const weekInYear = getWeekOfYear(definition, normalized);
-  const template = pattern.trim().length > 0 ? pattern : DEFAULT_SETTINGS.dayViewDateFormat;
+  const dayValue = isNamedDay ? "" : String(normalized.day);
+  const monthValue = isNamedDay ? "" : String(normalized.monthIndex + 1);
 
   const replacements: Array<[string, string]> = [
-    ["WeekdayName", weekdayName],
+    ["NamedDayName", isNamedDay ? month.name : ""],
+	["WeekdayName", weekdayName],
     ["WeekdayShort", weekdayShort],
     ["MonthName", month.name],
     ["MonthShort", monthShort],
     ["YYYY", formatDisplayYear(definition, normalized.year, yearVariant)],
     ["YY", String(Math.abs(normalized.year)).slice(-2).padStart(2, "0")],
-    ["MM", String(normalized.monthIndex + 1).padStart(2, "0")],
-    ["DD", String(normalized.day).padStart(2, "0")],
+    ["MM", monthValue.padStart(2, "0")],
+    ["DD", dayValue.padStart(2, "0")],
     ["YW", String(weekInYear).padStart(2, "0")],
     ["WW", String(weekInMonth).padStart(2, "0")],
     ["ERA", getEraShortLabel(definition, normalized)],
-    ["M", String(normalized.monthIndex + 1)],
-    ["D", String(normalized.day)]
+    ["M", monthValue],
+    ["D", dayValue]
   ];
 
   let result = template;
@@ -1943,13 +2316,15 @@ function getDefinitionComputationContext(
   }
 
   const baseYearLength = getMonthListLength(definition.months);
+  const baseWeekdayLength = baseYearLength;
   const leapRuleSummaries: LeapRuleComputationSummary[] = [
     ...definition.leapMonths.map((rule) => {
       const cycleYears = Math.max(1, Math.trunc(rule.cycleYears || 1));
       return {
         cycleYears,
         residues: [...new Set(rule.leapYearPositions.map((value) => mod(value, cycleYears)))],
-        extraDays: Math.max(1, Math.trunc(rule.month.days || 1))
+        extraDays: Math.max(1, Math.trunc(rule.month.days || 1)),
+        extraWeekdayDays: Math.max(1, Math.trunc(rule.month.days || 1))
       };
     }),
     ...definition.leapDays.map((rule) => {
@@ -1957,13 +2332,24 @@ function getDefinitionComputationContext(
       return {
         cycleYears,
         residues: [...new Set(rule.leapYearPositions.map((value) => mod(value, cycleYears)))],
-        extraDays: Math.max(1, Math.trunc(rule.days || 1))
+        extraDays: Math.max(1, Math.trunc(rule.days || 1)),
+        extraWeekdayDays: Math.max(1, Math.trunc(rule.days || 1))
+      };
+    }),
+    ...definition.intercalaryDays.map((rule) => {
+      const cycleYears = Math.max(1, Math.trunc(rule.cycleYears || 1));
+      return {
+        cycleYears,
+        residues: [...new Set(rule.activeYearPositions.map((value) => mod(value, cycleYears)))],
+        extraDays: 1,
+        extraWeekdayDays: rule.weekdayMode === "none" ? 0 : 1
       };
     })
   ];
 
   const context: DefinitionComputationContext = {
     baseYearLength,
+	baseWeekdayLength,
     leapRuleSummaries
   };
 
@@ -1981,7 +2367,7 @@ function getMonthStartWeekdayIndex(
   }
 
   const context = getYearContext(definition, year);
-  return mod(context.yearStartWeekdayIndex + (context.monthStartDays[monthIndex] ?? 0), definition.weekdays.length);
+  return mod(context.yearStartWeekdayIndex + (context.monthStartWeekdayOffsets[monthIndex] ?? 0), definition.weekdays.length);
 }
 
 function getYearContext(
@@ -2003,21 +2389,29 @@ function getYearContext(
 
   const months = buildMonthsForYear(definition, normalizedYear);
   const monthStartDays: number[] = [];
+  const monthStartWeekdayOffsets: number[] = [];
   let runningTotal = 0;
+  let runningWeekdayTotal = 0;
 
   months.forEach((month) => {
     monthStartDays.push(runningTotal);
+	monthStartWeekdayOffsets.push(runningWeekdayTotal);
     runningTotal += month.days;
+
+    if (month.weekdayMode !== "none") {
+      runningWeekdayTotal += month.days;
+    }
   });
 
   const context: YearComputationContext = {
     year: normalizedYear,
     months,
     monthStartDays,
+	monthStartWeekdayOffsets,
     yearLength: runningTotal,
     daysBeforeYear: getDaysBeforeYear(definition, normalizedYear),
     yearStartWeekdayIndex: mod(
-      definition.startWeekdayIndex + getDaysBeforeYear(definition, normalizedYear),
+      definition.startWeekdayIndex + getWeekdayDaysBeforeYear(definition, normalizedYear),
       definition.weekdays.length
     )
   };
@@ -2048,6 +2442,26 @@ function getDaysBeforeYear(
 
   definitionContext.leapRuleSummaries.forEach((rule) => {
     total += rule.extraDays * countRuleOccurrencesBeforeYear(rule, normalizedYear);
+  });
+
+  return total;
+}
+
+function getWeekdayDaysBeforeYear(
+  definition: FantasyCalendarDefinition,
+  year: number
+): number {
+  const normalizedYear = Math.trunc(Number(year) || 0);
+
+  if (normalizedYear === 0) {
+    return 0;
+  }
+
+  const definitionContext = getDefinitionComputationContext(definition);
+  let total = normalizedYear * definitionContext.baseWeekdayLength;
+
+  definitionContext.leapRuleSummaries.forEach((rule) => {
+    total += rule.extraWeekdayDays * countRuleOccurrencesBeforeYear(rule, normalizedYear);
   });
 
   return total;

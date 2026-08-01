@@ -5,9 +5,14 @@ import {
   formatDisplayYear,
   formatLongDate,
   getEraShortLabel,
+  getInlineIntercalaryHostMonthIndex,
+  getIntercalaryDayRuleForDate,
   getMonth,
   getMonthsForYear,
+  isInlineIntercalaryDate,
+  isIntercalaryMonth,
   getSeasonForDate,
+  sameDate,
   getWeekIndexInMonth,
   getWeekOfYear,
   getWeekRow,
@@ -282,7 +287,21 @@ export class TimeCalendarView extends ItemView {
     eventIndexYear: EventIndexYearFile | null
   ): void {
     const { definition, state, markers } = calendar;
-    const month = getMonth(definition, state.cursorDate.monthIndex, state.cursorDate.year);
+    const displayMonthIndex = this.getDisplayMonthIndexForDate(
+      calendar,
+      state.cursorDate
+    );
+    const displayDate = {
+      year: state.cursorDate.year,
+      monthIndex: displayMonthIndex,
+      day: 1
+    };
+    const month = getMonth(definition, displayMonthIndex, state.cursorDate.year);
+	
+    if (isIntercalaryMonth(month) && !isInlineIntercalaryDate(definition, state.cursorDate)) {
+      this.renderIntercalaryDaySection(container, calendar, state.cursorDate, eventIndexYear);
+      return;
+    }
 
     const intro = container.createDiv({ cls: "time-view-frame time-view-frame--intro" });
     intro.createDiv({
@@ -295,7 +314,7 @@ export class TimeCalendarView extends ItemView {
     }
     intro.createDiv({
       cls: "time-view-meta",
-      text: `Week ${getWeekIndexInMonth(definition, state.cursorDate) + 1} • ${formatDisplayYear(definition, state.cursorDate.year, "verbose")}${formatEraSuffix(definition, state.cursorDate)}`
+      text: `Week ${getWeekIndexInMonth(definition, displayDate) + 1} • ${formatDisplayYear(definition, state.cursorDate.year, "verbose")}${formatEraSuffix(definition, state.cursorDate)}`
     });
 
     this.renderWeekdayHeader(container, calendar);
@@ -333,7 +352,13 @@ export class TimeCalendarView extends ItemView {
     eventIndexYear: EventIndexYearFile | null
   ): void {
     const { definition, state } = calendar;
-    const month = getMonth(definition, state.cursorDate.monthIndex, state.cursorDate.year);
+    const displayMonthIndex = this.getDisplayMonthIndexForDate(calendar, state.cursorDate);
+    const month = getMonth(definition, displayMonthIndex, state.cursorDate.year);
+	
+    if (isIntercalaryMonth(month) && !isInlineIntercalaryDate(definition, state.cursorDate)) {
+      this.renderIntercalaryDaySection(container, calendar, state.cursorDate, eventIndexYear);
+      return;
+    }
 
     const intro = container.createDiv({ cls: "time-view-frame time-view-frame--intro" });
     intro.createDiv({
@@ -352,7 +377,7 @@ export class TimeCalendarView extends ItemView {
     this.renderMonthSection(
       container,
       state.cursorDate.year,
-      state.cursorDate.monthIndex,
+      displayMonthIndex,
       calendar,
       weatherYear,
       eventIndexYear,
@@ -380,12 +405,32 @@ export class TimeCalendarView extends ItemView {
       cls: "time-view-meta",
       text: [
         `${getYearLength(definition, state.cursorDate.year)} days`,
-        `${getMonthsForYear(definition, state.cursorDate.year).length} months`,
+        `${getMonthsForYear(definition, state.cursorDate.year).filter(
+          (month) => !isIntercalaryMonth(month)
+        ).length} months`,
         getEraShortLabel(definition, state.cursorDate)
       ].filter((entry) => entry.length > 0).join(" • ")
     });
 
-    getMonthsForYear(definition, state.cursorDate.year).forEach((_month, monthIndex) => {
+    getMonthsForYear(definition, state.cursorDate.year).forEach((month, monthIndex) => {
+      if (isIntercalaryMonth(month)) {
+        if (isInlineIntercalaryDate(definition, {
+          year: state.cursorDate.year,
+          monthIndex,
+          day: 1
+        })) {
+          return;
+        }
+
+        this.renderIntercalaryDaySection(
+          container,
+          calendar,
+          { year: state.cursorDate.year, monthIndex, day: 1 },
+          eventIndexYear
+        );
+        return;
+      }
+
       this.renderMonthSection(
         container,
         state.cursorDate.year,
@@ -398,6 +443,87 @@ export class TimeCalendarView extends ItemView {
           showMeta: false
         }
       );
+    });
+  }
+  
+  private renderIntercalaryDaySection(
+    parent: HTMLElement,
+    calendar: CalendarFile,
+    date: FantasyDate,
+    eventIndexYear: EventIndexYearFile | null
+  ): void {
+    const month = getMonth(calendar.definition, date.monthIndex, date.year);
+    const events = getEventDotsForDate(eventIndexYear, date);
+    const card = parent.createDiv({ cls: "time-intercalary-day" });
+	
+    if (sameDate(date, calendar.state.todayDate)) {
+      card.addClass("is-today");
+    }
+
+    if (sameDate(date, calendar.state.cursorDate)) {
+      card.addClass("is-cursor");
+    }
+
+    if (month.color) {
+      card.style.setProperty("--time-intercalary-day-color", month.color);
+    }
+	
+    const rule = getIntercalaryDayRuleForDate(calendar.definition, date);
+    if (rule?.imageRef) {
+      const file = this.plugin.resolveStoredFileRef(rule.imageRef);
+
+      if (file) {
+        const image = card.createEl("img", {
+          cls: "time-intercalary-day__image"
+        });
+        image.src = this.plugin.app.vault.getResourcePath(file);
+        image.alt = rule.name;
+        image.draggable = false;
+      }
+    } else if (rule?.icon?.trim()) {
+      const icon = card.createDiv({ cls: "time-intercalary-day__icon" });
+      setIcon(icon, rule.icon);
+    }
+
+    card.createDiv({
+      cls: "time-intercalary-day__title",
+      text: month.name
+    });
+	
+    if (events.length > 0) {
+      const markers = card.createDiv({
+        cls: "time-intercalary-day__markers"
+      });
+
+      events.slice(0, 5).forEach((event) => {
+        const marker = markers.createDiv({
+          cls: "time-day-marker time-day-marker--event"
+        });
+        marker.style.backgroundColor = event.color;
+      });
+    }
+
+    const meta = [
+      formatDisplayYear(calendar.definition, date.year, "verbose"),
+      getEraShortLabel(calendar.definition, date),
+      events.length > 0
+        ? `${events.length} event${events.length === 1 ? "" : "s"}`
+        : null
+    ].filter((entry): entry is string => Boolean(entry));
+
+    card.createDiv({
+      cls: "time-intercalary-day__meta",
+      text: meta.join(" • ")
+    });
+
+    card.title = formatLongDate(date, calendar.definition);
+    card.addEventListener("click", () => {
+      void this.selectDate(date);
+    });
+
+    card.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      this.openDateContextMenu(event, date);
     });
   }
 
@@ -516,7 +642,17 @@ export class TimeCalendarView extends ItemView {
       cell.style.setProperty("--time-season-color", cellData.seasonColor);
     }
 
-    if (!cellData.date || cellData.day === null) {
+    if (!cellData.date) {
+      cell.addClass("is-empty");
+      return;
+    }
+	
+    if (cellData.intercalaryDay) {
+      this.renderInlineIntercalaryDayCell(cell, cellData, calendar, eventIndexYear);
+      return;
+    }
+	
+    if (cellData.day === null) {
       cell.addClass("is-empty");
       return;
     }
@@ -578,29 +714,85 @@ export class TimeCalendarView extends ItemView {
     cell.addEventListener("contextmenu", (event) => {
       event.preventDefault();
 
-      const menu = new Menu();
+      this.openDateContextMenu(event, cellData.date!);
+    });
+  }
+  
+  private renderInlineIntercalaryDayCell(
+    cell: HTMLElement,
+    cellData: MonthGridCell,
+    calendar: CalendarFile,
+    eventIndexYear: EventIndexYearFile | null
+  ): void {
+    const namedDay = cellData.intercalaryDay;
+    const date = cellData.date;
 
-      menu.addItem((item) =>
-        item.setTitle("Set as today").setIcon("crosshair").onClick(() => {
-          void this.plugin.updateActiveCalendarState({
-            todayDate: { ...cellData.date! },
-            cursorDate: { ...cellData.date! }
-          });
-        })
-      );
+    if (!namedDay || !date) {
+      cell.addClass("is-empty");
+      return;
+    }
 
-      menu.addItem((item) =>
-        item.setTitle("New event").setIcon("plus").onClick(() => {
-          void (async () => {
-            await this.plugin.updateActiveCalendarState({
-              cursorDate: { ...cellData.date! }
-            });
-            await this.plugin.activateEventEditorView();
-          })();
-        })
-      );
+    cell.addClass("time-day-cell--intercalary");
 
-      menu.showAtMouseEvent(event);
+    if (cellData.isToday) {
+      cell.addClass("is-today");
+    }
+
+    if (cellData.isCursor) {
+      cell.addClass("is-cursor");
+    }
+
+    if (namedDay.color) {
+      cell.style.setProperty("--time-intercalary-day-color", namedDay.color);
+    }
+
+    if (namedDay.imageRef) {
+      const imageFile = this.plugin.resolveStoredFileRef(namedDay.imageRef);
+
+      if (imageFile) {
+        const image = cell.createEl("img", {
+          cls: "time-day-cell__holiday-image"
+        });
+        image.src = this.plugin.app.vault.getResourcePath(imageFile);
+        image.alt = namedDay.name;
+        image.draggable = false;
+      }
+    }
+
+    if (!cell.querySelector(".time-day-cell__holiday-image")) {
+      const icon = cell.createDiv({ cls: "time-day-cell__holiday-icon" });
+      setIcon(icon, namedDay.icon?.trim() || "sparkles");
+    }
+
+    const eventDots = getEventDotsForDate(eventIndexYear, date);
+    const markersEl = cell.createDiv({
+      cls: "time-day-cell__markers time-day-cell__markers--intercalary"
+    });
+
+    eventDots.slice(0, 2).forEach((dot) => {
+      const markerEl = markersEl.createDiv({
+        cls: "time-day-marker time-day-marker--event"
+      });
+      markerEl.style.backgroundColor = dot.color;
+    });
+
+    cellData.markers.slice(0, 2).forEach((marker) => {
+      const markerEl = markersEl.createDiv({ cls: "time-day-marker" });
+      markerEl.addClass(`is-${marker.tone ?? "dark"}`);
+    });
+
+    cell.title = [
+      namedDay.name,
+      formatLongDate(date, calendar.definition),
+      eventDots.length > 0
+        ? `${eventDots.length} event${eventDots.length === 1 ? "" : "s"}`
+        : null
+    ]
+      .filter((entry): entry is string => Boolean(entry))
+      .join(" • ");
+
+    cell.addEventListener("click", () => {
+      void this.selectDate(date);
     });
   }
 
@@ -677,7 +869,9 @@ export class TimeCalendarView extends ItemView {
   }
 
   private scrollCursorIntoView(scroller: HTMLElement): void {
-    const target = scroller.querySelector<HTMLElement>(".time-day-cell.is-cursor");
+    const target = scroller.querySelector<HTMLElement>(
+      ".time-day-cell.is-cursor, .time-intercalary-day.is-cursor"
+    );
 
     if (!target) {
       return;
@@ -741,6 +935,53 @@ export class TimeCalendarView extends ItemView {
 
   private getActiveCalendar(): CalendarFile | null {
     return this.plugin.activeCalendar;
+  }
+
+  private getDisplayMonthIndexForDate(
+    calendar: CalendarFile,
+    date: FantasyDate
+  ): number {
+    if (!isInlineIntercalaryDate(calendar.definition, date)) {
+      return date.monthIndex;
+    }
+
+    return (
+      getInlineIntercalaryHostMonthIndex(calendar.definition, date) ??
+      date.monthIndex
+    );
+  }
+
+  private openDateContextMenu(event: MouseEvent, date: FantasyDate): void {
+    const selectedDate = { ...date };
+    const menu = new Menu();
+
+    menu.addItem((item) =>
+      item.setTitle("Set as today").setIcon("crosshair").onClick(() => {
+        void this.plugin.updateActiveCalendarState({
+          todayDate: { ...selectedDate },
+          cursorDate: { ...selectedDate }
+        });
+      })
+    );
+
+    menu.addItem((item) =>
+      item.setTitle("New event").setIcon("plus").onClick(() => {
+        void this.plugin.activateEventEditorForDate(selectedDate);
+      })
+    );
+
+    menu.addItem((item) =>
+      item.setTitle("Open day view").setIcon("sun").onClick(() => {
+        void (async () => {
+          await this.plugin.updateActiveCalendarState({
+            cursorDate: { ...selectedDate }
+          });
+          await this.plugin.activateDayView();
+        })();
+      })
+    );
+
+    menu.showAtMouseEvent(event);
   }
 }
 

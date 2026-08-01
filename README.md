@@ -18,8 +18,13 @@
 - Custom seasons
 - Leap months
 - Leap day blocks
+- Named / intercalary days outside of months
+- Inline named holidays in adjacent month grids
 - Configurable start weekday
+- Per-holiday icon or vault image
+- Configurable holiday gradient via Style Settings
 - Optional exact time system for fantasy calendars
+- Style Settings Plugin options
 - Weather-cycle mapping:
   - calendar-based weather years
   - fixed climate-cycle years
@@ -164,7 +169,7 @@ All plugin data is stored as JSON files inside your vault, so it can be inspecte
 
 ### Requirements
 
-- Obsidian **1.7.2** or newer
+- Obsidian **1.13.0** or newer
 
 ### Manual installation
 
@@ -483,6 +488,80 @@ Example:
 - positions = `4`
 
 This means the leap rule triggers every fourth year.
+
+### Named / intercalary days
+
+Named days are one-day calendar entries that exist **outside normal months**.
+They are useful for feast days, year-end days, epagomenal days, and special
+leap days such as the Shire calendar's Overlithe.
+
+Each named day supports:
+
+- an insertion point before or after a base month
+- a display order when multiple named days share that insertion point
+- a display position:
+  - standalone card
+  - end of the previous month
+  - start of the next month
+- whether it participates in weekday progression
+- optional Obsidian icon or vault image
+- a cycle length and active positions
+- optional exclusions for years divisible by one or more values
+
+Named days that participate in weekday progression can be rendered directly in
+an adjacent month grid. They use the holiday gradient and show an icon or image
+instead of a day number.
+
+For example, Shire-style Lithe days can be configured like this:
+
+- **1 Lithe** → `End of previous month`
+- **Midyear's Day** → `Standalone card`, `No weekday`
+- **2 Lithe** → `Start of next month`
+
+Example: Shire-style named days:
+
+```json
+{
+  "intercalaryDays": [
+    {
+      "id": "second-yule",
+      "name": "2 Yule",
+      "insertAfterMonthIndex": -1,
+	  "displayPosition": "standalone",
+      "order": 10,
+      "weekdayMode": "none",
+      "cycleYears": 1,
+      "activeYearPositions": [1],
+      "skipYearsDivisibleBy": []
+    },
+    {
+      "id": "first-lithe",
+      "name": "1 Lithe",
+      "insertAfterMonthIndex": 5,
+	  "displayPosition": "after-previous-month",
+      "order": 10,
+      "weekdayMode": "normal",
+      "cycleYears": 1,
+      "activeYearPositions": [1],
+      "skipYearsDivisibleBy": []
+    },
+    {
+      "id": "overlithe",
+      "name": "Overlithe",
+      "insertAfterMonthIndex": 5,
+	  "displayPosition": "standalone",
+      "order": 30,
+      "weekdayMode": "none",
+      "cycleYears": 4,
+      "activeYearPositions": [4],
+      "skipYearsDivisibleBy": [100]
+    }
+  ]
+}
+```
+
+`skipYearsDivisibleBy: [100]` means that a day active every fourth year is
+suppressed in years 100, 200, 300, and so on.
 
 ### Weather cycle mapping
 

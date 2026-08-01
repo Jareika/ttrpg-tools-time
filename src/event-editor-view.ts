@@ -135,6 +135,17 @@ export class TimeEventEditorView extends ItemView {
 	this.recurrenceExcludedDates = recurrence?.excludedDates?.map((date) => ({ ...date })) ?? [];
     this.refresh();
   }
+  
+  createEventForDate(date: FantasyDate): void {
+    const calendar = this.plugin.activeCalendar;
+
+    if (!calendar) {
+      return;
+    }
+
+    this.resetForm(calendar, clampDate(date, calendar.definition));
+    this.refresh();
+  }
 
   private async render(): Promise<void> {
     const root = this.contentEl.createDiv({ cls: "time-event-editor" });

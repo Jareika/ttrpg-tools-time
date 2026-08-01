@@ -21,8 +21,13 @@ export type WeatherSourceType = "pack" | "event" | "manual";
 export type WeatherProfileCycleReset = "none" | "intercalation-cycle";
 export type MoonCycleAnchor = "absolute" | "month";
 export type TimelineAlign = "left" | "right";
+export type IntercalaryDayWeekdayMode = "normal" | "none";
 export type MonthWeekdayMode = "continuous" | "reset";
 export type LeapDayPlacement = "standalone" | "append-to-month";
+export type IntercalaryDayDisplayPosition =
+  | "standalone"
+  | "after-previous-month"
+  | "before-next-month";
 export type NegativeYearDisplayMode = "signed" | "absolute";
 export type LargeYearFormat = "plain" | "abbreviated";
 export type TemperatureUnit = "c" | "f";
@@ -137,6 +142,9 @@ export interface FantasyMonth {
   name: string;
   days: number;
   color?: string;
+  kind?: "month" | "intercalary-day";
+  intercalaryDayId?: string;
+  weekdayMode?: IntercalaryDayWeekdayMode;
 }
 
 export interface FantasyLeapMonthRule {
@@ -156,6 +164,21 @@ export interface FantasyLeapDayRule {
   days: number;
   cycleYears: number;
   leapYearPositions: number[];
+}
+
+export interface FantasyIntercalaryDayRule {
+  id: string;
+  name: string;
+  insertAfterMonthIndex: number;
+  displayPosition: IntercalaryDayDisplayPosition;
+  order: number;
+  weekdayMode: IntercalaryDayWeekdayMode;
+  cycleYears: number;
+  activeYearPositions: number[];
+  skipYearsDivisibleBy: number[];
+  color?: string;
+  icon?: string;
+  imageRef?: string;
 }
 
 export interface FantasyWeatherProfileMapping {
@@ -221,6 +244,7 @@ export interface FantasyCalendarDefinition {
   months: FantasyMonth[];
   leapMonths: FantasyLeapMonthRule[];
   leapDays: FantasyLeapDayRule[];
+  intercalaryDays: FantasyIntercalaryDayRule[];
   weatherProfile: FantasyWeatherProfileMapping;
   moons: FantasyMoon[];
   eras: FantasyEra[];
@@ -526,6 +550,16 @@ export interface MoonPhaseTransition {
   timeLabel: string;
 }
 
+export interface MonthGridIntercalaryDay {
+  date: FantasyDate;
+  name: string;
+  color?: string;
+  icon?: string;
+  imageRef?: string;
+  weekdayMode: IntercalaryDayWeekdayMode;
+  displayPosition: IntercalaryDayDisplayPosition;
+}
+
 export interface MonthGridCell {
   day: number | null;
   date: FantasyDate | null;
@@ -533,6 +567,7 @@ export interface MonthGridCell {
   isCursor: boolean;
   markers: DayMarker[];
   seasonColor?: string;
+  intercalaryDay?: MonthGridIntercalaryDay;
 }
 
 export interface MonthGrid {
