@@ -1,5 +1,10 @@
 import { ItemView, Modal, Notice, Setting, WorkspaceLeaf, setIcon } from "obsidian";
-import { clampDate, formatDateWithPattern, getMonthsForYear } from "./calendar";
+import {
+  clampDate,
+  formatDateWithPattern,
+  getEraForDate,
+  getMonthsForYear
+} from "./calendar";
 import { EventExplorerModal } from "./event-explorer-modal";
 import { formatFantasyTime } from "./moons";
 import type TtrpgToolsTimePlugin from "./main";
@@ -42,6 +47,7 @@ interface ControlButtonOptions {
   disabled?: boolean;
   tooltip?: string;
   iconOnly?: boolean;
+  active?: boolean;
   classNames?: string[];
 }
 
@@ -176,19 +182,16 @@ export class TimeControlView extends ItemView {
       }
     });
 
-    this.createActionButton(quickActions, {
-      icon: "cloud-drizzle",
-      label: "Apply weather packs to date ranges",
-      iconOnly: true,
-      disabled: !calendar,
-      onClick: () => {
-        if (!calendar) {
-          return;
+    if (calendar?.weatherEnabled) {
+      this.createActionButton(quickActions, {
+        icon: "cloud-drizzle",
+        label: "Apply weather packs to date ranges",
+        iconOnly: true,
+        onClick: () => {
+          new WeatherRangeBatchModal(this.plugin, calendar).open();
         }
-
-        new WeatherRangeBatchModal(this.plugin, calendar).open();
-      }
-    });
+      });
+    }
 
     this.createActionButton(quickActions, {
       icon: "cloud",
@@ -244,6 +247,30 @@ export class TimeControlView extends ItemView {
       disabled: !calendar,
       onClick: () => {
         this.plugin.openEditActiveCalendarModal(() => this.refresh());
+      }
+    });
+	
+    const activeEraDescription = calendar
+      ? getEraForDate(calendar.definition, calendar.state.cursorDate)?.description?.trim()
+      : "";
+
+    this.createActionButton(quickActions, {
+      icon: "scroll-text",
+      label: "Toggle era description",
+      iconOnly: true,
+      active: calendar?.state.showEraDescription === true,
+      disabled: !calendar || !activeEraDescription,
+      tooltip: activeEraDescription
+        ? "Show/hide active era description in calendar view"
+        : "The active era has no description",
+      onClick: () => {
+        if (!calendar) {
+          return;
+        }
+
+        void this.plugin.updateActiveCalendarState({
+          showEraDescription: !calendar.state.showEraDescription
+        });
       }
     });
 
@@ -340,6 +367,7 @@ export class TimeControlView extends ItemView {
     button.disabled = options.disabled ?? false;
     button.setAttr("aria-label", options.label);
     button.title = options.tooltip ?? options.label;
+	button.classList.toggle("is-active", options.active === true);
 
     if (options.icon?.trim()) {
       const iconWrap = button.createDiv({ cls: "time-control__button-icon" });

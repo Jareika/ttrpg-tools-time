@@ -7,11 +7,13 @@ settings:
     title: Calendar view
     type: heading
     level: 2
+    collapsed: false
   -
-    id: ttrpg-time-calendar-view-banner-note
-    title: Banner images
-    type: info-text
-    description: Banner images are selected per calendar in the calendar editor. The options below are global calendar-view style overrides.
+    id: ttrpg-time-calendar-general-settings
+    title: General appearance
+    type: heading
+    level: 3
+    collapsed: true
   -
     id: ttrpg-time-calendar-accent
     title: Accent color
@@ -19,22 +21,6 @@ settings:
     format: hex
     default-light: '#cf655f'
     default-dark: '#df8f88'
-  -
-    id: ttrpg-time-calendar-title-color
-    title: Calendar title color
-    type: variable-themed-color
-    format: hex
-    default-light: '#a94f4a'
-    default-dark: '#efaaa3'
-  -
-    id: ttrpg-time-calendar-title-size
-    title: Calendar title size
-    type: variable-number-slider
-    default: 28
-    min: 16
-    max: 42
-    step: 1
-    format: px
   -
     id: ttrpg-time-calendar-panel-radius
     title: Panel radius
@@ -53,6 +39,64 @@ settings:
     max: 24
     step: 1
     format: px
+  -
+    id: ttrpg-time-calendar-day-radius
+    title: Day cell radius
+    type: variable-number-slider
+    default: 12
+    min: 6
+    max: 20
+    step: 1
+    format: px
+  -
+    id: ttrpg-time-calendar-heading-settings
+    title: Calendar headings
+    type: heading
+    level: 3
+    collapsed: true
+  -
+    id: ttrpg-time-calendar-title-color
+    title: Header title color
+    type: variable-themed-color
+    format: hex
+    default-light: '#a94f4a'
+    default-dark: '#efaaa3'
+  -
+    id: ttrpg-time-calendar-title-size
+    title: Header title size
+    type: variable-number-slider
+    default: 28
+    min: 16
+    max: 42
+    step: 1
+    format: px
+  -
+    id: ttrpg-time-calendar-year-title-color
+    title: Year heading color
+    type: variable-themed-color
+    format: hex
+    default-light: '#a94f4a'
+    default-dark: '#efaaa3'
+  -
+    id: ttrpg-time-calendar-year-title-size
+    title: Year heading size
+    type: variable-number-slider
+    default: 28
+    min: 16
+    max: 52
+    step: 1
+    format: px
+  -
+    id: ttrpg-time-calendar-rail-settings
+    title: Banner / calendar rail
+    type: heading
+    level: 3
+    collapsed: true
+  -
+    id: ttrpg-time-calendar-view-banner-note
+    title: Banner images
+    type: info-text
+    description: Banner images are selected per calendar in the calendar editor. The options below are global calendar-view style overrides.
   -
     id: ttrpg-time-calendar-rail-max-width
     title: Banner max width
@@ -112,42 +156,22 @@ settings:
     type: variable-number-slider
     default: 13
     min: 9
-    max: 24
+    max: 40
     step: 1
     format: px
   -
     id: ttrpg-time-calendar-rail-month-color-source
     title: Banner month color source
+    description: Changes to this option are applied after restarting Obsidian.
     type: variable-select
-    default: 'var(--time-month-color, var(--time-rail-month-color))'
+    default: per-month
     options:
       -
         label: Per-month configured color
-        value: 'var(--time-month-color, var(--time-rail-month-color))'
+        value: per-month
       -
         label: Global banner month color
-        value: 'var(--time-rail-month-color)'
-  -
-    id: ttrpg-time-status-bar-display
-    title: Status bar
-    type: variable-select
-    default: revert
-    options:
-      -
-        label: Show (theme default)
-        value: revert
-      -
-        label: Hide
-        value: none
-  -
-    id: ttrpg-time-calendar-day-radius
-    title: Day cell radius
-    type: variable-number-slider
-    default: 12
-    min: 6
-    max: 20
-    step: 1
-    format: px
+        value: global
   -
     id: ttrpg-time-calendar-rail-image-opacity
     title: Banner image opacity
@@ -171,6 +195,12 @@ settings:
       -
         label: Full height
         value: 'auto 100%'
+  -
+    id: ttrpg-time-calendar-holiday-settings
+    title: Holidays and named days
+    type: heading
+    level: 3
+    collapsed: true
   -
     id: ttrpg-time-calendar-holiday-accent
     title: Holiday accent color
@@ -201,6 +231,48 @@ settings:
     max: 48
     step: 1
     format: px
+  -
+    id: ttrpg-time-calendar-marker-settings
+    title: Event markers
+    type: heading
+    level: 3
+    collapsed: true
+  -
+    id: ttrpg-time-calendar-event-marker-size
+    title: Event marker size
+    type: variable-number-slider
+    default: 8
+    min: 4
+    max: 16
+    step: 1
+    format: px
+  -
+    id: ttrpg-time-calendar-event-marker-gap
+    title: Event marker gap
+    type: variable-number-slider
+    default: 6
+    min: 0
+    max: 16
+    step: 1
+    format: px
+  -
+    id: ttrpg-time-calendar-misc-settings
+    title: Other
+    type: heading
+    level: 3
+    collapsed: true
+  -
+    id: ttrpg-time-status-bar-display
+    title: Status bar
+    type: variable-select
+    default: revert
+    options:
+      -
+        label: Show (theme default)
+        value: revert
+      -
+        label: Hide
+        value: none
 */
 
 /* ==========================================================================
@@ -225,6 +297,8 @@ settings:
   --time-rail-image-position: center center;
   --time-calendar-title-color: var(--ttrpg-time-calendar-title-color, var(--time-accent-strong));
   --time-calendar-title-size: var(--ttrpg-time-calendar-title-size, 28px);
+  --time-calendar-year-title-color: var(--ttrpg-time-calendar-year-title-color, var(--time-heading));
+  --time-calendar-year-title-size: var(--ttrpg-time-calendar-year-title-size, 28px);
   --time-rail-background: var(--ttrpg-time-calendar-rail-background, var(--time-panel-bg));
   --time-rail-accent: var(--ttrpg-time-calendar-rail-accent, var(--time-accent));
   --time-rail-title-color: var(--ttrpg-time-calendar-rail-title-color, var(--time-accent));
@@ -232,12 +306,13 @@ settings:
   --time-rail-year-color: var(--ttrpg-time-calendar-rail-year-color, var(--time-heading-soft));
   --time-rail-year-size: var(--ttrpg-time-calendar-rail-year-size, 17px);
   --time-rail-month-size: var(--ttrpg-time-calendar-rail-month-size, 13px);
-  --time-rail-month-color-source: var(--ttrpg-time-calendar-rail-month-color-source, var(--time-month-color, var(--time-rail-month-color)));
   --time-rail-accent-soft: color-mix(in srgb, var(--time-rail-accent) 12%, transparent);
   --time-holiday-accent: var(--ttrpg-time-calendar-holiday-accent, #93b84c);
   --time-holiday-start: var(--ttrpg-time-calendar-holiday-start, #f2eaa7);
   --time-holiday-end: var(--ttrpg-time-calendar-holiday-end, #fff7e8);
   --time-holiday-icon-size: var(--ttrpg-time-calendar-holiday-icon-size, 24px);
+  --time-event-marker-size: var(--ttrpg-time-calendar-event-marker-size, 8px);
+  --time-event-marker-gap: var(--ttrpg-time-calendar-event-marker-gap, 6px);
 
   --time-app-bg: var(--background-primary);
   --time-panel-bg: var(--background-primary);
@@ -709,6 +784,26 @@ body .status-bar {
   transform: translateY(-1px);
 }
 
+.time-control__button.is-active {
+  border-color: var(--time-accent);
+  background: var(--time-accent);
+  color: #fff8ef;
+  box-shadow: 0 0 0 2px var(--time-accent-soft);
+}
+
+.time-control__button.is-active:hover:not(:disabled),
+.time-control__button.is-active:focus-visible {
+  border-color: var(--time-accent);
+  background: var(--time-accent);
+  color: #fff8ef;
+  box-shadow: 0 0 0 2px var(--time-accent-soft);
+  transform: translateY(-1px);
+}
+
+.time-control__button.is-active .time-control__button-icon {
+  color: inherit;
+}
+
 .time-control__button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -927,7 +1022,12 @@ body .status-bar {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   text-align: center;
-  color: var(--time-rail-month-color-source);
+  color: var(--time-month-color, var(--time-rail-month-color));
+}
+
+.time-calendar__rail-month.is-cjk {
+  transform: none;
+  text-orientation: mixed;
 }
 
 .time-calendar__rail-year {
@@ -1003,6 +1103,11 @@ body .status-bar {
   font-weight: 700;
   text-transform: uppercase;
   color: var(--time-month-color, var(--time-heading));
+}
+
+.time-view-title--year {
+  font-size: var(--time-calendar-year-title-size);
+  color: var(--time-calendar-year-title-color);
 }
 
 .time-view-meta {
@@ -1192,8 +1297,11 @@ body .status-bar {
 .time-day-cell__markers {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--time-event-marker-gap);
   min-height: 10px;
+  max-width: 100%;
 }
 
 .time-day-cell--intercalary .time-day-cell__markers--intercalary {
@@ -1206,8 +1314,9 @@ body .status-bar {
 }
 
 .time-day-marker {
-  width: 8px;
-  height: 8px;
+  width: var(--time-event-marker-size);
+  height: var(--time-event-marker-size);
+  flex: 0 0 auto;
   border-radius: 999px;
 }
 
@@ -1317,14 +1426,14 @@ body .status-bar {
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--time-event-marker-gap);
   min-height: 10px;
   margin-top: 8px;
 }
 
 .time-intercalary-day__markers .time-day-marker {
-  width: 10px;
-  height: 10px;
+  width: calc(var(--time-event-marker-size) * 1.25);
+  height: calc(var(--time-event-marker-size) * 1.25);
 }
 
 .time-intercalary-day__meta {
@@ -2312,6 +2421,33 @@ body .status-bar {
     38px;
 }
 
+.time-era-editor__item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(207, 101, 95, 0.18);
+}
+
+.time-era-editor__item:first-of-type {
+  border-top: 0;
+}
+
+.time-era-editor__item .time-collection-editor__row--era {
+  padding: 0;
+  border-top: 0;
+}
+
+.time-era-editor__description-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.time-era-editor__description-field .time-event-editor__textarea {
+  min-height: 72px;
+}
+
 .time-collection-editor__row--moon {
   grid-template-columns:
     minmax(170px, 1fr)
@@ -2601,15 +2737,6 @@ body .status-bar {
 @container (max-width: 350px) {
   .time-calendar__brand {
     font-size: 1rem;
-  }
-
-  .time-day-cell__markers {
-    gap: 4px;
-  }
-
-  .time-day-marker {
-    width: 7px;
-    height: 7px;
   }
 }
 

@@ -100,7 +100,9 @@ export class TimeDayView extends ItemView {
     ]);
 
     const markers = getMarkersForDate(calendar.markers, calendar.state.cursorDate);
-    const weather = resolveWeatherForDate(calendar, calendar.state.cursorDate, weatherYear);
+    const weather = calendar.weatherEnabled
+      ? resolveWeatherForDate(calendar, calendar.state.cursorDate, weatherYear)
+      : null;
 	const temperatureUnit = this.plugin.settings.temperatureUnit;
     const season = getSeasonForDate(calendar.definition, calendar.state.cursorDate);
     const moons = resolveMoonsForDate(calendar, calendar.state.cursorDate);
@@ -139,32 +141,34 @@ export class TimeDayView extends ItemView {
 
     const actions = topbar.createDiv({ cls: "time-day__actions" });
 
-    const weatherWrap = actions.createDiv({ cls: "time-day__weather" });
-    const weatherMain = weatherWrap.createDiv({ cls: "time-day__weather-main" });
+    if (weather) {
+      const weatherWrap = actions.createDiv({ cls: "time-day__weather" });
+      const weatherMain = weatherWrap.createDiv({ cls: "time-day__weather-main" });
 
-    const weatherIcon = weatherMain.createSpan();
-    setIcon(weatherIcon, weather.icon);
-    weatherMain.createSpan({
-      text: formatTemperatureForDisplay(weather.tempHigh, temperatureUnit)
-    });
+      const weatherIcon = weatherMain.createSpan();
+      setIcon(weatherIcon, weather.icon);
+      weatherMain.createSpan({
+        text: formatTemperatureForDisplay(weather.tempHigh, temperatureUnit)
+      });
 
-    const pop = weatherWrap.createDiv({ cls: "time-day__weather-pop" });
-    this.renderWeatherLine(
-      pop,
-      "thermometer",
-      formatTemperatureRangeForDisplay(weather.tempLow, weather.tempHigh, temperatureUnit)
-    );
+      const pop = weatherWrap.createDiv({ cls: "time-day__weather-pop" });
+      this.renderWeatherLine(
+        pop,
+        "thermometer",
+        formatTemperatureRangeForDisplay(weather.tempLow, weather.tempHigh, temperatureUnit)
+      );
 
-    const stateLabel = getWeatherStateLabel(weather);
-    if (stateLabel) {
-      this.renderWeatherLine(pop, weather.icon, stateLabel);
-    }
+      const stateLabel = getWeatherStateLabel(weather);
+      if (stateLabel) {
+        this.renderWeatherLine(pop, weather.icon, stateLabel);
+      }
 
-    this.renderWeatherLine(pop, "wind", weather.windLabel);
-    this.renderWeatherLine(pop, "cloud", weather.cloudsLabel);
+      this.renderWeatherLine(pop, "wind", weather.windLabel);
+      this.renderWeatherLine(pop, "cloud", weather.cloudsLabel);
 
-    if (weather.note) {
-      this.renderWeatherLine(pop, "sticky-note", weather.note);
+      if (weather.note) {
+        this.renderWeatherLine(pop, "sticky-note", weather.note);
+      }
     }
 
     const menuButton = actions.createEl("button", {
@@ -303,7 +307,8 @@ export class TimeDayView extends ItemView {
   ): void {
     const menu = new Menu();
 
-    menu.addItem((item) =>
+    if (calendar.weatherEnabled) {
+	menu.addItem((item) =>
       item.setTitle("Edit day weather").setIcon("cloud").onClick(() => {
         const currentEntry = getWeatherDayEntry(weatherYear, calendar.state.cursorDate);
 
@@ -380,6 +385,7 @@ export class TimeDayView extends ItemView {
         void this.plugin.resetWeatherDayToDefaultPack(calendar.id, calendar.state.cursorDate);
       })
     );
+    }
 
     menu.addItem((item) =>
       item.setTitle("Open event editor").setIcon("plus-circle").onClick(() => {

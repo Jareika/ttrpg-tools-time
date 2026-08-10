@@ -49,6 +49,7 @@ interface EraDraft {
   id: string;
   name: string;
   shortName: string;
+  description: string;
   startYear: number;
   startMonthIndex: number;
   endYear: number | null;
@@ -79,6 +80,11 @@ interface MoonDraft {
 
 interface NamedYearDraft {
   year: number;
+  name: string;
+}
+
+interface NamedWeekDraft {
+  week: number;
   name: string;
 }
 
@@ -122,6 +128,7 @@ export class CalendarEditorModal extends Modal {
   private months: MonthDraft[];
   private moons: MoonDraft[];
   private namedYears: NamedYearDraft[];
+  private namedWeeks: NamedWeekDraft[];
   private startWeekdayIndex: number;
   private todayYear: number;
   private monthWeekdayMode: MonthWeekdayMode;
@@ -138,6 +145,7 @@ export class CalendarEditorModal extends Modal {
   private intercalaryDays: FantasyIntercalaryDayRule[];
   private weatherProfile: FantasyWeatherProfileMapping;
   private defaultWeatherPackId: string;
+  private weatherEnabled: boolean;
   private readonly selectedTagPackIds: Set<string>;
   private readonly selectedWeatherPackIds: Set<string>;
   private autoGenerateLinkedWeatherReferences: boolean;
@@ -171,12 +179,16 @@ export class CalendarEditorModal extends Modal {
     this.description = source?.description ?? "";
 	this.bannerImageRef = source?.bannerImageRef ?? "";
     this.eras = definition
-      ? definition.eras.map((era) => ({ ...era }))
+      ? definition.eras.map((era) => ({
+          ...era,
+          description: era.description ?? ""
+        }))
       : [
           {
             id: slugify("ERA"),
             name: "Era 1",
             shortName: "ERA",
+			description: "",
             startYear: 0,
             endYear: null,
             endMonthIndex: null,
@@ -197,12 +209,17 @@ export class CalendarEditorModal extends Modal {
       phaseLabels: [...moon.phaseLabels]
     }));
     this.namedYears = (definition?.yearNames ?? []).map((entry) => ({ ...entry }));
+	this.namedWeeks = (definition?.namedWeeks ?? []).map((entry) => ({ ...entry }));
     this.startWeekdayIndex = definition?.startWeekdayIndex ?? 0;
     this.todayYear = state?.todayDate.year ?? 1166;
     this.monthWeekdayMode = definition?.monthWeekdayMode ?? "continuous";
     this.yearDisplay = definition?.yearDisplay
       ? { ...definition.yearDisplay }
-      : { negativeYearsMode: "signed", largeYearFormat: "plain" };
+      : {
+          negativeYearsMode: "signed",
+          largeYearFormat: "plain",
+          eraYearMode: "absolute"
+        };
     this.todayMonthIndex = state?.todayDate.monthIndex ?? 0;
     this.todayDay = state?.todayDate.day ?? 1;
 	this.savedActiveView = state?.activeView ?? "year";
@@ -240,6 +257,7 @@ export class CalendarEditorModal extends Modal {
       : { ...DEFAULT_WEATHER_PROFILE };
 
 	this.defaultWeatherPackId = source?.defaultWeatherPackId ?? "general";
+	this.weatherEnabled = source?.weatherEnabled ?? true;
     this.selectedTagPackIds = new Set(source?.linkedTagPackIds ?? []);
     this.selectedWeatherPackIds = new Set(source?.linkedWeatherPackIds ?? []);
     this.autoGenerateLinkedWeatherReferences = source?.autoGenerateLinkedWeatherReferences ?? false;
@@ -325,6 +343,10 @@ export class CalendarEditorModal extends Modal {
 
     createManagerButton(shortcutGrid, "Named years", () => {
       this.openNamedYearEditorModal();
+    });
+	
+    createManagerButton(shortcutGrid, "Named weeks", () => {
+      this.openNamedWeekEditorModal();
     });
 
     createManagerButton(shortcutGrid, "Seasons", () => {
@@ -427,6 +449,14 @@ export class CalendarEditorModal extends Modal {
         this.yearDisplay.largeYearFormat = checked ? "abbreviated" : "plain";
       }
     });
+	
+    createCompactCheckbox(displayChecks, {
+      label: "Show years relative to active era",
+      checked: this.yearDisplay.eraYearMode === "relative",
+      onChange: (checked) => {
+        this.yearDisplay.eraYearMode = checked ? "relative" : "absolute";
+      }
+    });
 
     const timeBlock = setupGrid.createDiv({
       cls: "time-calendar-editor__setup-block"
@@ -519,6 +549,26 @@ export class CalendarEditorModal extends Modal {
     clearBannerButton.addEventListener("click", () => {
       this.bannerImageRef = "";
       void this.render();
+    });
+	
+    const weatherBlock = setupGrid.createDiv({
+      cls: "time-calendar-editor__setup-block"
+    });
+    weatherBlock.createDiv({
+      cls: "time-event-editor__block-title",
+      text: "Weather system"
+    });
+    weatherBlock.createDiv({
+      cls: "time-frontmatter-block-note",
+      text: "Disable this when this calendar does not use generated or manual weather."
+    });
+
+    createCompactCheckbox(weatherBlock, {
+      label: "Enable weather system",
+      checked: this.weatherEnabled,
+      onChange: (checked) => {
+        this.weatherEnabled = checked;
+      }
     });
 
     const footer = contentEl.createDiv({ cls: "time-modal__footer" });
@@ -623,6 +673,13 @@ export class CalendarEditorModal extends Modal {
       void this.render();
     }).open();
   }
+  
+  private openNamedWeekEditorModal(): void {
+    new NamedWeekEditorModal(this.app, this.namedWeeks, (nextNamedWeeks) => {
+      this.namedWeeks = nextNamedWeeks;
+      void this.render();
+    }).open();
+  }
 
   private getStartWeekdayName(): string {
     if (this.weekdays.length === 0) {
@@ -687,6 +744,7 @@ export class CalendarEditorModal extends Modal {
           id: slugify(era.id || safeShortName || safeName),
           name: safeName,
           shortName: safeShortName,
+		  description: era.description?.trim() || undefined,
 		  ...normalizeEraEndDraft(era, sanitizedMonths),
           startYear: Math.trunc(era.startYear || 0),
           startMonthIndex: safeStartMonthIndex,
@@ -741,6 +799,14 @@ export class CalendarEditorModal extends Modal {
         name: entry.name.trim()
       }))
       .filter((entry) => entry.name.length > 0);
+	  
+    const sanitizedNamedWeeks = this.namedWeeks
+      .map((entry, index) => ({
+        week: Math.max(1, Math.trunc(entry.week || index + 1)),
+        name: entry.name.trim()
+      }))
+      .filter((entry) => entry.name.length > 0)
+      .sort((left, right) => left.week - right.week);
 
     const sanitizedSeasons = this.seasons.map((season, index) => {
       const seasonCycleLength = getSeasonCycleLengthForDraft(this.weatherProfile, sanitizedMonths);
@@ -854,6 +920,7 @@ export class CalendarEditorModal extends Modal {
         weatherProfile: this.weatherProfile,
         moons: sanitizedMoons,
         yearNames: sanitizedNamedYears,
+		namedWeeks: sanitizedNamedWeeks,
         startWeekdayIndex: clamp(this.startWeekdayIndex, 0, sanitizedWeekdays.length - 1),
 		monthWeekdayMode: this.monthWeekdayMode,
         seasons: sanitizedSeasons,
@@ -875,9 +942,11 @@ export class CalendarEditorModal extends Modal {
           year: this.todayYear,
           monthIndex: this.todayMonthIndex,
           day: this.todayDay
-        }
+        },
+        showEraDescription: this.existing?.state.showEraDescription ?? false
       },
       bannerImageRef: this.bannerImageRef.trim() || undefined,
+	  weatherEnabled: this.weatherEnabled,
 	  defaultWeatherPackId: this.defaultWeatherPackId,
 	  autoGenerateLinkedWeatherReferences: this.autoGenerateLinkedWeatherReferences,
 	  timeline: cloneCalendarTimelineStyle(this.timeline),
@@ -1374,7 +1443,10 @@ class EraEditorModal extends Modal {
   ) {
     super(app);
 	this.months = months.map((month) => ({ ...month }));
-    this.eras = eras.map((era) => ({ ...era }));
+    this.eras = eras.map((era) => ({
+      ...era,
+      description: era.description ?? ""
+    }));
     this.onSave = onSave;
   }
 
@@ -1408,7 +1480,10 @@ class EraEditorModal extends Modal {
     }
 
     this.eras.forEach((era, index) => {
-      const row = list.createDiv({ cls: "time-collection-editor__row time-collection-editor__row--era" });
+      const eraItem = list.createDiv({ cls: "time-era-editor__item" });
+      const row = eraItem.createDiv({
+        cls: "time-collection-editor__row time-collection-editor__row--era"
+      });
 
       const nameInput = row.createEl("input", { cls: "time-collection-editor__input" });
       nameInput.type = "text";
@@ -1477,6 +1552,24 @@ class EraEditorModal extends Modal {
         this.eras.splice(index, 1);
         this.render();
       });
+
+      const descriptionField = eraItem.createDiv({
+        cls: "time-era-editor__description-field"
+      });
+      descriptionField.createEl("label", {
+        cls: "time-calendar-editor__mini-label",
+        text: "Description"
+      });
+
+      const descriptionInput = descriptionField.createEl("textarea", {
+        cls: "time-event-editor__textarea"
+      });
+      descriptionInput.rows = 2;
+      descriptionInput.placeholder = "Optional era description";
+      descriptionInput.value = era.description ?? "";
+      descriptionInput.addEventListener("input", () => {
+        this.eras[index].description = descriptionInput.value;
+      });
     });
 
     const toolbar = contentEl.createDiv({ cls: "time-collection-editor__toolbar" });
@@ -1485,6 +1578,7 @@ class EraEditorModal extends Modal {
         id: "",
         name: `Era ${this.eras.length + 1}`,
         shortName: `ERA${this.eras.length + 1}`,
+		description: "",
         startYear: 0,
         startMonthIndex: 0,
         startDay: 1
@@ -1517,6 +1611,7 @@ class EraEditorModal extends Modal {
         id: slugify(era.id || safeShortName || safeName),
         name: safeName,
         shortName: safeShortName,
+		description: era.description?.trim() || undefined,
 		...normalizedEnd,
         startYear: Math.trunc(era.startYear || 0),
         startMonthIndex: safeStartMonthIndex,
@@ -2995,6 +3090,102 @@ class NamedYearEditorModal extends Modal {
         .filter((entry) => entry.name.length > 0)
     );
     this.close();
+  }
+}
+
+class NamedWeekEditorModal extends Modal {
+  private namedWeeks: NamedWeekDraft[];
+
+  constructor(
+    app: App,
+    namedWeeks: NamedWeekDraft[],
+    private readonly onSave: (namedWeeks: NamedWeekDraft[]) => void
+  ) {
+    super(app);
+    this.namedWeeks = namedWeeks.map((entry) => ({ ...entry }));
+  }
+
+  onOpen(): void {
+    prepareFlexibleModal(this);
+    this.render();
+  }
+
+  private render(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("time-modal");
+    contentEl.createEl("h2", { text: "Configure named weeks" });
+
+    const list = contentEl.createDiv({ cls: "time-collection-editor__list" });
+
+    if (this.namedWeeks.length === 0) {
+      list.createDiv({
+        cls: "time-collection-editor__empty",
+        text: "No named weeks defined yet."
+      });
+    }
+
+    this.namedWeeks.forEach((entry, index) => {
+      const row = list.createDiv({
+        cls: "time-collection-editor__row time-collection-editor__row--named-year"
+      });
+
+      const weekInput = row.createEl("input", {
+        cls: "time-collection-editor__input"
+      });
+      weekInput.type = "number";
+      weekInput.min = "1";
+      weekInput.value = String(entry.week);
+      weekInput.addEventListener("input", () => {
+        this.namedWeeks[index].week = Math.max(1, Math.trunc(Number(weekInput.value) || 1));
+      });
+
+      const nameInput = row.createEl("input", {
+        cls: "time-collection-editor__input"
+      });
+      nameInput.type = "text";
+      nameInput.placeholder = "Week name";
+      nameInput.value = entry.name;
+      nameInput.addEventListener("input", () => {
+        this.namedWeeks[index].name = nameInput.value;
+      });
+
+      createDeleteIconButton(row, () => {
+        this.namedWeeks.splice(index, 1);
+        this.render();
+      });
+    });
+
+    const toolbar = contentEl.createDiv({ cls: "time-collection-editor__toolbar" });
+    createManagerButton(toolbar, "Add named week", () => {
+      this.namedWeeks.push({
+        week: this.namedWeeks.length + 1,
+        name: ""
+      });
+      this.render();
+    }, false, true);
+
+    const footer = contentEl.createDiv({ cls: "time-modal__footer" });
+    new Setting(footer).addButton((button) => {
+      button.setButtonText("Save");
+      button.setCta();
+      button.onClick(() => {
+        this.onSave(
+          this.namedWeeks
+            .map((entry, index) => ({
+              week: Math.max(1, Math.trunc(entry.week || index + 1)),
+              name: entry.name.trim()
+            }))
+            .filter((entry) => entry.name.length > 0)
+            .sort((left, right) => left.week - right.week)
+        );
+        this.close();
+      });
+    });
+    new Setting(footer).addButton((button) => {
+      button.setButtonText("Cancel");
+      button.onClick(() => this.close());
+    });
   }
 }
 

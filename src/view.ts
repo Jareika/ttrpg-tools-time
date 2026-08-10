@@ -5,10 +5,12 @@ import {
   formatDisplayYear,
   formatLongDate,
   getEraShortLabel,
+  getEraForDate,
   getInlineIntercalaryHostMonthIndex,
   getIntercalaryDayRuleForDate,
   getMonth,
   getMonthsForYear,
+  getNamedWeekForDate,
   isInlineIntercalaryDate,
   isIntercalaryMonth,
   getSeasonForDate,
@@ -114,6 +116,11 @@ export class TimeCalendarView extends ItemView {
 
   private renderRail(parent: HTMLElement, calendar: CalendarFile): void {
     const { definition, state } = calendar;
+    const currentMonth = getMonth(
+      definition,
+      state.cursorDate.monthIndex,
+      state.cursorDate.year
+    );
 
     const rail = parent.createDiv({ cls: "time-calendar__rail" });
     const bannerImageRef = calendar.bannerImageRef?.trim();
@@ -136,20 +143,27 @@ export class TimeCalendarView extends ItemView {
     rail.createDiv({ cls: "time-calendar__rail-divider" });
     rail.createDiv({
       cls: "time-calendar__rail-month",
-      text: getMonth(definition, state.cursorDate.monthIndex, state.cursorDate.year).name
+      text: currentMonth.name
     });
     const railMonth = rail.lastElementChild as HTMLElement;
-    const monthColor = getMonth(
-      definition,
-      state.cursorDate.monthIndex,
-      state.cursorDate.year
-    ).color;
-    if (monthColor) {
+    const monthColor = currentMonth.color;
+
+    if (containsCjkCharacters(currentMonth.name)) {
+      railMonth.addClass("is-cjk");
+    }
+
+    const monthColorSource = getComputedStyle(rail)
+      .getPropertyValue("--ttrpg-time-calendar-rail-month-color-source")
+      .trim()
+      .toLowerCase();
+
+    if (monthColor && monthColorSource !== "global") {
       railMonth.style.setProperty("--time-month-color", monthColor);
     }
+
     rail.createDiv({
       cls: "time-calendar__rail-year",
-      text: formatDisplayYear(definition, state.cursorDate.year, "compact")
+      text: formatDisplayYear(definition, state.cursorDate, "compact")
     });
   }
 
@@ -291,12 +305,11 @@ export class TimeCalendarView extends ItemView {
       calendar,
       state.cursorDate
     );
-    const displayDate = {
-      year: state.cursorDate.year,
-      monthIndex: displayMonthIndex,
-      day: 1
-    };
     const month = getMonth(definition, displayMonthIndex, state.cursorDate.year);
+    const namedWeek = getNamedWeekForDate(definition, state.cursorDate);
+    const weekLabel =
+      namedWeek ??
+      `Week ${getWeekIndexInMonth(definition, state.cursorDate) + 1}`;
 	
     if (isIntercalaryMonth(month) && !isInlineIntercalaryDate(definition, state.cursorDate)) {
       this.renderIntercalaryDaySection(container, calendar, state.cursorDate, eventIndexYear);
@@ -314,8 +327,16 @@ export class TimeCalendarView extends ItemView {
     }
     intro.createDiv({
       cls: "time-view-meta",
-      text: `Week ${getWeekIndexInMonth(definition, displayDate) + 1} • ${formatDisplayYear(definition, state.cursorDate.year, "verbose")}${formatEraSuffix(definition, state.cursorDate)}`
+      text: this.getCalendarSubheader(
+        calendar,
+        `${weekLabel} • ${formatDisplayYear(definition, state.cursorDate, "verbose")}${formatEraSuffix(definition, state.cursorDate)}`,
+        state.cursorDate
+      )
     });
+	
+    if (this.isEraDescriptionVisible(calendar)) {
+      return;
+    }
 
     this.renderWeekdayHeader(container, calendar);
 	const showWeekNumbers = this.shouldShowWeekNumbers();
@@ -371,8 +392,16 @@ export class TimeCalendarView extends ItemView {
     }
     intro.createDiv({
       cls: "time-view-meta",
-      text: `${formatDisplayYear(definition, state.cursorDate.year, "verbose")}${formatEraSuffix(definition, state.cursorDate)} • ${month.days} days`
+      text: this.getCalendarSubheader(
+        calendar,
+        `${formatDisplayYear(definition, state.cursorDate, "verbose")}${formatEraSuffix(definition, state.cursorDate)} • ${month.days} days`,
+        state.cursorDate
+      )
     });
+	
+    if (this.isEraDescriptionVisible(calendar)) {
+      return;
+    }
 
     this.renderMonthSection(
       container,
@@ -398,19 +427,27 @@ export class TimeCalendarView extends ItemView {
 
     const intro = container.createDiv({ cls: "time-view-frame time-view-frame--intro" });
     intro.createDiv({
-      cls: "time-view-title",
-      text: formatDisplayYear(definition, state.cursorDate.year, "verbose")
+      cls: "time-view-title time-view-title--year",
+      text: formatDisplayYear(definition, state.cursorDate, "verbose")
     });
     intro.createDiv({
       cls: "time-view-meta",
-      text: [
-        `${getYearLength(definition, state.cursorDate.year)} days`,
-        `${getMonthsForYear(definition, state.cursorDate.year).filter(
-          (month) => !isIntercalaryMonth(month)
-        ).length} months`,
-        getEraShortLabel(definition, state.cursorDate)
-      ].filter((entry) => entry.length > 0).join(" • ")
+      text: this.getCalendarSubheader(
+        calendar,
+        [
+          `${getYearLength(definition, state.cursorDate.year)} days`,
+          `${getMonthsForYear(definition, state.cursorDate.year).filter(
+            (month) => !isIntercalaryMonth(month)
+          ).length} months`,
+          getEraShortLabel(definition, state.cursorDate)
+        ].filter((entry) => entry.length > 0).join(" • "),
+        state.cursorDate
+      )
     });
+	
+    if (this.isEraDescriptionVisible(calendar)) {
+      return;
+    }
 
     getMonthsForYear(definition, state.cursorDate.year).forEach((month, monthIndex) => {
       if (isIntercalaryMonth(month)) {
@@ -504,7 +541,7 @@ export class TimeCalendarView extends ItemView {
     }
 
     const meta = [
-      formatDisplayYear(calendar.definition, date.year, "verbose"),
+      formatDisplayYear(calendar.definition, date, "verbose"),
       getEraShortLabel(calendar.definition, date),
       events.length > 0
         ? `${events.length} event${events.length === 1 ? "" : "s"}`
@@ -666,12 +703,16 @@ export class TimeCalendarView extends ItemView {
     }
 
     const season = getSeasonForDate(calendar.definition, cellData.date);
-    const weather = resolveWeatherForDate(calendar, cellData.date, weatherYear);
-    const temperatureRange = formatTemperatureRangeForDisplay(
-      weather.tempLow,
-      weather.tempHigh,
-      this.plugin.settings.temperatureUnit
-    );
+    const weather = calendar.weatherEnabled
+      ? resolveWeatherForDate(calendar, cellData.date, weatherYear)
+      : null;
+    const temperatureRange = weather
+      ? formatTemperatureRangeForDisplay(
+          weather.tempLow,
+          weather.tempHigh,
+          this.plugin.settings.temperatureUnit
+        )
+      : null;
     const eventDots = getEventDotsForDate(eventIndexYear, cellData.date);
 
     cell.createDiv({
@@ -700,8 +741,8 @@ export class TimeCalendarView extends ItemView {
       season ? `Season: ${season.name}` : null,
       eventDots.length > 0 ? `${eventDots.length} event${eventDots.length === 1 ? "" : "s"}` : null,
       temperatureRange,
-      weather.conditionLabel,
-      weather.windLabel,
+      weather?.conditionLabel,
+      weather?.windLabel,
       markerLabels.length > 0 ? `Entries: ${markerLabels.join(", ")}` : null
     ].filter((entry): entry is string => Boolean(entry));
 
@@ -844,11 +885,7 @@ export class TimeCalendarView extends ItemView {
 
     switch (state.activeView) {
       case "week":
-        nextDate = shiftDay(
-          state.cursorDate,
-          direction * definition.weekdays.length,
-          definition
-        );
+        nextDate = this.getAdjacentVisibleWeekDate(calendar, direction);
         break;
       case "month":
         nextDate = shiftMonth(state.cursorDate, direction, definition);
@@ -860,6 +897,166 @@ export class TimeCalendarView extends ItemView {
     }
 
     await this.plugin.updateActiveCalendarState({ cursorDate: nextDate });
+  }
+  
+  private getAdjacentVisibleWeekDate(
+    calendar: CalendarFile,
+    direction: number
+  ): FantasyDate {
+    const { definition, state, markers } = calendar;
+    const cursorDate = state.cursorDate;
+    const cursorMonth = getMonth(
+      definition,
+      cursorDate.monthIndex,
+      cursorDate.year
+    );
+    const isStandaloneIntercalaryDay =
+      isIntercalaryMonth(cursorMonth) &&
+      !isInlineIntercalaryDate(definition, cursorDate);
+
+    let preferredColumn = -1;
+
+    if (!isStandaloneIntercalaryDay) {
+      const displayMonthIndex = this.getDisplayMonthIndexForDate(
+        calendar,
+        cursorDate
+      );
+      const grid = buildMonthGrid(
+        definition,
+        cursorDate.year,
+        displayMonthIndex,
+        cursorDate,
+        state.todayDate,
+        markers
+      );
+      const currentRowIndex = grid.rows.findIndex((row) =>
+        row.some((cell) => sameDate(cell.date, cursorDate))
+      );
+
+      if (currentRowIndex >= 0) {
+        const currentRow = grid.rows[currentRowIndex] ?? [];
+        preferredColumn = currentRow.findIndex((cell) =>
+          sameDate(cell.date, cursorDate)
+        );
+
+        const adjacentRow = grid.rows[currentRowIndex + direction];
+        if (adjacentRow) {
+          const date = this.getWeekRowTargetDate(
+            adjacentRow,
+            preferredColumn,
+            direction
+          );
+
+          if (date) {
+            return date;
+          }
+        }
+      }
+    }
+
+    const adjacentMonthDate = this.getAdjacentWeekMonthDate(
+      calendar,
+      direction
+    );
+    const adjacentMonth = getMonth(
+      definition,
+      adjacentMonthDate.monthIndex,
+      adjacentMonthDate.year
+    );
+
+    // Eigenständige benannte bzw. Schalttage bleiben eine eigene Wochenansicht.
+    if (isIntercalaryMonth(adjacentMonth)) {
+      return adjacentMonthDate;
+    }
+
+    const targetGrid = buildMonthGrid(
+      definition,
+      adjacentMonthDate.year,
+      adjacentMonthDate.monthIndex,
+      cursorDate,
+      state.todayDate,
+      markers
+    );
+    const targetRow =
+      direction > 0
+        ? targetGrid.rows[0]
+        : targetGrid.rows[targetGrid.rows.length - 1];
+    const targetDate = targetRow
+      ? this.getWeekRowTargetDate(targetRow, preferredColumn, direction)
+      : null;
+
+    return targetDate ??
+      shiftDay(
+        cursorDate,
+        direction * definition.weekdays.length,
+        definition
+      );
+  }
+
+  private getWeekRowTargetDate(
+    row: MonthGridCell[],
+    preferredColumn: number,
+    direction: number
+  ): FantasyDate | null {
+    const sameColumnDate =
+      preferredColumn >= 0
+        ? row[preferredColumn]?.date ?? null
+        : null;
+
+    if (sameColumnDate) {
+      return { ...sameColumnDate };
+    }
+
+    const dates: FantasyDate[] = [];
+
+    row.forEach((cell) => {
+      if (cell.date) {
+        dates.push(cell.date);
+      }
+    });
+
+    const fallback =
+      direction > 0
+        ? dates[0]
+        : dates[dates.length - 1];
+
+    return fallback ? { ...fallback } : null;
+  }
+
+  private getAdjacentWeekMonthDate(
+    calendar: CalendarFile,
+    direction: number
+  ): FantasyDate {
+    const { definition, state } = calendar;
+    const displayMonthIndex = this.getDisplayMonthIndexForDate(
+      calendar,
+      state.cursorDate
+    );
+    let candidate: FantasyDate = {
+      year: state.cursorDate.year,
+      monthIndex: displayMonthIndex,
+      day: 1
+    };
+
+    for (let guard = 0; guard < 1000; guard += 1) {
+      candidate = shiftMonth(candidate, direction, definition);
+
+      const month = getMonth(
+        definition,
+        candidate.monthIndex,
+        candidate.year
+      );
+
+      if (!isIntercalaryMonth(month)) {
+        return candidate;
+      }
+
+      if (!isInlineIntercalaryDate(definition, candidate)) {
+        return candidate;
+      }
+    }
+
+    return candidate;
   }
 
   private async selectDate(date: FantasyDate): Promise<void> {
@@ -932,11 +1129,33 @@ export class TimeCalendarView extends ItemView {
   private shouldShowWeekNumbers(): boolean {
     return this.plugin.settings.showCalendarWeekNumbers;
   }
+  
+  private getCalendarSubheader(
+    calendar: CalendarFile,
+    fallback: string,
+    date: FantasyDate
+  ): string {
+    if (!calendar.state.showEraDescription) {
+      return fallback;
+    }
+
+    return getEraForDate(calendar.definition, date)?.description?.trim() || fallback;
+  }
+  
+  private isEraDescriptionVisible(calendar: CalendarFile): boolean {
+    return Boolean(
+      calendar.state.showEraDescription &&
+      getEraForDate(
+        calendar.definition,
+        calendar.state.cursorDate
+      )?.description?.trim()
+    );
+  }
 
   private getActiveCalendar(): CalendarFile | null {
     return this.plugin.activeCalendar;
   }
-
+  
   private getDisplayMonthIndexForDate(
     calendar: CalendarFile,
     date: FantasyDate
@@ -983,6 +1202,10 @@ export class TimeCalendarView extends ItemView {
 
     menu.showAtMouseEvent(event);
   }
+}
+
+function containsCjkCharacters(value: string): boolean {
+  return /[\u1100-\u11ff\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af]/u.test(value);
 }
 
 function abbreviateWeekday(label: string, maxChars: number): string {

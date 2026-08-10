@@ -459,6 +459,10 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     if (!calendar) {
       return packs;
     }
+	
+    if (!calendar.weatherEnabled) {
+      return [];
+    }
 
     const linked = new Set(calendar.linkedWeatherPackIds ?? []);
 
@@ -893,6 +897,11 @@ export default class TtrpgToolsTimePlugin extends Plugin {
   }
 
   async loadWeatherYear(calendarId: string, year: number): Promise<WeatherYearFile | null> {
+    const calendar = await this.getCalendarById(calendarId);
+    if (!calendar || !calendar.weatherEnabled) {
+      return null;
+    }
+
     const cacheKey = `${calendarId}::${year}`;
     const cached = this.weatherYearCache.get(cacheKey);
 
@@ -904,11 +913,6 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     if (existing) {
       this.weatherYearCache.set(cacheKey, existing);
       return existing;
-    }
-
-    const calendar = await this.getCalendarById(calendarId);
-    if (!calendar) {
-      return null;
     }
 
     const defaultPackId = await this.resolveDefaultWeatherPackId(calendar);
@@ -959,6 +963,11 @@ export default class TtrpgToolsTimePlugin extends Plugin {
 
     if (!calendar) {
       new Notice("Could not resolve calendar for weather application.");
+      return;
+    }
+	
+    if (!calendar.weatherEnabled) {
+      new Notice("Weather is disabled for this calendar.");
       return;
     }
 
@@ -1118,6 +1127,14 @@ export default class TtrpgToolsTimePlugin extends Plugin {
       patch.activeView !== previousState.activeView
     ) {
       viewTypes.add(CALENDAR_VIEW_TYPE);
+    }
+	
+    if (
+      patch.showEraDescription !== undefined &&
+      patch.showEraDescription !== previousState.showEraDescription
+    ) {
+      viewTypes.add(CALENDAR_VIEW_TYPE);
+      viewTypes.add(CONTROL_VIEW_TYPE);
     }
 
     if (patch.cursorDate && !sameDate(previousState.cursorDate, patch.cursorDate)) {
@@ -2009,12 +2026,20 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     const previousState = this.activeCalendar.state;
     const didActiveViewChange =
       patch.activeView !== undefined && patch.activeView !== previousState.activeView;
+    const didEraDescriptionVisibilityChange =
+      patch.showEraDescription !== undefined &&
+      patch.showEraDescription !== previousState.showEraDescription;
     const didTodayChange =
       patch.todayDate !== undefined && !sameDate(previousState.todayDate, patch.todayDate);
     const didCursorChange =
       patch.cursorDate !== undefined && !sameDate(previousState.cursorDate, patch.cursorDate);
 
-    if (!didActiveViewChange && !didTodayChange && !didCursorChange) {
+    if (
+      !didActiveViewChange &&
+      !didEraDescriptionVisibilityChange &&
+      !didTodayChange &&
+      !didCursorChange
+    ) {
       return;
     }
 
@@ -2056,7 +2081,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     calendar: CalendarFile,
     year: number
   ): Promise<void> {
-    if (!calendar.autoGenerateLinkedWeatherReferences) {
+    if (!calendar.weatherEnabled || !calendar.autoGenerateLinkedWeatherReferences) {
       return;
     }
 

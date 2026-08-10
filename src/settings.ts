@@ -75,7 +75,7 @@ export class TimeSettingTab extends PluginSettingTab {
           },
           {
             name: "Day view date format",
-            desc: "Tokens: YYYY, YY, MM, M, DD, D, MonthName, MonthShort, WW, YW, ERA, WeekdayName, WeekdayShort.",
+            desc: "Tokens: YYYY, YY, EraYear, MM, M, DD, D, MonthName, MonthShort, WW, YW, WeekName, ERA, WeekdayName, WeekdayShort.",
             aliases: ["date", "format"],
             control: {
               type: "text",

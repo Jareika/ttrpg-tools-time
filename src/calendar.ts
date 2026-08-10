@@ -86,7 +86,8 @@ const DEFAULT_TIME_CONFIG: FantasyTimeConfig = {
 
 const DEFAULT_YEAR_DISPLAY: FantasyYearDisplayConfig = {
   negativeYearsMode: "signed",
-  largeYearFormat: "plain"
+  largeYearFormat: "plain",
+  eraYearMode: "absolute"
 };
 
 export const DEFAULT_WEATHER_PROFILE: FantasyWeatherProfileMapping = {
@@ -109,6 +110,7 @@ export const DEFAULT_CALENDAR_DEFINITION: FantasyCalendarDefinition = {
   moons: [],
   eras: buildDefaultEras("Era"),
   yearNames: [],
+  namedWeeks: [],
   startWeekdayIndex: 0,
   monthWeekdayMode: "continuous",
   seasons: buildDefaultSeasons(DEFAULT_MONTHS),
@@ -125,10 +127,12 @@ export const DEFAULT_CALENDAR_FILE: CalendarFile = {
   state: {
     activeView: "year",
     todayDate: { year: 1, monthIndex: 0, day: 1 },
-    cursorDate: { year: 1, monthIndex: 0, day: 1 }
+    cursorDate: { year: 1, monthIndex: 0, day: 1 },
+    showEraDescription: false
   },
   linkedTagPackIds: [],
   linkedWeatherPackIds: [],
+  weatherEnabled: true,
   defaultWeatherPackId: "general",
   markers: [],
   autoGenerateLinkedWeatherReferences: false,
@@ -210,6 +214,7 @@ export function normalizeCalendarFile(raw: unknown): CalendarFile {
 	intercalaryDays: rawDefinition.intercalaryDays,
     weatherProfile: rawDefinition.weatherProfile,
     yearNames: rawDefinition.yearNames,
+	namedWeeks: rawDefinition.namedWeeks,
     startWeekdayIndex: rawDefinition.startWeekdayIndex,
     seasons: rawDefinition.seasons,
     monthWeekdayMode: rawDefinition.monthWeekdayMode,
@@ -228,6 +233,7 @@ export function normalizeCalendarFile(raw: unknown): CalendarFile {
     state,
     linkedTagPackIds: readStringArray(record.linkedTagPackIds),
     linkedWeatherPackIds: readStringArray(record.linkedWeatherPackIds),
+	weatherEnabled: readBoolean(record.weatherEnabled, true),
     defaultWeatherPackId:
       readOptionalString(record.defaultWeatherPackId) ??
       DEFAULT_CALENDAR_FILE.defaultWeatherPackId,
@@ -299,6 +305,7 @@ function normalizeDefinition(raw: unknown): FantasyCalendarDefinition {
     eras: readEras(record.eras, readString(record.eraLabel, DEFAULT_CALENDAR_DEFINITION.eraLabel), normalizedMonths),
     moons: readMoons(record.moons),
     yearNames: readNamedYears(record.yearNames),
+	namedWeeks: readNamedWeeks(record.namedWeeks),
 	monthWeekdayMode: readMonthWeekdayMode(record.monthWeekdayMode),
     startWeekdayIndex: mod(
       readNumber(record.startWeekdayIndex, DEFAULT_CALENDAR_DEFINITION.startWeekdayIndex),
@@ -323,7 +330,8 @@ function normalizeCalendarState(
   return {
     activeView: normalizeViewMode(record.activeView),
     todayDate,
-    cursorDate
+    cursorDate,
+    showEraDescription: readBoolean(record.showEraDescription, false)
   };
 }
 
@@ -616,6 +624,28 @@ function readNamedYears(raw: unknown): FantasyNamedYear[] {
   });
 }
 
+function readNamedWeeks(raw: unknown): FantasyCalendarDefinition["namedWeeks"] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  const byWeek = new Map<number, string>();
+
+  raw.forEach((entry) => {
+    const record = asRecord(entry);
+    const week = Math.max(1, Math.trunc(readNumber(record.week, 0)));
+    const name = readOptionalString(record.name);
+
+    if (name) {
+      byWeek.set(week, name);
+    }
+  });
+
+  return [...byWeek.entries()]
+    .map(([week, name]) => ({ week, name }))
+    .sort((left, right) => left.week - right.week);
+}
+
 function readEras(
   raw: unknown,
   fallbackLabel: string,
@@ -657,6 +687,7 @@ function readEras(
         id: readString(record.id, slugify(shortName || name || `era-${index + 1}`)),
         name,
         shortName,
+		description: readOptionalString(record.description),
         startYear: Math.trunc(readNumber(record.startYear, 0)),
         startMonthIndex,
         endYear: hasEnd ? Math.trunc(readNumber(record.endYear, readNumber(record.startYear, 0))) : undefined,
@@ -765,7 +796,11 @@ function readYearDisplay(raw: unknown): FantasyYearDisplayConfig {
     negativeYearsMode:
       record.negativeYearsMode === "absolute" ? "absolute" : DEFAULT_YEAR_DISPLAY.negativeYearsMode,
     largeYearFormat:
-      record.largeYearFormat === "abbreviated" ? "abbreviated" : DEFAULT_YEAR_DISPLAY.largeYearFormat
+      record.largeYearFormat === "abbreviated" ? "abbreviated" : DEFAULT_YEAR_DISPLAY.largeYearFormat,
+    eraYearMode:
+      record.eraYearMode === "relative"
+        ? "relative"
+        : DEFAULT_YEAR_DISPLAY.eraYearMode
   };
 }
 
@@ -1132,6 +1167,7 @@ export function cloneCalendarDefinition(
       phaseLabels: [...moon.phaseLabels]
     })),
     yearNames: definition.yearNames.map((entry) => ({ ...entry })),
+	namedWeeks: definition.namedWeeks.map((entry) => ({ ...entry })),
     monthWeekdayMode: definition.monthWeekdayMode,
     yearDisplay: { ...definition.yearDisplay },
     seasons: definition.seasons.map((season) => ({ ...season })),
@@ -1146,10 +1182,12 @@ export function cloneCalendarFile(calendar: CalendarFile): CalendarFile {
     state: {
       activeView: calendar.state.activeView,
       todayDate: cloneDate(calendar.state.todayDate),
-      cursorDate: cloneDate(calendar.state.cursorDate)
+      cursorDate: cloneDate(calendar.state.cursorDate),
+      showEraDescription: calendar.state.showEraDescription
     },
     linkedTagPackIds: [...calendar.linkedTagPackIds],
     linkedWeatherPackIds: [...calendar.linkedWeatherPackIds],
+	weatherEnabled: calendar.weatherEnabled,
     defaultWeatherPackId: calendar.defaultWeatherPackId,
     timeline: calendar.timeline ? cloneTimelineStyle(calendar.timeline) : undefined,
 	bannerImageRef: calendar.bannerImageRef,
@@ -1683,10 +1721,66 @@ export function clampDate(
 
 export type YearDisplayVariant = "verbose" | "compact";
 
+export function getEraYear(
+  definition: FantasyCalendarDefinition,
+  date: FantasyDate
+): number {
+  const era = getEraForDate(definition, date);
+
+  if (!era) {
+    return date.year;
+  }
+
+  return date.year - era.startYear + 1;
+}
+
+export function getDisplayYearValue(
+  definition: FantasyCalendarDefinition,
+  input: FantasyDate | number
+): number {
+  const date =
+    typeof input === "number"
+      ? { year: input, monthIndex: 0, day: 1 }
+      : input;
+
+  return definition.yearDisplay.eraYearMode === "relative"
+    ? getEraYear(definition, date)
+    : date.year;
+}
+
 export function formatDisplayYear(
   definition: FantasyCalendarDefinition,
-  year: number,
+  input: FantasyDate | number,
   variant: YearDisplayVariant = "verbose"
+): string {
+  return formatConfiguredYearValue(
+    definition,
+    getDisplayYearValue(definition, input),
+    variant
+  );
+}
+
+export function formatEraYear(
+  definition: FantasyCalendarDefinition,
+  date: FantasyDate,
+  variant: YearDisplayVariant = "verbose"
+): string {
+  return formatConfiguredYearValue(definition, getEraYear(definition, date), variant);
+}
+
+function formatAbsoluteYear(
+  definition: FantasyCalendarDefinition,
+  input: FantasyDate | number,
+  variant: YearDisplayVariant
+): string {
+  const year = typeof input === "number" ? input : input.year;
+  return formatConfiguredYearValue(definition, year, variant);
+}
+
+function formatConfiguredYearValue(
+  definition: FantasyCalendarDefinition,
+  year: number,
+  variant: YearDisplayVariant
 ): string {
   const displayYear =
     definition.yearDisplay.negativeYearsMode === "absolute"
@@ -1806,6 +1900,14 @@ export function getWeekOfYear(definition: FantasyCalendarDefinition, date: Fanta
     day: 1
   });
   return Math.floor((yearStartIndex + getDayOfYear(definition, date) - 1) / definition.weekdays.length) + 1;
+}
+
+export function getNamedWeekForDate(
+  definition: FantasyCalendarDefinition,
+  date: FantasyDate
+): string | null {
+  const week = getWeekOfYear(definition, date);
+  return definition.namedWeeks.find((entry) => entry.week === week)?.name ?? null;
 }
 
 function getWeekCountInMonth(
@@ -2167,16 +2269,20 @@ export function getNamedYear(
 
 export function formatYearLabel(
   definition: FantasyCalendarDefinition,
-  year: number,
+  input: FantasyDate | number,
   variant: YearDisplayVariant = "verbose"
 ): string {
-  const namedYear = getNamedYear(definition, year);
+  const absoluteYear =
+    typeof input === "number"
+      ? input
+      : input.year;
+  const namedYear = getNamedYear(definition, absoluteYear);
 
   if (!namedYear) {
-    return formatDisplayYear(definition, year, variant);
+    return formatDisplayYear(definition, input, variant);
   }
 
-  return `${formatDisplayYear(definition, year, variant)} (${namedYear})`;
+  return `${formatDisplayYear(definition, input, variant)} (${namedYear})`;
 }
 
 export function formatLongDate(
@@ -2187,10 +2293,10 @@ export function formatLongDate(
   const eraLabel = getEraShortLabel(definition, date);
 
   if (isIntercalaryMonth(month)) {
-    return `${month.name} ${formatYearLabel(definition, date.year, "verbose")}${eraLabel ? ` ${eraLabel}` : ""}`;
+    return `${month.name} ${formatYearLabel(definition, date, "verbose")}${eraLabel ? ` ${eraLabel}` : ""}`;
   }
 
-  return `${date.day}. ${month.name} ${formatYearLabel(definition, date.year, "verbose")}${eraLabel ? ` ${eraLabel}` : ""}`;
+  return `${date.day}. ${month.name} ${formatYearLabel(definition, date, "verbose")}${eraLabel ? ` ${eraLabel}` : ""}`;
 }
 
 export function formatDateWithPattern(
@@ -2206,7 +2312,7 @@ export function formatDateWithPattern(
 
   if (isNamedDay && !template.includes("NamedDayName")) {
     const eraLabel = getEraShortLabel(definition, normalized);
-    return `${month.name} ${formatDisplayYear(definition, normalized.year, yearVariant)}${eraLabel ? ` ${eraLabel}` : ""}`;
+    return `${month.name} ${formatDisplayYear(definition, normalized, yearVariant)}${eraLabel ? ` ${eraLabel}` : ""}`;
   }
 
   const weekdayIndex = getWeekdayIndex(definition, normalized);
@@ -2223,11 +2329,13 @@ export function formatDateWithPattern(
 
   const replacements: Array<[string, string]> = [
     ["NamedDayName", isNamedDay ? month.name : ""],
+	["EraYear", formatEraYear(definition, normalized, yearVariant)],
 	["WeekdayName", weekdayName],
     ["WeekdayShort", weekdayShort],
+	["WeekName", getNamedWeekForDate(definition, normalized) ?? ""],
     ["MonthName", month.name],
     ["MonthShort", monthShort],
-    ["YYYY", formatDisplayYear(definition, normalized.year, yearVariant)],
+    ["YYYY", formatAbsoluteYear(definition, normalized, yearVariant)],
     ["YY", String(Math.abs(normalized.year)).slice(-2).padStart(2, "0")],
     ["MM", monthValue.padStart(2, "0")],
     ["DD", dayValue.padStart(2, "0")],

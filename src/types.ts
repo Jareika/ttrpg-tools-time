@@ -30,6 +30,7 @@ export type IntercalaryDayDisplayPosition =
   | "before-next-month";
 export type NegativeYearDisplayMode = "signed" | "absolute";
 export type LargeYearFormat = "plain" | "abbreviated";
+export type EraYearDisplayMode = "absolute" | "relative";
 export type TemperatureUnit = "c" | "f";
 
 export type EventRecurrenceFrequency = "daily" | "weekly" | "monthly" | "yearly";
@@ -107,6 +108,7 @@ export interface FantasyTimeConfig {
 export interface FantasyYearDisplayConfig {
   negativeYearsMode: NegativeYearDisplayMode;
   largeYearFormat: LargeYearFormat;
+  eraYearMode: EraYearDisplayMode;
 }
 
 export interface TimelineStyleColors {
@@ -211,10 +213,16 @@ export interface FantasyNamedYear {
   name: string;
 }
 
+export interface FantasyNamedWeek {
+  week: number;
+  name: string;
+}
+
 export interface FantasyEra {
   id: string;
   name: string;
   shortName: string;
+  description?: string;
   startYear: number;
   startMonthIndex: number;
   endYear?: number;
@@ -249,6 +257,7 @@ export interface FantasyCalendarDefinition {
   moons: FantasyMoon[];
   eras: FantasyEra[];
   yearNames: FantasyNamedYear[];
+  namedWeeks: FantasyNamedWeek[];
   startWeekdayIndex: number;
   monthWeekdayMode: MonthWeekdayMode;
   seasons: FantasySeason[];
@@ -265,6 +274,7 @@ export interface CalendarFile {
   state: CalendarState;
   linkedTagPackIds: string[];
   linkedWeatherPackIds: string[];
+  weatherEnabled: boolean;
   markers: DayMarker[];
   autoGenerateLinkedWeatherReferences?: boolean;
   defaultWeatherPackId?: string;
@@ -292,6 +302,7 @@ export interface CalendarState {
   activeView: CalendarViewMode;
   todayDate: FantasyDate;
   cursorDate: FantasyDate;
+  showEraDescription: boolean;
 }
 
 export interface TagDefinition {

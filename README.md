@@ -437,6 +437,11 @@ sideGapRight: 40
 - `sideGapLeft`
 - `sideGapRight`
 
+### Named weeks
+
+Calendars can optionally assign names to calendar-year week numbers. These
+names are available in the day-view format via the `WeekName` token.
+
 ### Tag filter syntax
 
 Tag filters accept either:
