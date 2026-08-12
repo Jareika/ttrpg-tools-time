@@ -1,13 +1,23 @@
 import { App, MarkdownView, Notice, Plugin, TFile, WorkspaceLeaf } from "obsidian";
 import {
   clampDate,
+  getEraForDate,
   normalizeFantasyClockState,
   normalizeCalendarFile,
   normalizeSettings,
   sameDate,
   shiftDay
 } from "./calendar";
-import { CONTROL_VIEW_TYPE, TimeControlView } from "./control-view";
+import {
+  CONTROL_VIEW_TYPE,
+  TimeControlView,
+  TimelineInsertModal,
+  WeatherRangeBatchModal
+} from "./control-view";
+import {
+  createTimeControlsApi,
+  type TtrpgToolsTimeControlsApi
+} from "./controls-api";
 import { CALENDAR_DAY_VIEW_TYPE, TimeDayView } from "./day-view";
 import { EventExplorerModal } from "./event-explorer-modal";
 import { EVENT_EDITOR_VIEW_TYPE, TimeEventEditorView } from "./event-editor-view";
@@ -106,6 +116,14 @@ export default class TtrpgToolsTimePlugin extends Plugin {
   private readonly timelineIncludedTagRefs = new Set<string>();
   private readonly timelineExcludedTagRefs = new Set<string>();
   private pendingActiveCalendarStateSaveTimer: number | null = null;
+
+  /**
+  * Public interface for TTRPG Tools – Controls and future
+  * TTRPG Tools plugins. This API may be used by external plugins.
+  */
+
+  readonly controlsApi: TtrpgToolsTimeControlsApi =
+    createTimeControlsApi(this);
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -433,6 +451,42 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     }
 
     new EventExplorerModal(this, this.activeCalendar).open();
+  }
+  
+  openTimelineInsertModal(): void {
+    new TimelineInsertModal(this).open();
+  }
+
+  openWeatherRangeBatchModal(): void {
+    if (!this.activeCalendar) {
+      new Notice("No active calendar loaded.");
+      return;
+    }
+
+    if (!this.activeCalendar.weatherEnabled) {
+      new Notice("Weather is disabled for this calendar.");
+      return;
+    }
+
+    new WeatherRangeBatchModal(this, this.activeCalendar).open();
+  }
+
+  async toggleActiveEraDescription(): Promise<void> {
+    const calendar = this.activeCalendar;
+
+    if (!calendar) {
+      return;
+    }
+
+    const era = getEraForDate(calendar.definition, calendar.state.cursorDate);
+    if (!era?.description?.trim()) {
+      new Notice("The active era has no description.");
+      return;
+    }
+
+    await this.updateActiveCalendarState({
+      showEraDescription: !calendar.state.showEraDescription
+    });
   }
 
   async listCalendars(): Promise<CalendarFile[]> {

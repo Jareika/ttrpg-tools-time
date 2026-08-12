@@ -46,6 +46,9 @@
 
 ### Control side pane
 
+The Time control actions are also exposed through a small versioned public
+Controls API. See also TTRPG Tools - Controls.
+
 The control pane provides quick actions in a compact one-column button list.
 
 Current actions:
@@ -849,6 +852,25 @@ The plugin currently registers commands for:
 - Manage tag packs
 - Manage weather packs
 - Reload JSON data
+
+---
+
+## Public Controls API
+
+For integration with **TTRPG Tools - Controls**, the plugin exposes:
+
+```ts
+plugin.controlsApi
+```
+
+The API currently has version `1` and provides:
+
+- `getActions()`
+- `executeAction(actionId)`
+
+Available action ids include calendar navigation, event actions, timeline
+actions, weather tools, Frontmatter tools, calendar/tag-pack management, and
+configured fantasy-time buttons.
 
 ---
 

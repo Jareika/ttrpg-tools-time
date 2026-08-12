@@ -403,7 +403,7 @@ export class TimeControlView extends ItemView {
   }
 }
 
-class WeatherRangeBatchModal extends Modal {
+export class WeatherRangeBatchModal extends Modal {
   private readonly calendar: CalendarFile;
   private rows: WeatherRangeDraft[] = [];
 
@@ -645,7 +645,7 @@ class WeatherRangeBatchModal extends Modal {
   }
 }
 
-class TimelineInsertModal extends Modal {
+export class TimelineInsertModal extends Modal {
   private layout: TimelineInsertLayout = "cal";
   private titleText = "";
   private jumpToToday = true;
