@@ -243,7 +243,7 @@ export class FrontmatterManagerModal extends Modal {
           placeholder: "fc_category",
           value: rule.property,
           onChange: (value) => {
-            this.importDraft.colorMappings[index].property = value;
+            this.importDraft.colorMappings[index].property = value ?? "";
           }
         });
 
@@ -252,7 +252,7 @@ export class FrontmatterManagerModal extends Modal {
           placeholder: "Festival",
           value: rule.value,
           onChange: (value) => {
-            this.importDraft.colorMappings[index].value = value;
+            this.importDraft.colorMappings[index].value = value ?? "";
           }
         });
 

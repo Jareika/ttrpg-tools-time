@@ -56,12 +56,13 @@ export class TimeCalendarView extends ItemView {
     return "calendar";
   }
 
-  onOpen(): void {
+  onOpen(): Promise<void> {
     void this.refresh();
+	return Promise.resolve();
   }
 
-  onClose(): void {
-    // no-op
+  onClose(): Promise<void> {
+    return Promise.resolve();
   }
 
   refresh(): void {
@@ -683,7 +684,9 @@ export class TimeCalendarView extends ItemView {
       cell.addClass("is-empty");
       return;
     }
-	
+
+    const date = cellData.date;
+
     if (cellData.intercalaryDay) {
       this.renderInlineIntercalaryDayCell(cell, cellData, calendar, eventIndexYear);
       return;
@@ -749,7 +752,7 @@ export class TimeCalendarView extends ItemView {
     cell.title = titleParts.join(" • ");
 
     cell.addEventListener("click", () => {
-      void this.selectDate(cellData.date);
+      void this.selectDate(date);
     });
 
     cell.addEventListener("contextmenu", (event) => {

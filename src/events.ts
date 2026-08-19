@@ -19,6 +19,7 @@ import type {
   EventIndexYearFile,
   EventRecurrenceIndexFile,
   EventIndexDay,
+  EventIndexEntry,
   EventYearFile,
   FantasyDate
 } from "./types";
@@ -96,21 +97,23 @@ export function normalizeEventIndexYearFile(raw: unknown): EventIndexYearFile {
     const dayRecord = asRecord(value);
     const itemsRaw = Array.isArray(dayRecord.items) ? dayRecord.items : [];
 
-    const items = itemsRaw
-      .map((itemRaw, index) => {
-        const itemRecord = asRecord(itemRaw);
-        const id = readString(itemRecord.id, "");
-        if (id.length === 0) {
-          return null;
-        }
-        return {
-          id,
-          title: readString(itemRecord.title, `Event ${index + 1}`),
-		  sourceEventId: readOptionalString(itemRecord.sourceEventId),
-          color: readColor(itemRecord.color) ?? "#4e3e3e"
-        };
-      })
-      .filter((entry): entry is { id: string; title: string; color: string } => entry !== null);
+    const items: EventIndexEntry[] = itemsRaw.flatMap((itemRaw, index) => {
+      const itemRecord = asRecord(itemRaw);
+      const id = readString(itemRecord.id, "");
+
+      if (id.length === 0) {
+        return [];
+      }
+
+      const sourceEventId = readOptionalString(itemRecord.sourceEventId);
+
+      return [{
+        id,
+        title: readString(itemRecord.title, `Event ${index + 1}`),
+        ...(sourceEventId ? { sourceEventId } : {}),
+        color: readColor(itemRecord.color) ?? "#4e3e3e"
+      }];
+    });
 
     if (items.length > 0) {
       days[key] = {

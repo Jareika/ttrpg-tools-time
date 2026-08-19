@@ -4,6 +4,7 @@ import {
   formatDateWithPattern,
   formatLongDate,
   formatShortDate,
+  getMonth,
   getMonthsForYear,
   getMarkersForDate,
   getSeasonForDate,
@@ -66,12 +67,13 @@ export class TimeDayView extends ItemView {
     return "sun";
   }
 
-  onOpen(): void {
+  onOpen(): Promise<void> {
     void this.refresh();
+	return Promise.resolve();
   }
 
-  onClose(): void {
-    // no-op
+  onClose(): Promise<void> {
+    return Promise.resolve();
   }
 
   refresh(): void {
@@ -118,7 +120,7 @@ export class TimeDayView extends ItemView {
 
     const dateBlock = dateNav.createDiv({ cls: "time-day__date" });
 
-    dateBlock.createDiv({
+    const dateMain = dateBlock.createDiv({
       cls: "time-day__date-main",
       text: formatDateWithPattern(
         calendar.state.cursorDate,
@@ -127,6 +129,21 @@ export class TimeDayView extends ItemView {
         "compact"
       )
     });
+
+    const currentMonth = getMonth(
+      calendar.definition,
+      calendar.state.cursorDate.monthIndex,
+      calendar.state.cursorDate.year
+    );
+    const dateColorSource = getComputedStyle(root)
+      .getPropertyValue("--ttrpg-time-day-date-color-source")
+      .trim()
+      .toLowerCase();
+
+    if (currentMonth.color && dateColorSource !== "global") {
+      dateMain.style.setProperty("--time-day-date-color", currentMonth.color);
+    }
+
     dateBlock.setAttr("title", formatLongDate(calendar.state.cursorDate, calendar.definition));
 
     const seasonBar = dateBlock.createDiv({ cls: "time-day__season-bar" });

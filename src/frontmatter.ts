@@ -80,7 +80,7 @@ export function buildFrontmatterImportCandidate(
   if (parsedEnd.status === "invalid") {
     return {
       status: "invalid",
-      reason: parsedEnd.reason
+      reason: parsedEnd.reason ?? "Invalid end date."
     };
   }
 

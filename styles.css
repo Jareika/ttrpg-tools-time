@@ -162,7 +162,7 @@ settings:
   -
     id: ttrpg-time-calendar-rail-month-color-source
     title: Banner month color source
-    description: Changes to this option are applied after restarting Obsidian.
+    description: Changes to this option are applied after switching the date.
     type: variable-select
     default: per-month
     options:
@@ -256,6 +256,67 @@ settings:
     step: 1
     format: px
   -
+    id: ttrpg-time-day-view
+    title: Day view
+    type: heading
+    level: 2
+    collapsed: false
+  -
+    id: ttrpg-time-day-view-header-settings
+    title: Date header
+    type: heading
+    level: 3
+    collapsed: true
+  -
+    id: ttrpg-time-day-date-color-source
+    title: Date color source
+    description: Changes to this option are applied after switching the date.
+    type: variable-select
+    default: per-month
+    options:
+      -
+        label: Per-month configured color
+        value: per-month
+      -
+        label: Global Day-view date color
+        value: global
+  -
+    id: ttrpg-time-day-date-color
+    title: Global Day-view date color
+    type: variable-themed-color
+    format: hex
+    default-light: '#a94f4a'
+    default-dark: '#efaaa3'
+  -
+    id: ttrpg-time-day-date-size
+    title: Date size
+    type: variable-number-slider
+    default: 27
+    min: 14
+    max: 40
+    step: 1
+    format: px
+  -
+    id: ttrpg-time-day-view-content-settings
+    title: Content
+    type: heading
+    level: 3
+    collapsed: true
+  -
+    id: ttrpg-time-day-section-title-color
+    title: Section heading color
+    type: variable-themed-color
+    format: hex
+    default-light: '#6f625c'
+    default-dark: '#c7bbb5'
+  -
+    id: ttrpg-time-day-weather-background
+    title: Weather badge background
+    type: variable-themed-color
+    format: hex
+    default-light: '#f5f0ec'
+    default-dark: '#2a2a2a'
+  -
     id: ttrpg-time-calendar-misc-settings
     title: Other
     type: heading
@@ -313,6 +374,16 @@ settings:
   --time-holiday-icon-size: var(--ttrpg-time-calendar-holiday-icon-size, 24px);
   --time-event-marker-size: var(--ttrpg-time-calendar-event-marker-size, 8px);
   --time-event-marker-gap: var(--ttrpg-time-calendar-event-marker-gap, 6px);
+  --time-day-date-color: var(--ttrpg-time-day-date-color, var(--time-heading));
+  --time-day-date-size: var(--ttrpg-time-day-date-size, 27px);
+  --time-day-section-title-color: var(
+    --ttrpg-time-day-section-title-color,
+    var(--time-heading-soft)
+  );
+  --time-day-weather-bg: var(
+    --ttrpg-time-day-weather-background,
+    var(--time-weather-bg)
+  );
 
   --time-app-bg: var(--background-primary);
   --time-panel-bg: var(--background-primary);
@@ -1499,13 +1570,13 @@ body .status-bar {
 }
 
 .time-day__date-main {
-  font-size: clamp(0.95rem, 6.2cqi, 1.7rem);
+  font-size: clamp(0.95rem, 6.2cqi, var(--time-day-date-size));
   line-height: 0.95;
   font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--time-heading);
+  color: var(--time-day-date-color);
 }
 
 .time-day__season-bar {
@@ -1535,7 +1606,7 @@ body .status-bar {
   border-radius: 9px;
   white-space: nowrap;
   color: var(--time-strong-text);
-  background: var(--time-weather-bg);
+  background: var(--time-day-weather-bg);
   cursor: default;
 }
 
@@ -1611,7 +1682,7 @@ body .status-bar {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--time-heading-soft);
+  color: var(--time-day-section-title-color);
 }
 
 .time-day__events {

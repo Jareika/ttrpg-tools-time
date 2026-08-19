@@ -391,6 +391,11 @@ class WeatherPackMonthProfilesModal extends Modal {
       };
 
       this.profiles[index] = { ...profile, monthIndex: index };
+	  
+      const profileDraft = this.profiles[index];
+      if (!profileDraft) {
+        return;
+      }
 
       const row = table.createDiv({ cls: "time-weather-pack-months__row" });
       row.createDiv({
@@ -400,34 +405,34 @@ class WeatherPackMonthProfilesModal extends Modal {
 
       createRowNumberInput(
         row,
-        formatEditableTemperature(profile.temperatureOffset, this.temperatureUnit),
+        formatEditableTemperature(profileDraft.temperatureOffset, this.temperatureUnit),
         (value) => {
-          this.profiles[index].temperatureOffset = fromDisplayTemperature(value, this.temperatureUnit);
+          profileDraft.temperatureOffset = fromDisplayTemperature(value, this.temperatureUnit);
         }
       );
 
-      createRowNumberInput(row, String(profile.humidity), (value) => {
-        this.profiles[index].humidity = clamp(value, 0, 100);
+      createRowNumberInput(row, String(profileDraft.humidity), (value) => {
+        profileDraft.humidity = clamp(value, 0, 100);
       });
 
-      createRowNumberInput(row, String(profile.precipitation), (value) => {
-        this.profiles[index].precipitation = clamp(value, 0, 100);
+      createRowNumberInput(row, String(profileDraft.precipitation), (value) => {
+        profileDraft.precipitation = clamp(value, 0, 100);
       });
 
-      createRowNumberInput(row, String(profile.cloudiness), (value) => {
-        this.profiles[index].cloudiness = clamp(value, 0, 100);
+      createRowNumberInput(row, String(profileDraft.cloudiness), (value) => {
+        profileDraft.cloudiness = clamp(value, 0, 100);
       });
 
-      createRowNumberInput(row, String(profile.fogginess), (value) => {
-        this.profiles[index].fogginess = clamp(value, 0, 100);
+      createRowNumberInput(row, String(profileDraft.fogginess), (value) => {
+        profileDraft.fogginess = clamp(value, 0, 100);
       });
 
-      createRowNumberInput(row, String(profile.windiness), (value) => {
-        this.profiles[index].windiness = clamp(value, 0, 100);
+      createRowNumberInput(row, String(profileDraft.windiness), (value) => {
+        profileDraft.windiness = clamp(value, 0, 100);
       });
 
-      createRowNumberInput(row, String(profile.frontBias), (value) => {
-        this.profiles[index].frontBias = clamp(value, 0, 100);
+      createRowNumberInput(row, String(profileDraft.frontBias), (value) => {
+        profileDraft.frontBias = clamp(value, 0, 100);
       });
     });
 

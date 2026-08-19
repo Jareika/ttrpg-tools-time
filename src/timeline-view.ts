@@ -87,12 +87,13 @@ export class TimeTimelineView extends ItemView {
     return "milestone";
   }
 
-  onOpen(): void {
+  onOpen(): Promise<void> {
     void this.refresh();
+	return Promise.resolve();
   }
 
-  onClose(): void {
-    // no-op
+  onClose(): Promise<void> {
+    return Promise.resolve();
   }
 
   refresh(): void {
@@ -731,12 +732,13 @@ export class TimeTimelineFilterView extends ItemView {
     return "tags";
   }
 
-  onOpen(): void {
+  onOpen(): Promise<void> {
     void this.refresh();
+	return Promise.resolve();
   }
 
-  onClose(): void {
-    // no-op
+  onClose(): Promise<void> {
+    return Promise.resolve();
   }
 
   refresh(): void {

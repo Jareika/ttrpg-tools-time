@@ -20,6 +20,7 @@ import type {
   CalendarTimelineStyle,
   CalendarFile,
   CalendarViewMode,
+  FantasyEra,
   FantasyYearDisplayConfig,
   MonthWeekdayMode,
   FantasyLeapDayRule,
@@ -181,7 +182,10 @@ export class CalendarEditorModal extends Modal {
     this.eras = definition
       ? definition.eras.map((era) => ({
           ...era,
-          description: era.description ?? ""
+          description: era.description ?? "",
+          endYear: era.endYear ?? null,
+          endMonthIndex: era.endMonthIndex ?? null,
+          endDay: era.endDay ?? null
         }))
       : [
           {
@@ -1580,6 +1584,9 @@ class EraEditorModal extends Modal {
         shortName: `ERA${this.eras.length + 1}`,
 		description: "",
         startYear: 0,
+        endYear: null,
+        endMonthIndex: null,
+        endDay: null,
         startMonthIndex: 0,
         startDay: 1
       });
@@ -1605,14 +1612,29 @@ class EraEditorModal extends Modal {
       const safeName = era.name.trim().length > 0 ? era.name.trim() : `Era ${index + 1}`;
       const safeStartMonthIndex = clamp(era.startMonthIndex, 0, months.length - 1);
       const safeStartDay = clamp(era.startDay, 1, months[safeStartMonthIndex]?.days ?? 1);
-	  const normalizedEnd = normalizeEraEndDraft(era, months);
+      const hasEnd =
+        era.endYear !== null ||
+        era.endMonthIndex !== null ||
+        era.endDay !== null;
+      const safeEndMonthIndex = clamp(
+        era.endMonthIndex ?? Math.max(0, months.length - 1),
+        0,
+        Math.max(0, months.length - 1)
+      );
+      const safeEndDay = clamp(
+        era.endDay ?? (months[safeEndMonthIndex]?.days ?? 1),
+        1,
+        months[safeEndMonthIndex]?.days ?? 1
+      );
 
       return {
         id: slugify(era.id || safeShortName || safeName),
         name: safeName,
         shortName: safeShortName,
-		description: era.description?.trim() || undefined,
-		...normalizedEnd,
+        description: era.description.trim(),
+        endYear: hasEnd ? era.endYear ?? era.startYear : null,
+        endMonthIndex: hasEnd ? safeEndMonthIndex : null,
+        endDay: hasEnd ? safeEndDay : null,
         startYear: Math.trunc(era.startYear || 0),
         startMonthIndex: safeStartMonthIndex,
         startDay: safeStartDay
@@ -1882,7 +1904,7 @@ class MonthEditorModal extends Modal {
         id: slugify(month.id || safeName),
         name: safeName,
         days: Math.max(1, Math.trunc(month.days || 1)),
-        color: normalizeOptionalColor(month.color)
+        color: normalizeOptionalColor(month.color) ?? ""
       };
     });
 
@@ -3994,17 +4016,21 @@ function parseNullableInt(value: string): number | null {
 function normalizeEraEndDraft(
   era: EraDraft,
   months: Array<{ days: number }>
-): Pick<EraDraft, "endYear" | "endMonthIndex" | "endDay"> {
+): Pick<FantasyEra, "endYear" | "endMonthIndex" | "endDay"> {
   if (era.endYear == null && era.endMonthIndex == null && era.endDay == null) {
-    return {
-      endYear: undefined as unknown as number | null,
-      endMonthIndex: undefined as unknown as number | null,
-      endDay: undefined as unknown as number | null
-    };
+    return {};
   }
 
-  const endMonthIndex = clamp(era.endMonthIndex ?? Math.max(0, months.length - 1), 0, Math.max(0, months.length - 1));
-  const endDay = clamp(era.endDay ?? (months[endMonthIndex]?.days ?? 1), 1, months[endMonthIndex]?.days ?? 1);
+  const endMonthIndex = clamp(
+    era.endMonthIndex ?? Math.max(0, months.length - 1),
+    0,
+    Math.max(0, months.length - 1)
+  );
+  const endDay = clamp(
+    era.endDay ?? (months[endMonthIndex]?.days ?? 1),
+    1,
+    months[endMonthIndex]?.days ?? 1
+  );
 
   return {
     endYear: era.endYear ?? era.startYear,

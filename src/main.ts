@@ -572,7 +572,8 @@ export default class TtrpgToolsTimePlugin extends Plugin {
   }
 
   async activateView(): Promise<void> {
-    let leaf = this.app.workspace.getLeavesOfType(CALENDAR_VIEW_TYPE)[0];
+    let leaf: WorkspaceLeaf | null =
+      this.app.workspace.getLeavesOfType(CALENDAR_VIEW_TYPE)[0] ?? null;
 
     if (!leaf) {
       leaf = this.app.workspace.getRightLeaf(false);
@@ -589,7 +590,8 @@ export default class TtrpgToolsTimePlugin extends Plugin {
   }
   
   async activateTimelineView(): Promise<void> {
-    let leaf = this.app.workspace.getLeavesOfType(TIMELINE_VIEW_TYPE)[0];
+    let leaf: WorkspaceLeaf | null =
+      this.app.workspace.getLeavesOfType(TIMELINE_VIEW_TYPE)[0] ?? null;
 
     if (!leaf) {
       leaf = this.app.workspace.getLeaf(true);
@@ -606,7 +608,8 @@ export default class TtrpgToolsTimePlugin extends Plugin {
   }
 
   async activateTimelineFilterView(): Promise<void> {
-    let leaf = this.app.workspace.getLeavesOfType(TIMELINE_FILTER_VIEW_TYPE)[0];
+    let leaf: WorkspaceLeaf | null =
+      this.app.workspace.getLeavesOfType(TIMELINE_FILTER_VIEW_TYPE)[0] ?? null;
 
     if (!leaf) {
       leaf = this.app.workspace.getRightLeaf(true);
@@ -619,7 +622,8 @@ export default class TtrpgToolsTimePlugin extends Plugin {
   }
   
   async activateControlView(): Promise<void> {
-    let leaf = this.app.workspace.getLeavesOfType(CONTROL_VIEW_TYPE)[0];
+    let leaf: WorkspaceLeaf | null =
+      this.app.workspace.getLeavesOfType(CONTROL_VIEW_TYPE)[0] ?? null;
 
     if (!leaf) {
       leaf = this.app.workspace.getRightLeaf(false);
@@ -636,7 +640,8 @@ export default class TtrpgToolsTimePlugin extends Plugin {
   }
 
   async activateDayView(): Promise<void> {
-    let leaf = this.app.workspace.getLeavesOfType(CALENDAR_DAY_VIEW_TYPE)[0];
+    let leaf: WorkspaceLeaf | null =
+      this.app.workspace.getLeavesOfType(CALENDAR_DAY_VIEW_TYPE)[0] ?? null;
 
     if (!leaf) {
       leaf = this.app.workspace.getRightLeaf(false);
@@ -653,7 +658,8 @@ export default class TtrpgToolsTimePlugin extends Plugin {
   }
 
   async activateEventEditorView(eventToEdit?: CalendarEventDefinition): Promise<void> {
-    let leaf = this.app.workspace.getLeavesOfType(EVENT_EDITOR_VIEW_TYPE)[0];
+    let leaf: WorkspaceLeaf | null =
+      this.app.workspace.getLeavesOfType(EVENT_EDITOR_VIEW_TYPE)[0] ?? null;
 
     if (!leaf) {
       leaf = this.app.workspace.getLeaf(true);

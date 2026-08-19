@@ -50,6 +50,7 @@ interface LeapRuleComputationSummary {
   residues: number[];
   extraDays: number;
   extraWeekdayDays: number;
+  skipYearsDivisibleBy?: number[];
 }
 
 interface DefinitionComputationContext {
@@ -170,7 +171,7 @@ export function normalizeSettings(raw: unknown): TtrpgToolsTimeSettings {
 
   return {
     dataFolder: readString(record.dataFolder, DEFAULT_SETTINGS.dataFolder),
-    activeCalendarId: readOptionalString(record.activeCalendarId),
+    activeCalendarId: readOptionalString(record.activeCalendarId) ?? null,
     dayViewDateFormat: readString(record.dayViewDateFormat, DEFAULT_SETTINGS.dayViewDateFormat),
     showCalendarWeekNumbers: readBoolean(record.showCalendarWeekNumbers, DEFAULT_SETTINGS.showCalendarWeekNumbers),
     temperatureUnit: readTemperatureUnit(record.temperatureUnit),
@@ -662,10 +663,10 @@ function readEras(
   return raw
     .map((entry, index) => {
       const record = asRecord(entry);
-	  const hasEnd = "endYear" in record || "endMonthIndex" in record || "endDay" in record;
       const shortName = readString(record.shortName, fallbackLabel || `ERA${index + 1}`);
       const name = readString(record.name, `Era ${index + 1}`);
-      const startMonthIndex = mod(
+      const startYear = Math.trunc(readNumber(record.startYear, 0));
+	  const startMonthIndex = mod(
         Math.trunc(readNumber(record.startMonthIndex, 0)),
         months.length
       );
@@ -673,27 +674,43 @@ function readEras(
         Math.max(1, Math.trunc(readNumber(record.startDay, 1))),
         months[startMonthIndex]?.days ?? 1
       );
+      const rawEndYear = readOptionalInteger(record.endYear);
+      const rawEndMonthIndex = readOptionalInteger(record.endMonthIndex);
+      const rawEndDay = readOptionalInteger(record.endDay);
+      const hasEnd =
+        rawEndYear !== undefined ||
+        rawEndMonthIndex !== undefined ||
+        rawEndDay !== undefined;
       const endMonthIndex = hasEnd
-        ? clamp(Math.trunc(readNumber(record.endMonthIndex, months.length - 1)), 0, Math.max(0, months.length - 1))
-        : undefined;
-      const endDay = hasEnd && typeof endMonthIndex === "number"
         ? clamp(
-            Math.trunc(readNumber(record.endDay, months[endMonthIndex]?.days ?? 1)),
+            rawEndMonthIndex ?? months.length - 1,
+            0,
+            Math.max(0, months.length - 1)
+          )
+        : 0;
+      const endDay = hasEnd
+        ? clamp(
+            rawEndDay ?? (months[endMonthIndex]?.days ?? 1),
             1,
             months[endMonthIndex]?.days ?? 1
-          ) : undefined;
+          )
+        : 1;
 
       return {
         id: readString(record.id, slugify(shortName || name || `era-${index + 1}`)),
         name,
         shortName,
-		description: readOptionalString(record.description),
-        startYear: Math.trunc(readNumber(record.startYear, 0)),
+        description: readOptionalString(record.description),
+        startYear,
         startMonthIndex,
-        endYear: hasEnd ? Math.trunc(readNumber(record.endYear, readNumber(record.startYear, 0))) : undefined,
-        endMonthIndex,
-        endDay,
-        startDay
+        startDay,
+        ...(hasEnd
+          ? {
+              endYear: rawEndYear ?? startYear,
+              endMonthIndex,
+              endDay
+            }
+          : {})
       };
     })
     .sort(compareEraStarts);
@@ -2432,7 +2449,8 @@ function getDefinitionComputationContext(
         cycleYears,
         residues: [...new Set(rule.leapYearPositions.map((value) => mod(value, cycleYears)))],
         extraDays: Math.max(1, Math.trunc(rule.month.days || 1)),
-        extraWeekdayDays: Math.max(1, Math.trunc(rule.month.days || 1))
+        extraWeekdayDays: Math.max(1, Math.trunc(rule.month.days || 1)),
+        skipYearsDivisibleBy: []
       };
     }),
     ...definition.leapDays.map((rule) => {
@@ -2441,7 +2459,8 @@ function getDefinitionComputationContext(
         cycleYears,
         residues: [...new Set(rule.leapYearPositions.map((value) => mod(value, cycleYears)))],
         extraDays: Math.max(1, Math.trunc(rule.days || 1)),
-        extraWeekdayDays: Math.max(1, Math.trunc(rule.days || 1))
+        extraWeekdayDays: Math.max(1, Math.trunc(rule.days || 1)),
+        skipYearsDivisibleBy: []
       };
     }),
     ...definition.intercalaryDays.map((rule) => {
@@ -2450,7 +2469,8 @@ function getDefinitionComputationContext(
         cycleYears,
         residues: [...new Set(rule.activeYearPositions.map((value) => mod(value, cycleYears)))],
         extraDays: 1,
-        extraWeekdayDays: rule.weekdayMode === "none" ? 0 : 1
+        extraWeekdayDays: rule.weekdayMode === "none" ? 0 : 1,
+        skipYearsDivisibleBy: normalizeSkipYearDivisors(rule.skipYearsDivisibleBy)
       };
     })
   ];
@@ -2580,29 +2600,169 @@ function countRuleOccurrencesBeforeYear(
   year: number
 ): number {
   if (year > 0) {
-    return countResiduesInRange(rule.residues, rule.cycleYears, 0, year - 1);
+    return countRuleOccurrencesInRange(rule, 0, year - 1);
   }
 
   if (year < 0) {
-    return -countResiduesInRange(rule.residues, rule.cycleYears, year, -1);
+    return -countRuleOccurrencesInRange(rule, year, -1);
   }
 
   return 0;
 }
 
-function countResiduesInRange(
-  residues: number[],
-  modulus: number,
+function countRuleOccurrencesInRange(
+  rule: LeapRuleComputationSummary,
   startInclusive: number,
   endInclusive: number
 ): number {
-  if (endInclusive < startInclusive) {
-    return 0;
+  return rule.residues.reduce((sum, residue) => {
+    return sum + countResidueOccurrencesWithSkips(
+      residue,
+      rule.cycleYears,
+      rule.skipYearsDivisibleBy ?? [],
+      startInclusive,
+      endInclusive
+    );
+  }, 0);
+}
+
+function countResidueOccurrencesWithSkips(
+  residue: number,
+  cycleYears: number,
+  skipYearsDivisibleBy: number[],
+  startInclusive: number,
+  endInclusive: number
+): number {
+  const total = countIntegersInRangeByResidue(
+    startInclusive,
+    endInclusive,
+    residue,
+    cycleYears
+  );
+
+  if (skipYearsDivisibleBy.length === 0 || total === 0) {
+    return total;
   }
 
-  return residues.reduce((sum, residue) => {
-    return sum + countIntegersInRangeByResidue(startInclusive, endInclusive, residue, modulus);
-  }, 0);
+  let skipped = 0;
+
+  const visitCombinations = (
+    startIndex: number,
+    combinedDivisor: number,
+    selectedCount: number
+  ): void => {
+    for (let index = startIndex; index < skipYearsDivisibleBy.length; index += 1) {
+      const divisor = skipYearsDivisibleBy[index];
+
+      if (!divisor) {
+        continue;
+      }
+
+      const nextDivisor = leastCommonMultipleExact(combinedDivisor, divisor);
+      const nextSelectedCount = selectedCount + 1;
+      const matching = solveResidueWithDivisibility(
+        residue,
+        cycleYears,
+        nextDivisor
+      );
+
+      if (matching) {
+        const matchingCount = countIntegersInRangeByResidue(
+          startInclusive,
+          endInclusive,
+          matching.residue,
+          matching.modulus
+        );
+
+        skipped += nextSelectedCount % 2 === 1
+          ? matchingCount
+          : -matchingCount;
+      }
+
+      visitCombinations(index + 1, nextDivisor, nextSelectedCount);
+    }
+  };
+
+  visitCombinations(0, 1, 0);
+  return total - skipped;
+}
+
+function normalizeSkipYearDivisors(divisors: number[]): number[] {
+  const unique = [...new Set(
+    divisors
+      .map((value) => Math.trunc(value))
+      .filter((value) => value > 0)
+  )].sort((left, right) => left - right);
+
+  // Ist ein Jahr durch einen kleineren Divisor übersprungen, ist ein
+  // zusätzliches Vielfaches davon redundant (z. B. 100 macht 200 redundant).
+  return unique.filter((divisor) =>
+    !unique.some(
+      (other) => other !== divisor && divisor % other === 0
+    )
+  );
+}
+
+function solveResidueWithDivisibility(
+  residue: number,
+  modulus: number,
+  divisor: number
+): { residue: number; modulus: number } | null {
+  const greatestDivisor = greatestCommonDivisor(modulus, divisor);
+
+  if (mod(residue, greatestDivisor) !== 0) {
+    return null;
+  }
+
+  const reducedModulus = modulus / greatestDivisor;
+  const combinedModulus = leastCommonMultipleExact(modulus, divisor);
+
+  if (reducedModulus === 1) {
+    return {
+      residue: 0,
+      modulus: combinedModulus
+    };
+  }
+
+  const inverse = modularInverse(
+    divisor / greatestDivisor,
+    reducedModulus
+  );
+  const multiplier = mod(
+    (residue / greatestDivisor) * inverse,
+    reducedModulus
+  );
+
+  return {
+    residue: mod(divisor * multiplier, combinedModulus),
+    modulus: combinedModulus
+  };
+}
+
+function leastCommonMultipleExact(left: number, right: number): number {
+  const a = Math.max(1, Math.trunc(left));
+  const b = Math.max(1, Math.trunc(right));
+  return Math.trunc((a * b) / greatestCommonDivisor(a, b));
+}
+
+function modularInverse(value: number, modulus: number): number {
+  let previousCoefficient = 0;
+  let coefficient = 1;
+  let previousRemainder = modulus;
+  let remainder = mod(value, modulus);
+
+  while (remainder !== 0) {
+    const quotient = Math.floor(previousRemainder / remainder);
+    const nextCoefficient = previousCoefficient - quotient * coefficient;
+    const nextRemainder = previousRemainder - quotient * remainder;
+
+    previousCoefficient = coefficient;
+    coefficient = nextCoefficient;
+    previousRemainder = remainder;
+    remainder = nextRemainder;
+  }
+
+  return mod(previousCoefficient, modulus);
 }
 
 function countIntegersInRangeByResidue(
