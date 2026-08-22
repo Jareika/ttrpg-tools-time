@@ -3520,7 +3520,7 @@ body .status-bar {
 
 .time-timeline-view .simple-timeline .time-timeline-grid__item--single {
   grid-column-start: auto;
-  grid-column-end: span 1 !important;
+  grid-column-end: span 1;
   min-width: 0;
   max-width: var(--tl-grid-col-w, 200px);
 }
