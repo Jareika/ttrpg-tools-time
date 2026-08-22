@@ -18,6 +18,7 @@ import type {
 export const CONTROL_VIEW_TYPE = "time-control-view";
 
 type TimelineInsertLayout = "cal" | "h";
+type TimelineInsertHorizontalMode = "mixed" | "stacked" | "grid";
 
 interface TimelineTagInfo {
   packId: string;
@@ -648,6 +649,7 @@ export class WeatherRangeBatchModal extends Modal {
 
 export class TimelineInsertModal extends Modal {
   private layout: TimelineInsertLayout = "cal";
+  private horizontalMode: TimelineInsertHorizontalMode = "mixed";
   private titleText = "";
   private jumpToToday = true;
   private readonly selectedCalendarIds = new Set<string>();
@@ -700,8 +702,25 @@ export class TimelineInsertModal extends Modal {
         dropdown.setValue(this.layout);
         dropdown.onChange((value) => {
           this.layout = value === "h" ? "h" : "cal";
+		  void this.render();
         });
       });
+	  
+    if (this.layout === "h") {
+      new Setting(contentEl)
+        .setName("Horizontal mode")
+        .setDesc("Mixed joins cards in one row. Stacked groups equal dates. Grid uses portrait day tiles and multi-day range cards.")
+        .addDropdown((dropdown) => {
+          dropdown.addOption("mixed", "Mixed");
+          dropdown.addOption("stacked", "Stacked");
+          dropdown.addOption("grid", "Grid");
+          dropdown.setValue(this.horizontalMode);
+          dropdown.onChange((value) => {
+            this.horizontalMode =
+              value === "stacked" || value === "grid" ? value : "mixed";
+          });
+        });
+    }
 
     new Setting(contentEl)
       .setName("Heading")
@@ -873,6 +892,7 @@ export class TimelineInsertModal extends Modal {
 
     const block = buildTimelineYamlBlock({
       layout: this.layout,
+	  mode: this.horizontalMode,
       title: this.titleText.trim(),
       calendars: selectedCalendarIds,
       includeTags: [...this.includedTagRefs].sort((left, right) =>
@@ -896,6 +916,7 @@ export class TimelineInsertModal extends Modal {
 
 function buildTimelineYamlBlock(input: {
   layout: TimelineInsertLayout;
+  mode: TimelineInsertHorizontalMode;
   title: string;
   calendars: string[];
   includeTags: string[];
@@ -934,6 +955,10 @@ function buildTimelineYamlBlock(input: {
 
   if (input.jumpToToday) {
     lines.push("jumpTo: today");
+  }
+  
+  if (input.layout === "h" && input.mode !== "mixed") {
+    lines.push(`mode: ${input.mode}`);
   }
 
   lines.push("```", "");

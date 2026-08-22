@@ -112,7 +112,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
   private readonly recurrenceIndexCache = new Map<string, EventRecurrenceIndexFile>();
   private fantasyClock: FantasyClockState = { byCalendarId: {} };
   private lastMarkdownLeaf: WorkspaceLeaf | null = null;
-  private timelineLayoutMode: "vertical" | "horizontal" = "vertical";
+  private timelineLayoutMode: "vertical" | "horizontal" | "grid" = "vertical";
   private readonly timelineIncludedTagRefs = new Set<string>();
   private readonly timelineExcludedTagRefs = new Set<string>();
   private pendingActiveCalendarStateSaveTimer: number | null = null;
@@ -1095,11 +1095,11 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     );
   }
   
-  getTimelineLayoutMode(): "vertical" | "horizontal" {
+  getTimelineLayoutMode(): "vertical" | "horizontal" | "grid" {
     return this.timelineLayoutMode;
   }
 
-  async setTimelineLayoutMode(mode: "vertical" | "horizontal"): Promise<void> {
+  async setTimelineLayoutMode(mode: "vertical" | "horizontal" | "grid"): Promise<void> {
     if (this.timelineLayoutMode === mode) {
       return;
     }

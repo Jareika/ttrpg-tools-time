@@ -1,4 +1,15 @@
 Changelog
+
+0.7.0
+- Added and documented Timeline Grid mode for standalone and embedded horizontal timelines.
+- Grid mode renders one-day events as compact portrait tiles and multi-day events as spanning range cards.
+
+0.6.8
+- Added a horizontal Timeline Grid mode for standalone and embedded timelines.
+- One-day events render as portrait tiles with a compact gradient date header.
+- Multi-day events render as connected range cards and expand across overlapping event columns.
+- Grid placement uses two preferred rows and only creates additional rows for actual overlaps.
+
 0.6.7
 - Fixed TypeScript type-check errors.
 - Fixed weekday progression after skipped intercalary days. Calendar precomputation now respects intercalary skip rules, preventing an incorrect extra weekday shift at cycle boundaries such as Gregorian year 400 → 401.

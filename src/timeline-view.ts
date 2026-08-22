@@ -2,6 +2,8 @@ import { ItemView, Menu, Notice, WorkspaceLeaf } from "obsidian";
 import type TtrpgToolsTimePlugin from "./main";
 import { chooseDeleteEventMode } from "./delete-event-modal";
 import { formatYearLabel, getEraShortLabel, getMonth } from "./calendar";
+import { buildTimelineGridLayout } from "./timeline-grid";
+import { syncTimelineSummaryLineClamp } from "./timeline-summary";
 import { resolveMoonsForDate } from "./moons";
 import type {
   CalendarTimelineStyle,
@@ -147,6 +149,8 @@ export class TimeTimelineView extends ItemView {
     }
 
     const toolbar = header.createDiv({ cls: "time-timeline__toolbar" });
+	
+	const layoutMode = this.plugin.getTimelineLayoutMode();
 
     createActionButton(toolbar, "Today", () => {
       const content = panel.querySelector<HTMLElement>(".time-timeline__content");
@@ -154,10 +158,17 @@ export class TimeTimelineView extends ItemView {
         return;
       }
 
+      const itemSelector =
+        layoutMode === "vertical"
+          ? ".tl-row"
+          : layoutMode === "grid"
+            ? ".time-timeline-grid__item"
+            : ".tl-h-item";
+
       const ok = this.jumpContainerToDate(
         content,
         calendar.state.todayDate,
-        this.plugin.getTimelineLayoutMode() === "horizontal" ? ".tl-h-item" : ".tl-row"
+        itemSelector
       );
 
       if (!ok) {
@@ -171,7 +182,7 @@ export class TimeTimelineView extends ItemView {
       () => {
         void this.plugin.setTimelineLayoutMode("vertical");
       },
-      this.plugin.getTimelineLayoutMode() === "vertical"
+      layoutMode === "vertical"
     );
 
     createActionButton(
@@ -180,7 +191,16 @@ export class TimeTimelineView extends ItemView {
       () => {
         void this.plugin.setTimelineLayoutMode("horizontal");
       },
-      this.plugin.getTimelineLayoutMode() === "horizontal"
+      layoutMode === "horizontal"
+    );
+
+    createActionButton(
+      toolbar,
+      "Grid",
+      () => {
+        void this.plugin.setTimelineLayoutMode("grid");
+      },
+      layoutMode === "grid"
     );
 
     createActionButton(toolbar, "Filters", () => {
@@ -221,8 +241,13 @@ export class TimeTimelineView extends ItemView {
 
     const timelineRoot = content.createDiv({ cls: "simple-timeline" });
 
-    if (this.plugin.getTimelineLayoutMode() === "horizontal") {
+    if (layoutMode === "horizontal") {
       this.renderHorizontalTimeline(timelineRoot, calendar, visibleItems, timelineStyle);
+      return;
+    }
+	
+    if (layoutMode === "grid") {
+      this.renderGridTimeline(timelineRoot, calendar, visibleItems, timelineStyle);
       return;
     }
 
@@ -325,6 +350,214 @@ export class TimeTimelineView extends ItemView {
       );
     }
   }
+  
+  private renderGridTimeline(
+    root: HTMLElement,
+    calendar: CalendarFile,
+    items: TimelineRenderItem[],
+    timelineStyle: ResolvedTimelineStyle
+  ): void {
+    const layout = buildTimelineGridLayout(
+      items.map((item) => ({
+        value: item,
+        start: item.start,
+        end: item.end
+      }))
+    );
+
+    const scroller = root.createDiv({ cls: "tl-grid-scroller" });
+    const grid = scroller.createDiv({ cls: "tl-grid-timeline" });
+
+    grid.setCssProps({
+      "--tl-grid-cols": String(Math.max(1, layout.columnCount)),
+      "--tl-grid-rows": String(layout.rowCount),
+      "--tl-grid-col-w": `${timelineStyle.cardWidth}px`,
+      "--tl-grid-row-h": `${Math.max(
+        timelineStyle.cardHeight,
+        timelineStyle.boxHeight
+      )}px`
+    });
+
+    layout.placements.forEach((placement) => {
+      const item = placement.value;
+      const isRange = placement.isRange;
+      const columnSpan = isRange
+        ? Math.max(2, placement.columnSpan)
+        : 1;
+
+      const eventEl = grid.createDiv({
+        cls: [
+          "time-timeline-grid__item",
+          placement.isRange
+            ? "time-timeline-grid__item--range"
+            : "time-timeline-grid__item--single"
+        ].join(" ")
+      });
+
+      eventEl.dataset.tlStartKey = String(ymdSortKey(item.start));
+      eventEl.dataset.tlEndKey = String(ymdSortKey(item.end ?? item.start));
+
+      eventEl.style.setProperty(
+        "grid-column-start",
+        String(placement.column + 1),
+        "important"
+      );
+      eventEl.style.setProperty(
+        "grid-column-end",
+        `span ${columnSpan}`,
+        "important"
+      );
+      eventEl.style.setProperty(
+        "grid-row-start",
+        String(placement.row + 1),
+        "important"
+      );
+
+      const accentColor =
+        timelineStyle.colors.accent ??
+        item.accentColor ??
+        "var(--background-modifier-border)";
+
+      eventEl.setCssProps({
+        "--tl-bg": timelineStyle.colors.bg ?? "var(--background-primary)",
+        "--tl-accent": accentColor,
+        "--tl-hover": timelineStyle.colors.hover ?? "var(--interactive-accent)",
+        "--tl-grid-media-w": `${timelineStyle.cardWidth}px`
+      });
+
+      if (isRange) {
+        this.renderGridRangeCard(eventEl, calendar, item, timelineStyle);
+      } else {
+        this.renderGridSingleCard(eventEl, calendar, item, timelineStyle);
+      }
+    });
+  }
+
+  private renderGridSingleCard(
+    parent: HTMLElement,
+    calendar: CalendarFile,
+    item: TimelineRenderItem,
+    timelineStyle: ResolvedTimelineStyle
+  ): void {
+    const card = parent.createDiv({ cls: "time-timeline-grid__single-card" });
+
+    if (item.imageSrc) {
+	  card.addClass("is-with-image");
+      card.createEl("img", {
+        cls: "time-timeline-grid__single-image",
+        attr: {
+          src: item.imageSrc,
+          alt: item.title,
+          loading: "lazy"
+        }
+      });
+    } else {
+      card.addClass("is-without-image");
+      card.createDiv({
+        cls: "time-timeline-grid__single-title",
+        text: item.title
+      });
+    }
+
+    const date = card.createDiv({
+      cls: "time-timeline-grid__date-header",
+      text: formatRangeLabel(calendar, item.start, undefined, timelineStyle)
+    });
+
+    if (timelineStyle.colors.date) {
+      date.style.color = timelineStyle.colors.date;
+    }
+
+    card.title = `${item.title} • ${formatRangeLabel(
+      calendar,
+      item.start,
+      item.end,
+      timelineStyle
+    )}`;
+
+    const overlay = this.buildInteractiveOverlay(card, item.notePath ?? item.event.id, item.title);
+    overlay.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void this.openTimelineItem(calendar, item);
+    });
+    overlay.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      this.openItemContextMenu(event, calendar, item);
+    });
+
+    if (item.notePath) {
+      this.attachHoverForAnchor(overlay, card, item.notePath);
+    }
+  }
+
+  private renderGridRangeCard(
+    parent: HTMLElement,
+    calendar: CalendarFile,
+    item: TimelineRenderItem,
+    timelineStyle: ResolvedTimelineStyle
+  ): void {
+    const card = parent.createDiv({ cls: "time-timeline-grid__range-card" });
+    card.toggleClass("is-without-image", !item.imageSrc);
+
+    if (item.imageSrc) {
+      const media = card.createDiv({ cls: "time-timeline-grid__range-media" });
+      media.createEl("img", {
+        cls: "time-timeline-grid__range-image",
+        attr: {
+          src: item.imageSrc,
+          alt: item.title,
+          loading: "lazy"
+        }
+      });
+    }
+
+    const body = card.createDiv({ cls: "time-timeline-grid__range-body" });
+    const title = body.createEl("h3", {
+      cls: "time-timeline-grid__range-title",
+      text: item.title
+    });
+    const date = body.createDiv({
+      cls: "time-timeline-grid__range-date",
+      text: formatRangeLabel(calendar, item.start, item.end, timelineStyle)
+    });
+    const summary = body.createDiv({
+      cls: "time-timeline-grid__range-summary",
+      text: item.summary ?? ""
+    });
+    summary.setCssProps({
+      "--tl-summary-lines": String(timelineStyle.maxSummaryLines)
+    });
+
+    if (item.summary) {
+      syncTimelineSummaryLineClamp(
+        summary,
+        timelineStyle.maxSummaryLines
+      );
+    }
+
+    if (timelineStyle.colors.title) {
+      title.style.color = timelineStyle.colors.title;
+    }
+    if (timelineStyle.colors.date) {
+      date.style.color = timelineStyle.colors.date;
+    }
+
+    const overlay = this.buildInteractiveOverlay(card, item.notePath ?? item.event.id, item.title);
+    overlay.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void this.openTimelineItem(calendar, item);
+    });
+    overlay.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      this.openItemContextMenu(event, calendar, item);
+    });
+
+    if (item.notePath) {
+      this.attachHoverForAnchor(overlay, card, item.notePath);
+    }
+  }
 
   private renderCardRow(
     parent: HTMLElement,
@@ -347,17 +580,17 @@ export class TimeTimelineView extends ItemView {
 
     const accentColor = timelineStyle.colors.accent ?? item.accentColor ?? "var(--background-modifier-border)";
 
-    row.style.setProperty(
-      "--tl-side-gap-left",
-      horizontal ? "0px" : `${timelineStyle.sideGapLeft}px`
-    );
-    row.style.setProperty(
-      "--tl-side-gap-right",
-      horizontal ? "0px" : `${timelineStyle.sideGapRight}px`
-    );
-    row.style.setProperty("--tl-bg", timelineStyle.colors.bg ?? "var(--background-primary)");
-    row.style.setProperty("--tl-accent", accentColor);
-    row.style.setProperty("--tl-hover", timelineStyle.colors.hover ?? "var(--interactive-accent)");
+    row.setCssProps({
+      "--tl-side-gap-left": horizontal
+        ? "0px"
+        : `${timelineStyle.sideGapLeft}px`,
+      "--tl-side-gap-right": horizontal
+        ? "0px"
+        : `${timelineStyle.sideGapRight}px`,
+      "--tl-bg": timelineStyle.colors.bg ?? "var(--background-primary)",
+      "--tl-accent": accentColor,
+      "--tl-hover": timelineStyle.colors.hover ?? "var(--interactive-accent)"
+    });
 
     const grid = row.createDiv({ cls: `tl-grid ${item.imageSrc ? "has-media" : "no-media"}` });
     grid.setCssProps({
@@ -408,6 +641,13 @@ export class TimeTimelineView extends ItemView {
       "--tl-summary-lines": String(timelineStyle.maxSummaryLines)
     });
     summaryEl.textContent = item.summary ?? "";
+
+    if (item.summary) {
+      syncTimelineSummaryLineClamp(
+        summaryEl,
+        timelineStyle.maxSummaryLines
+      );
+    }
 
     if (timelineStyle.colors.title) {
       titleEl.style.color = timelineStyle.colors.title;

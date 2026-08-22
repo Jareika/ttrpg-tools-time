@@ -99,6 +99,9 @@ It can also show a fantasy-time section with custom time-advance buttons if conf
 - Vertical timeline layout
 - Horizontal timeline layout
 - Horizontal stacked mode for same-date grouping
+- Horizontal mixed mode
+- Horizontal stacked mode for same-date grouping
+- Horizontal grid mode with day tiles and multi-day range cards
 - Tag include/exclude filtering
 - Per-calendar timeline styling
 - Embedded timeline rendering inside Markdown code blocks
@@ -348,6 +351,7 @@ Features:
 
 - vertical or horizontal layout
 - quick jump to today
+- horizontal grid mode for compact chronological event cards
 - filter integration
 - note/image cards
 - tag-aware accent colors
@@ -407,6 +411,27 @@ sideGapRight: 40
 ```
 ````
 
+### Horizontal grid timeline
+
+````md
+```time-timeline-h
+title: Campaign overview
+calendar: my-calendar
+jumpTo: today
+mode: grid
+cardWidth: 200
+cardHeight: 315
+boxHeight: 289
+```
+````
+
+Grid mode renders:
+
+- one-day events as compact portrait tiles
+- event images as tile backgrounds where available
+- multi-day events as range cards spanning connected grid columns
+- additional rows only when visual overlap requires them
+
 ### Supported YAML options
 
 - `title`  
@@ -428,6 +453,7 @@ sideGapRight: 40
   Horizontal only:
   - `mixed`
   - `stacked`
+  - `grid`
 
 - `align`
   - `left`

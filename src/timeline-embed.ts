@@ -4,6 +4,8 @@ import {
   getEraShortLabel,
   getMonth
 } from "./calendar";
+import { buildTimelineGridLayout } from "./timeline-grid";
+import { syncTimelineSummaryLineClamp } from "./timeline-summary";
 import type TtrpgToolsTimePlugin from "./main";
 import type {
   CalendarEventDefinition,
@@ -15,7 +17,7 @@ import type {
 } from "./types";
 
 export type TimeTimelineLayout = "cal" | "h";
-export type TimeTimelineHorizontalMode = "mixed" | "stacked";
+export type TimeTimelineHorizontalMode = "mixed" | "stacked" | "grid";
 
 interface TimeTimelineBlockOptions {
   layout: TimeTimelineLayout;
@@ -100,7 +102,7 @@ export function parseTimelineBlockOptions(
     includeTags: parseStringList(parsed.includeTags),
     excludeTags: parseStringList(parsed.excludeTags),
     jumpToToday: isNormalizedStringValue(parsed.jumpTo, "today"),
-    mode: parsed.mode === "stacked" ? "stacked" : "mixed",
+    mode: parsed.mode === "stacked" || parsed.mode === "grid" ? parsed.mode : "mixed",
     align: parsed.align === "right" ? "right" : parsed.align === "left" ? "left" : undefined,
     maxSummaryLines: readOptionalInteger(parsed.maxSummaryLines),
     cardWidth: readOptionalInteger(parsed.cardWidth),
@@ -238,7 +240,12 @@ function renderPayload(
         return;
       }
 
-      const selector = payload.layout === "h" ? ".tl-h-item" : ".tl-row";
+      const selector =
+        payload.layout === "h"
+          ? payload.mode === "grid"
+            ? ".time-timeline-grid__item"
+            : ".tl-h-item"
+          : ".tl-row";
       const ok = jumpContainerToYmd(timelineRoot, payload.todayDate, selector);
       if (!ok) {
         new Notice("No timeline entry found for the configured 'today' date.");
@@ -264,7 +271,12 @@ function renderPayload(
   }
 
   if (payload.jumpToToday && payload.todayDate) {
-    const selector = payload.layout === "h" ? ".tl-h-item" : ".tl-row";
+      const selector =
+        payload.layout === "h"
+          ? payload.mode === "grid"
+            ? ".time-timeline-grid__item"
+            : ".tl-h-item"
+          : ".tl-row";
     window.setTimeout(() => {
       jumpContainerToYmd(timelineRoot, payload.todayDate!, selector);
     }, 0);
@@ -291,6 +303,11 @@ function renderHorizontalTimeline(
   sourcePath: string
 ): void {
   const scroller = timelineRoot.createDiv({ cls: "tl-h-scroller" });
+  
+  if (payload.mode === "grid") {
+    renderGridTimeline(scroller, plugin, payload, sourcePath);
+    return;
+  }
 
   if (payload.mode === "mixed") {
     const wrapper = scroller.createDiv({ cls: "tl-h-content tl-horizontal tl-h-mixed" });
@@ -370,6 +387,186 @@ function renderHorizontalTimeline(
   }
 }
 
+function renderGridTimeline(
+  scroller: HTMLElement,
+  plugin: TtrpgToolsTimePlugin,
+  payload: TimeTimelinePublishPayload,
+  sourcePath: string
+): void {
+  const layout = buildTimelineGridLayout(
+    payload.entries.map((entry) => ({
+      value: entry,
+      start: fromYmd(entry.start),
+      end: entry.end ? fromYmd(entry.end) : undefined
+    }))
+  );
+
+  const grid = scroller.createDiv({ cls: "tl-grid-timeline" });
+  grid.setCssProps({
+    "--tl-grid-cols": String(Math.max(1, layout.columnCount)),
+    "--tl-grid-rows": String(layout.rowCount),
+    "--tl-grid-col-w": `${payload.style.cardWidth}px`,
+    "--tl-grid-row-h": `${Math.max(
+      payload.style.cardHeight,
+      payload.style.boxHeight
+    )}px`
+  });
+
+  layout.placements.forEach((placement) => {
+    const entry = placement.value;
+    const isRange = placement.isRange;
+    const columnSpan = isRange
+      ? Math.max(2, placement.columnSpan)
+      : 1;
+
+    const item = grid.createDiv({
+      cls: [
+        "time-timeline-grid__item",
+        placement.isRange
+          ? "time-timeline-grid__item--range"
+          : "time-timeline-grid__item--single"
+      ].join(" ")
+    });
+
+    item.dataset.tlStartKey = String(ymdSortKey(entry.start));
+    item.dataset.tlEndKey = String(ymdSortKey(entry.end ?? entry.start));
+
+    item.style.setProperty(
+      "grid-column-start",
+      String(placement.column + 1),
+      "important"
+    );
+    item.style.setProperty(
+      "grid-column-end",
+      `span ${columnSpan}`,
+      "important"
+    );
+    item.style.setProperty(
+      "grid-row-start",
+      String(placement.row + 1),
+      "important"
+    );
+
+    item.setCssProps({
+      "--tl-bg": payload.style.colors.bg ?? "var(--background-primary)",
+      "--tl-accent":
+        entry.accentColor ??
+        payload.style.colors.accent ??
+        "var(--background-modifier-border)",
+      "--tl-hover": payload.style.colors.hover ?? "var(--interactive-accent)",
+      "--tl-grid-media-w": `${payload.style.cardWidth}px`
+    });
+
+    if (isRange) {
+      renderGridRangeCard(item, plugin, payload.style, entry, sourcePath);
+    } else {
+      renderGridSingleCard(item, plugin, payload.style, entry, sourcePath);
+    }
+  });
+}
+
+function renderGridSingleCard(
+  parent: HTMLElement,
+  plugin: TtrpgToolsTimePlugin,
+  style: TimeTimelineStylePayload,
+  entry: TimeTimelinePublishEntry,
+  sourcePath: string
+): void {
+  const card = parent.createDiv({ cls: "time-timeline-grid__single-card" });
+  const imageSrc = entry.img ? resolveImageSrc(plugin, entry.img) : undefined;
+
+  if (imageSrc) {
+	card.addClass("is-with-image");
+    card.createEl("img", {
+      cls: "time-timeline-grid__single-image",
+      attr: {
+        src: imageSrc,
+        alt: entry.title,
+        loading: "lazy"
+      }
+    });
+  } else {
+    card.addClass("is-without-image");
+    card.createDiv({
+      cls: "time-timeline-grid__single-title",
+      text: entry.title
+    });
+  }
+
+  const date = card.createDiv({
+    cls: "time-timeline-grid__date-header",
+    text: entry.dateText
+  });
+
+  if (style.colors.date) {
+    date.style.color = style.colors.date;
+  }
+
+  card.title = `${entry.title} • ${entry.dateText}`;
+
+  if (entry.notePath) {
+    const anchor = createNoteAnchor(card, entry.notePath, entry.title);
+    attachHoverForAnchor(plugin, anchor, card, entry.notePath, sourcePath);
+  }
+}
+
+function renderGridRangeCard(
+  parent: HTMLElement,
+  plugin: TtrpgToolsTimePlugin,
+  style: TimeTimelineStylePayload,
+  entry: TimeTimelinePublishEntry,
+  sourcePath: string
+): void {
+  const card = parent.createDiv({ cls: "time-timeline-grid__range-card" });
+  const imageSrc = entry.img ? resolveImageSrc(plugin, entry.img) : undefined;
+  card.toggleClass("is-without-image", !imageSrc);
+
+  if (imageSrc) {
+    const media = card.createDiv({ cls: "time-timeline-grid__range-media" });
+    media.createEl("img", {
+      cls: "time-timeline-grid__range-image",
+      attr: {
+        src: imageSrc,
+        alt: entry.title,
+        loading: "lazy"
+      }
+    });
+  }
+
+  const body = card.createDiv({ cls: "time-timeline-grid__range-body" });
+  const title = body.createEl("h3", {
+    cls: "time-timeline-grid__range-title",
+    text: entry.title
+  });
+  const date = body.createDiv({
+    cls: "time-timeline-grid__range-date",
+    text: entry.dateText
+  });
+  const summary = body.createDiv({
+    cls: "time-timeline-grid__range-summary",
+    text: entry.summary ?? ""
+  });
+  summary.setCssProps({
+    "--tl-summary-lines": String(style.maxSummaryLines)
+  });
+
+  if (entry.summary) {
+    syncTimelineSummaryLineClamp(summary, style.maxSummaryLines);
+  }
+
+  if (style.colors.title) {
+    title.style.color = style.colors.title;
+  }
+  if (style.colors.date) {
+    date.style.color = style.colors.date;
+  }
+
+  if (entry.notePath) {
+    const anchor = createNoteAnchor(card, entry.notePath, entry.title);
+    attachHoverForAnchor(plugin, anchor, card, entry.notePath, sourcePath);
+  }
+}
+
 function renderCardRow(
   parent: HTMLElement,
   plugin: TtrpgToolsTimePlugin,
@@ -386,11 +583,16 @@ function renderCardRow(
     row.addClass("tl-align-right");
   }
 
-  row.style.setProperty("--tl-side-gap-left", `${style.sideGapLeft}px`);
-  row.style.setProperty("--tl-side-gap-right", `${style.sideGapRight}px`);
-  row.style.setProperty("--tl-bg", style.colors.bg ?? "var(--background-primary)");
-  row.style.setProperty("--tl-accent", entry.accentColor ?? style.colors.accent ?? "var(--background-modifier-border)");
-  row.style.setProperty("--tl-hover", style.colors.hover ?? "var(--interactive-accent)");
+  row.setCssProps({
+    "--tl-side-gap-left": `${style.sideGapLeft}px`,
+    "--tl-side-gap-right": `${style.sideGapRight}px`,
+    "--tl-bg": style.colors.bg ?? "var(--background-primary)",
+    "--tl-accent":
+      entry.accentColor ??
+      style.colors.accent ??
+      "var(--background-modifier-border)",
+    "--tl-hover": style.colors.hover ?? "var(--interactive-accent)"
+  });
 
   const hasMedia = Boolean(entry.img);
   const grid = row.createDiv({ cls: `tl-grid ${hasMedia ? "has-media" : "no-media"}` });
@@ -447,6 +649,10 @@ function renderCardRow(
     "--tl-summary-lines": String(style.maxSummaryLines)
   });
   summaryEl.textContent = entry.summary ?? "";
+
+  if (entry.summary) {
+    syncTimelineSummaryLineClamp(summaryEl, style.maxSummaryLines);
+  }
 
   if (style.colors.title) {
     titleEl.style.color = style.colors.title;
@@ -723,6 +929,14 @@ function toYmd(date: FantasyDate): { y: number; m: number; d: number } {
     y: date.year,
     m: date.monthIndex + 1,
     d: date.day
+  };
+}
+
+function fromYmd(date: { y: number; m: number; d: number }): FantasyDate {
+  return {
+    year: date.y,
+    monthIndex: date.m - 1,
+    day: date.d
   };
 }
 
