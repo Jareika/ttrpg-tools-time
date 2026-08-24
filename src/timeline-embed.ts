@@ -42,6 +42,9 @@ interface TimeTimelineStylePayload {
   cardWidth: number;
   cardHeight: number;
   boxHeight: number;
+  gridRows: 2 | 3 | 4;
+  gridTileHeight: number;
+  gridTileWidth: number;
   sideGapLeft: number;
   sideGapRight: number;
   colors: {
@@ -398,18 +401,16 @@ function renderGridTimeline(
       value: entry,
       start: fromYmd(entry.start),
       end: entry.end ? fromYmd(entry.end) : undefined
-    }))
+    })),
+    payload.style.gridRows
   );
 
   const grid = scroller.createDiv({ cls: "tl-grid-timeline" });
   grid.setCssProps({
     "--tl-grid-cols": String(Math.max(1, layout.columnCount)),
     "--tl-grid-rows": String(layout.rowCount),
-    "--tl-grid-col-w": `${payload.style.cardWidth}px`,
-    "--tl-grid-row-h": `${Math.max(
-      payload.style.cardHeight,
-      payload.style.boxHeight
-    )}px`
+    "--tl-grid-col-w": `${payload.style.gridTileWidth}px`,
+    "--tl-grid-row-h": `${payload.style.gridTileHeight}px`
   });
 
   layout.placements.forEach((placement) => {
@@ -454,7 +455,7 @@ function renderGridTimeline(
         payload.style.colors.accent ??
         "var(--background-modifier-border)",
       "--tl-hover": payload.style.colors.hover ?? "var(--interactive-accent)",
-      "--tl-grid-media-w": `${payload.style.cardWidth}px`
+      "--tl-grid-media-w": `${payload.style.gridTileWidth}px`
     });
 
     if (isRange) {
@@ -880,14 +881,39 @@ function resolveStyle(
   options: TimeTimelineBlockOptions
 ): TimeTimelineStylePayload {
   const align = options.align ?? (style?.align === "right" ? "right" : "left");
+  const cardWidth = resolvePositiveInt(
+    options.cardWidth,
+    style?.cardWidth,
+    DEFAULT_CARD_WIDTH
+  );
+  const cardHeight = resolvePositiveInt(
+    options.cardHeight,
+    style?.cardHeight,
+    DEFAULT_CARD_HEIGHT
+  );
+  const gridTileHeight = resolvePositiveInt(
+    undefined,
+    style?.gridTileHeight,
+    cardHeight
+  );
+  const gridTileWidth = Math.max(
+    1,
+    Math.round((cardWidth / cardHeight) * gridTileHeight)
+  );
 
   return {
     align,
     maxSummaryLines: resolvePositiveInt(options.maxSummaryLines, style?.maxSummaryLines, DEFAULT_SUMMARY_LINES),
-    cardWidth: resolvePositiveInt(options.cardWidth, style?.cardWidth, DEFAULT_CARD_WIDTH),
-    cardHeight: resolvePositiveInt(options.cardHeight, style?.cardHeight, DEFAULT_CARD_HEIGHT),
+    cardWidth,
+    cardHeight,
     boxHeight: resolvePositiveInt(options.boxHeight, style?.boxHeight, DEFAULT_BOX_HEIGHT),
-    sideGapLeft: resolvePositiveInt(options.sideGapLeft, style?.sideGapLeft, DEFAULT_SIDE_GAP_LEFT),
+    gridRows:
+      style?.gridRows === 3 || style?.gridRows === 4
+        ? style.gridRows
+        : 2,
+    gridTileHeight,
+    gridTileWidth,
+	sideGapLeft: resolvePositiveInt(options.sideGapLeft, style?.sideGapLeft, DEFAULT_SIDE_GAP_LEFT),
     sideGapRight: resolvePositiveInt(options.sideGapRight, style?.sideGapRight, DEFAULT_SIDE_GAP_RIGHT),
     colors: {
       bg: style?.colors?.bg,

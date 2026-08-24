@@ -53,6 +53,18 @@ export function createTimeControlsApi(
       }
     },
     {
+      id: "calendar.switch-next-linked",
+      name: "Switch to next linked calendar",
+      icon: "repeat-2",
+      group: "Navigation",
+      description:
+        "Immediately switch to the next linked calendar in the calendar list.",
+      isAvailable: () => plugin.canSwitchToNextLinkedCalendar(),
+      execute: async () => {
+        await plugin.switchToNextLinkedCalendar();
+      }
+    },
+    {
       id: "day.open",
       name: "Open day view",
       icon: "sun",

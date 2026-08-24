@@ -22,6 +22,7 @@ const TL_CARD_WIDTH = 200;
 const TL_CARD_HEIGHT = 315;
 const TL_BOX_HEIGHT = 289;
 const TL_SIDE_GAP_LEFT = 40;
+const TL_GRID_ROWS = 2;
 const TL_SIDE_GAP_RIGHT = 40;
 const TL_MAX_SUMMARY_LINES = 7;
 const TL_MOON_SIZE = 28;
@@ -30,6 +31,7 @@ type HorizontalEdge = "media" | "box";
 
 type TimelineRenderItem = {
   event: CalendarEventDefinition;
+  calendar: CalendarFile;
   title: string;
   summary?: string;
   imageSrc?: string;
@@ -58,6 +60,9 @@ type ResolvedTimelineStyle = {
   cardWidth: number;
   cardHeight: number;
   boxHeight: number;
+  gridRows: 2 | 3 | 4;
+  gridTileHeight: number;
+  gridTileWidth: number;
   sideGapLeft: number;
   sideGapRight: number;
   colors: {
@@ -114,9 +119,27 @@ export class TimeTimelineView extends ItemView {
       return;
     }
 
-    const [events, tagInfos] = await Promise.all([
-      this.plugin.loadTimelineEvents(calendar.id),
-      loadLinkedTagInfos(this.plugin, calendar)
+    const allCalendars = await this.plugin.listCalendars();
+    const linkedCalendarIds = new Set(calendar.linkedCalendarIds);
+    const selectedCalendarIds = new Set([
+      calendar.id,
+      ...this.plugin.getTimelineAdditionalCalendarIds()
+    ]);
+    const selectedCalendars = allCalendars.filter(
+      (candidate) =>
+        candidate.id === calendar.id ||
+        (linkedCalendarIds.has(candidate.id) &&
+          selectedCalendarIds.has(candidate.id))
+    );
+
+    const [eventGroups, tagInfos] = await Promise.all([
+      Promise.all(
+        selectedCalendars.map(async (candidate) => ({
+          calendar: candidate,
+          events: await this.plugin.loadTimelineEvents(candidate.id)
+        }))
+      ),
+      loadLinkedTagInfos(this.plugin, selectedCalendars)
     ]);
 
     if (token !== this.renderToken) {
@@ -124,9 +147,14 @@ export class TimeTimelineView extends ItemView {
     }
 
     const tagInfoByRef = new Map(tagInfos.map((tag) => [tag.tagRef, tag] as const));
-    const allItems = events.map((event) => buildTimelineRenderItem(this.plugin, event, tagInfoByRef));
-    const filters = this.plugin.getTimelineTagFilterSnapshot();
-    const visibleItems = applyTimelineTagFilter(allItems, filters);
+    const allItems = eventGroups.flatMap(({ calendar: eventCalendar, events }) =>
+      events.map((event) =>
+        buildTimelineRenderItem(this.plugin, eventCalendar, event, tagInfoByRef)
+      )
+    );
+    const orderedItems = [...allItems].sort(compareTimelineRenderItems);
+	const filters = this.plugin.getTimelineTagFilterSnapshot();
+    const visibleItems = applyTimelineTagFilter(orderedItems, filters);
 	const timelineStyle = resolveTimelineStyle(calendar);
 
     const panel = root.createDiv({ cls: "time-timeline__panel" });
@@ -141,7 +169,13 @@ export class TimeTimelineView extends ItemView {
 
     headerText.createEl("p", {
       cls: "time-timeline__meta",
-      text: buildTimelineMetaText(calendar, allItems.length, visibleItems.length, filters)
+      text: buildTimelineMetaText(
+        calendar,
+        selectedCalendars,
+        allItems.length,
+        visibleItems.length,
+        filters
+      )
     });
 	
     if (timelineStyle.showMoons) {
@@ -323,7 +357,7 @@ export class TimeTimelineView extends ItemView {
     const wrapper = root.createDiv({ cls: "tl-wrapper tl-cross-mode" });
 
     items.forEach((item) => {
-	  this.renderCardRow(wrapper, calendar, item, timelineStyle, false);
+	  this.renderCardRow(wrapper, item, timelineStyle, false);
     });
   }
 
@@ -339,8 +373,14 @@ export class TimeTimelineView extends ItemView {
     const rendered: Array<{ el: HTMLElement; left: HorizontalEdge; right: HorizontalEdge }> = [];
 
     items.forEach((item) => {
-      const rowEl = this.renderCardRow(wrapper, calendar, item, timelineStyle, true);
-      rendered.push({ el: rowEl, ...this.getHorizontalEdges(item, timelineStyle) });
+      const rowEl = this.renderCardRow(wrapper, item, timelineStyle, true);
+      rendered.push({
+        el: rowEl,
+        ...this.getHorizontalEdges(
+          item,
+          resolveTimelineItemStyle(item, timelineStyle)
+        )
+      });
     });
 
     for (let index = 0; index < rendered.length - 1; index += 1) {
@@ -362,7 +402,8 @@ export class TimeTimelineView extends ItemView {
         value: item,
         start: item.start,
         end: item.end
-      }))
+      })),
+      timelineStyle.gridRows
     );
 
     const scroller = root.createDiv({ cls: "tl-grid-scroller" });
@@ -371,15 +412,13 @@ export class TimeTimelineView extends ItemView {
     grid.setCssProps({
       "--tl-grid-cols": String(Math.max(1, layout.columnCount)),
       "--tl-grid-rows": String(layout.rowCount),
-      "--tl-grid-col-w": `${timelineStyle.cardWidth}px`,
-      "--tl-grid-row-h": `${Math.max(
-        timelineStyle.cardHeight,
-        timelineStyle.boxHeight
-      )}px`
+      "--tl-grid-col-w": `${timelineStyle.gridTileWidth}px`,
+      "--tl-grid-row-h": `${timelineStyle.gridTileHeight}px`
     });
 
     layout.placements.forEach((placement) => {
       const item = placement.value;
+	  const itemStyle = resolveTimelineItemStyle(item, timelineStyle);
       const isRange = placement.isRange;
       const columnSpan = isRange
         ? Math.max(2, placement.columnSpan)
@@ -414,28 +453,27 @@ export class TimeTimelineView extends ItemView {
       );
 
       const accentColor =
-        timelineStyle.colors.accent ??
+        itemStyle.colors.accent ??
         item.accentColor ??
         "var(--background-modifier-border)";
 
       eventEl.setCssProps({
-        "--tl-bg": timelineStyle.colors.bg ?? "var(--background-primary)",
+        "--tl-bg": itemStyle.colors.bg ?? "var(--background-primary)",
         "--tl-accent": accentColor,
-        "--tl-hover": timelineStyle.colors.hover ?? "var(--interactive-accent)",
-        "--tl-grid-media-w": `${timelineStyle.cardWidth}px`
+        "--tl-hover": itemStyle.colors.hover ?? "var(--interactive-accent)",
+        "--tl-grid-media-w": `${timelineStyle.gridTileWidth}px`
       });
 
       if (isRange) {
-        this.renderGridRangeCard(eventEl, calendar, item, timelineStyle);
+        this.renderGridRangeCard(eventEl, item, itemStyle);
       } else {
-        this.renderGridSingleCard(eventEl, calendar, item, timelineStyle);
+        this.renderGridSingleCard(eventEl, item, itemStyle);
       }
     });
   }
 
   private renderGridSingleCard(
     parent: HTMLElement,
-    calendar: CalendarFile,
     item: TimelineRenderItem,
     timelineStyle: ResolvedTimelineStyle
   ): void {
@@ -461,7 +499,7 @@ export class TimeTimelineView extends ItemView {
 
     const date = card.createDiv({
       cls: "time-timeline-grid__date-header",
-      text: formatRangeLabel(calendar, item.start, undefined, timelineStyle)
+      text: formatRangeLabel(item.calendar, item.start, undefined, timelineStyle)
     });
 
     if (timelineStyle.colors.date) {
@@ -469,7 +507,7 @@ export class TimeTimelineView extends ItemView {
     }
 
     card.title = `${item.title} • ${formatRangeLabel(
-      calendar,
+      item.calendar,
       item.start,
       item.end,
       timelineStyle
@@ -479,11 +517,11 @@ export class TimeTimelineView extends ItemView {
     overlay.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      void this.openTimelineItem(calendar, item);
+      void this.openTimelineItem(item);
     });
     overlay.addEventListener("contextmenu", (event) => {
       event.preventDefault();
-      this.openItemContextMenu(event, calendar, item);
+      this.openItemContextMenu(event, item);
     });
 
     if (item.notePath) {
@@ -493,7 +531,6 @@ export class TimeTimelineView extends ItemView {
 
   private renderGridRangeCard(
     parent: HTMLElement,
-    calendar: CalendarFile,
     item: TimelineRenderItem,
     timelineStyle: ResolvedTimelineStyle
   ): void {
@@ -519,7 +556,7 @@ export class TimeTimelineView extends ItemView {
     });
     const date = body.createDiv({
       cls: "time-timeline-grid__range-date",
-      text: formatRangeLabel(calendar, item.start, item.end, timelineStyle)
+      text: formatRangeLabel(item.calendar, item.start, item.end, timelineStyle)
     });
     const summary = body.createDiv({
       cls: "time-timeline-grid__range-summary",
@@ -547,11 +584,11 @@ export class TimeTimelineView extends ItemView {
     overlay.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      void this.openTimelineItem(calendar, item);
+      void this.openTimelineItem(item);
     });
     overlay.addEventListener("contextmenu", (event) => {
       event.preventDefault();
-      this.openItemContextMenu(event, calendar, item);
+      this.openItemContextMenu(event, item);
     });
 
     if (item.notePath) {
@@ -561,16 +598,16 @@ export class TimeTimelineView extends ItemView {
 
   private renderCardRow(
     parent: HTMLElement,
-    calendar: CalendarFile,
     item: TimelineRenderItem,
 	timelineStyle: ResolvedTimelineStyle,
     horizontal: boolean
   ): HTMLElement {
-    const rowClasses = ["tl-row"];
+    const itemStyle = resolveTimelineItemStyle(item, timelineStyle);
+	const rowClasses = ["tl-row"];
     if (horizontal) {
       rowClasses.push("tl-h-item");
     }
-    if (timelineStyle.align === "right") {
+    if (itemStyle.align === "right") {
       rowClasses.push("tl-align-right");
     }
 
@@ -578,23 +615,26 @@ export class TimeTimelineView extends ItemView {
     row.dataset.tlStartKey = String(ymdSortKey(item.start));
     row.dataset.tlEndKey = String(ymdSortKey(item.end ?? item.start));
 
-    const accentColor = timelineStyle.colors.accent ?? item.accentColor ?? "var(--background-modifier-border)";
+    const accentColor =
+      itemStyle.colors.accent ??
+      item.accentColor ??
+      "var(--background-modifier-border)";
 
     row.setCssProps({
       "--tl-side-gap-left": horizontal
         ? "0px"
-        : `${timelineStyle.sideGapLeft}px`,
+        : `${itemStyle.sideGapLeft}px`,
       "--tl-side-gap-right": horizontal
         ? "0px"
-        : `${timelineStyle.sideGapRight}px`,
-      "--tl-bg": timelineStyle.colors.bg ?? "var(--background-primary)",
+        : `${itemStyle.sideGapRight}px`,
+      "--tl-bg": itemStyle.colors.bg ?? "var(--background-primary)",
       "--tl-accent": accentColor,
-      "--tl-hover": timelineStyle.colors.hover ?? "var(--interactive-accent)"
+      "--tl-hover": itemStyle.colors.hover ?? "var(--interactive-accent)"
     });
 
     const grid = row.createDiv({ cls: `tl-grid ${item.imageSrc ? "has-media" : "no-media"}` });
     grid.setCssProps({
-      "--tl-media-w": `${timelineStyle.cardWidth}px`
+      "--tl-media-w": `${itemStyle.cardWidth}px`
     });
 
     let media: HTMLElement | null = null;
@@ -602,7 +642,7 @@ export class TimeTimelineView extends ItemView {
     if (item.imageSrc) {
       media = grid.createDiv({ cls: "tl-media time-timeline__media-frame" });
       media.setCssProps({
-        "--time-tl-media-h": `${timelineStyle.cardHeight}px`
+        "--time-tl-media-h": `${itemStyle.cardHeight}px`
       });
 
       media.createEl("img", {
@@ -620,10 +660,10 @@ export class TimeTimelineView extends ItemView {
     });
 
     box.setCssProps({
-      "--time-tl-box-h": `${timelineStyle.boxHeight}px`,
-      "--tl-bg": timelineStyle.colors.bg ?? "var(--background-primary)",
+      "--time-tl-box-h": `${itemStyle.boxHeight}px`,
+      "--tl-bg": itemStyle.colors.bg ?? "var(--background-primary)",
       "--tl-accent": accentColor,
-      "--tl-hover": timelineStyle.colors.hover ?? "var(--interactive-accent)"
+      "--tl-hover": itemStyle.colors.hover ?? "var(--interactive-accent)"
     });
 
     const titleEl = box.createEl("h1", {
@@ -633,27 +673,27 @@ export class TimeTimelineView extends ItemView {
 
     const dateEl = box.createEl("h4", {
       cls: "tl-date tl-date-colored",
-      text: formatRangeLabel(calendar, item.start, item.end, timelineStyle)
+      text: formatRangeLabel(item.calendar, item.start, item.end, timelineStyle)
     });
 
     const summaryEl = box.createDiv({ cls: "tl-summary tl-clamp time-timeline__summary" });
     summaryEl.setCssProps({
-      "--tl-summary-lines": String(timelineStyle.maxSummaryLines)
+      "--tl-summary-lines": String(itemStyle.maxSummaryLines)
     });
     summaryEl.textContent = item.summary ?? "";
 
     if (item.summary) {
       syncTimelineSummaryLineClamp(
         summaryEl,
-        timelineStyle.maxSummaryLines
+        itemStyle.maxSummaryLines
       );
     }
 
-    if (timelineStyle.colors.title) {
-      titleEl.style.color = timelineStyle.colors.title;
+    if (itemStyle.colors.title) {
+      titleEl.style.color = itemStyle.colors.title;
     }
-    if (timelineStyle.colors.date) {
-      dateEl.style.color = timelineStyle.colors.date;
+    if (itemStyle.colors.date) {
+      dateEl.style.color = itemStyle.colors.date;
     }
 
     const clickTarget = item.notePath ? item.notePath : item.event.id;
@@ -663,11 +703,11 @@ export class TimeTimelineView extends ItemView {
       overlay.addEventListener("click", (evt) => {
         evt.preventDefault();
         evt.stopPropagation();
-        void this.openTimelineItem(calendar, item);
+        void this.openTimelineItem(item);
       });
       overlay.addEventListener("contextmenu", (evt) => {
         evt.preventDefault();
-        this.openItemContextMenu(evt, calendar, item);
+        this.openItemContextMenu(evt, item);
       });
 
       if (item.notePath) {
@@ -679,11 +719,11 @@ export class TimeTimelineView extends ItemView {
     boxOverlay.addEventListener("click", (evt) => {
       evt.preventDefault();
       evt.stopPropagation();
-      void this.openTimelineItem(calendar, item);
+      void this.openTimelineItem(item);
     });
     boxOverlay.addEventListener("contextmenu", (evt) => {
       evt.preventDefault();
-      this.openItemContextMenu(evt, calendar, item);
+      this.openItemContextMenu(evt, item);
     });
 
     if (item.notePath) {
@@ -708,7 +748,7 @@ export class TimeTimelineView extends ItemView {
     });
   }
 
-  private async openTimelineItem(calendar: CalendarFile, item: TimelineRenderItem): Promise<void> {
+  private async openTimelineItem(item: TimelineRenderItem): Promise<void> {
     if (item.notePath) {
       await this.plugin.openStoredNoteRef(item.notePath);
       return;
@@ -722,7 +762,6 @@ export class TimeTimelineView extends ItemView {
 
   private openItemContextMenu(
     event: MouseEvent,
-    calendar: CalendarFile,
     item: TimelineRenderItem
   ): void {
     const menu = new Menu();
@@ -749,7 +788,7 @@ export class TimeTimelineView extends ItemView {
     menu.addItem((entry) =>
       entry.setTitle("Edit event").setIcon("pencil").onClick(() => {
         void this.plugin.activateEventEditorForEvent(
-          calendar.id,
+          item.calendar.id,
           item.start.year,
           item.event.id
         );
@@ -763,10 +802,10 @@ export class TimeTimelineView extends ItemView {
             title: "Delete event",
             eventTitle: item.title,
             occurrenceLabel: formatRangeLabel(
-              calendar,
+              item.calendar,
               item.start,
               item.end,
-              resolveTimelineStyle(calendar)
+              resolveTimelineStyle(item.calendar)
             ),
             recurring: Boolean(item.event.recurrence)
           });
@@ -776,7 +815,7 @@ export class TimeTimelineView extends ItemView {
           }
 
           await this.plugin.deleteEventById(
-            calendar.id,
+            item.calendar.id,
             item.start.year,
             item.event.id,
             deleteMode,
@@ -999,7 +1038,10 @@ export class TimeTimelineFilterView extends ItemView {
       return;
     }
 
-    const tagInfos = await loadLinkedTagInfos(this.plugin, calendar);
+    const [allCalendars, tagInfos] = await Promise.all([
+      this.plugin.listCalendars(),
+      loadLinkedTagInfos(this.plugin, [calendar])
+    ]);
 
     if (token !== this.renderToken) {
       return;
@@ -1009,7 +1051,51 @@ export class TimeTimelineFilterView extends ItemView {
     const content = panel.createDiv({ cls: "time-tag-filter__content" });
     const filterSnapshot = this.plugin.getTimelineTagFilterSnapshot();
 
-    if (filterSnapshot.include.length > 0 || filterSnapshot.exclude.length > 0) {
+    const linkedCalendarIds = new Set(calendar.linkedCalendarIds);
+    const linkedCalendars = allCalendars.filter((candidate) =>
+      linkedCalendarIds.has(candidate.id)
+    );
+
+    if (linkedCalendars.length > 0) {
+      const calendarGroup = content.createDiv({
+        cls: "time-tag-filter__group"
+      });
+      calendarGroup.createEl("h3", {
+        cls: "time-tag-filter__group-title",
+        text: "Calendars"
+      });
+
+      const calendarChips = calendarGroup.createDiv({
+        cls: "time-tag-filter__chips"
+      });
+
+      linkedCalendars.forEach((candidate, index) => {
+        const color = TIMELINE_CALENDAR_COLORS[
+          index % TIMELINE_CALENDAR_COLORS.length
+        ] ?? "#d46b65";
+        const button = calendarChips.createEl("button", {
+          cls: "time-tag-filter__button time-timeline-calendar-filter__button",
+          text: candidate.name
+        });
+        button.type = "button";
+        button.title = this.plugin.isTimelineCalendarIncluded(candidate.id)
+          ? `Hide ${candidate.name} from timeline`
+          : `Add ${candidate.name} to timeline`;
+
+        applyTagButtonState(
+          button,
+          color,
+          this.plugin.isTimelineCalendarIncluded(candidate.id),
+          false
+        );
+
+        button.addEventListener("click", () => {
+          this.plugin.toggleTimelineCalendar(candidate.id);
+        });
+      });
+    }
+	
+	if (filterSnapshot.include.length > 0 || filterSnapshot.exclude.length > 0) {
       const toolbar = content.createDiv({ cls: "time-tag-filter__toolbar" });
       createActionButton(toolbar, "Clear filters", () => {
         this.plugin.clearTimelineTagFilters();
@@ -1084,6 +1170,7 @@ export class TimeTimelineFilterView extends ItemView {
 
 function buildTimelineRenderItem(
   plugin: TtrpgToolsTimePlugin,
+  calendar: CalendarFile,
   event: CalendarEventDefinition,
   tagInfoByRef: Map<string, TimelineTagInfo>
 ): TimelineRenderItem {
@@ -1092,6 +1179,7 @@ function buildTimelineRenderItem(
 
   return {
     event,
+	calendar,
     title: event.title,
     summary: normalizeSummary(event.description),
     imageSrc: resolveImageSrc(plugin, event),
@@ -1105,10 +1193,12 @@ function buildTimelineRenderItem(
 
 async function loadLinkedTagInfos(
   plugin: TtrpgToolsTimePlugin,
-  calendar: CalendarFile
+  calendars: CalendarFile[]
 ): Promise<TimelineTagInfo[]> {
   const packs = await plugin.listTagPacks();
-  const linkedPackIds = new Set(calendar.linkedTagPackIds);
+  const linkedPackIds = new Set(
+    calendars.flatMap((calendar) => calendar.linkedTagPackIds)
+  );
 
   return packs
     .filter((pack) => linkedPackIds.has(pack.id))
@@ -1171,12 +1261,15 @@ function applyTimelineTagFilter(
 
 function buildTimelineMetaText(
   calendar: CalendarFile,
+  selectedCalendars: CalendarFile[],
   totalItems: number,
   visibleItems: number,
   filters: { include: string[]; exclude: string[] }
 ): string {
   const parts = [
-    calendar.name,
+    selectedCalendars.length === 1
+      ? calendar.name
+      : `${calendar.name} +${selectedCalendars.length - 1} calendar${selectedCalendars.length === 2 ? "" : "s"}`,
     `${visibleItems}/${totalItems} events`
   ];
 
@@ -1321,17 +1414,36 @@ function sameDate(left: FantasyDate, right: FantasyDate): boolean {
 
 function resolveTimelineStyle(calendar: CalendarFile): ResolvedTimelineStyle {
   const source: CalendarTimelineStyle | undefined = calendar.timeline;
+  const cardWidth = resolvePositiveInteger(source?.cardWidth, TL_CARD_WIDTH);
+  const cardHeight = resolvePositiveInteger(source?.cardHeight, TL_CARD_HEIGHT);
+  const gridTileHeight = resolvePositiveInteger(
+    source?.gridTileHeight,
+    cardHeight
+  );
+  const gridTileWidth = Math.max(
+    1,
+    Math.round((cardWidth / cardHeight) * gridTileHeight)
+  );
 
   return {
     name: source?.name?.trim() || "Timeline",
     align: source?.align === "right" ? "right" : "left",
     showMoons: source?.showMoons === true,
     moonSize: resolvePositiveInteger(source?.moonSize, TL_MOON_SIZE),
-    maxSummaryLines: resolvePositiveInteger(source?.maxSummaryLines, TL_MAX_SUMMARY_LINES),
-    cardWidth: resolvePositiveInteger(source?.cardWidth, TL_CARD_WIDTH),
-    cardHeight: resolvePositiveInteger(source?.cardHeight, TL_CARD_HEIGHT),
+    maxSummaryLines: resolvePositiveInteger(
+      source?.maxSummaryLines,
+      TL_MAX_SUMMARY_LINES
+    ),
+    cardWidth,
+    cardHeight,
     boxHeight: resolvePositiveInteger(source?.boxHeight, TL_BOX_HEIGHT),
-    sideGapLeft: resolveNonNegativeInteger(source?.sideGapLeft, TL_SIDE_GAP_LEFT),
+    gridRows:
+      source?.gridRows === 3 || source?.gridRows === 4
+        ? source.gridRows
+        : TL_GRID_ROWS,
+    gridTileHeight,
+    gridTileWidth,
+	sideGapLeft: resolveNonNegativeInteger(source?.sideGapLeft, TL_SIDE_GAP_LEFT),
     sideGapRight: resolveNonNegativeInteger(source?.sideGapRight, TL_SIDE_GAP_RIGHT),
     colors: {
       bg: normalizeOptionalCssValue(source?.colors?.bg),
@@ -1345,6 +1457,107 @@ function resolveTimelineStyle(calendar: CalendarFile): ResolvedTimelineStyle {
         ?.map((entry) => entry.trim())
         .filter((entry) => entry.length > 0) ?? undefined
   };
+}
+
+function resolveTimelineItemStyle(
+  item: TimelineRenderItem,
+  fallback: ResolvedTimelineStyle
+): ResolvedTimelineStyle {
+  const source = item.calendar.timeline;
+  const cardWidth = resolvePositiveInteger(source?.cardWidth, fallback.cardWidth);
+  const cardHeight = resolvePositiveInteger(source?.cardHeight, fallback.cardHeight);
+  const gridTileHeight = resolvePositiveInteger(
+    source?.gridTileHeight,
+    fallback.gridTileHeight
+  );
+
+  return {
+    ...fallback,
+    align: source?.align === "right" ? "right" : source?.align === "left"
+      ? "left"
+      : fallback.align,
+    maxSummaryLines: resolvePositiveInteger(
+      source?.maxSummaryLines,
+      fallback.maxSummaryLines
+    ),
+    cardWidth,
+    cardHeight,
+    boxHeight: resolvePositiveInteger(source?.boxHeight, fallback.boxHeight),
+    gridTileHeight,
+    gridTileWidth: Math.max(
+      1,
+      Math.round((cardWidth / cardHeight) * gridTileHeight)
+    ),
+    sideGapLeft: resolveNonNegativeInteger(
+      source?.sideGapLeft,
+      fallback.sideGapLeft
+    ),
+    sideGapRight: resolveNonNegativeInteger(
+      source?.sideGapRight,
+      fallback.sideGapRight
+    ),
+    colors: {
+      bg: normalizeOptionalCssValue(source?.colors?.bg) ?? fallback.colors.bg,
+      accent:
+        normalizeOptionalCssValue(source?.colors?.accent) ??
+        fallback.colors.accent,
+      hover:
+        normalizeOptionalCssValue(source?.colors?.hover) ??
+        fallback.colors.hover,
+      title:
+        normalizeOptionalCssValue(source?.colors?.title) ??
+        fallback.colors.title,
+      date:
+        normalizeOptionalCssValue(source?.colors?.date) ??
+        fallback.colors.date
+    }
+  };
+}
+
+function compareTimelineRenderItems(
+  left: TimelineRenderItem,
+  right: TimelineRenderItem
+): number {
+  const startComparison = compareTimelineDates(left.start, right.start);
+
+  if (startComparison !== 0) {
+    return startComparison;
+  }
+
+  const endComparison = compareTimelineDates(
+    left.end ?? left.start,
+    right.end ?? right.start
+  );
+
+  if (endComparison !== 0) {
+    return endComparison;
+  }
+
+  const calendarComparison = left.calendar.name.localeCompare(
+    right.calendar.name,
+    undefined,
+    { sensitivity: "base" }
+  );
+
+  if (calendarComparison !== 0) {
+    return calendarComparison;
+  }
+
+  return left.title.localeCompare(right.title, undefined, {
+    sensitivity: "base"
+  });
+}
+
+function compareTimelineDates(left: FantasyDate, right: FantasyDate): number {
+  if (left.year !== right.year) {
+    return left.year - right.year;
+  }
+
+  if (left.monthIndex !== right.monthIndex) {
+    return left.monthIndex - right.monthIndex;
+  }
+
+  return left.day - right.day;
 }
 
 function getTimelineMonthName(
@@ -1400,6 +1613,8 @@ function resolveNonNegativeInteger(value: number | undefined, fallback: number):
 function mod(value: number, length: number): number {
   return ((value % length) + length) % length;
 }
+
+const TIMELINE_CALENDAR_COLORS = ["#d46b65", "#3f8f8a", "#7d6cc4", "#d28a3f"];
 
 function getReadableTextColor(hexColor: string): string {
   const normalized = hexColor.replace("#", "");

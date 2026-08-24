@@ -28,6 +28,7 @@ export type IntercalaryDayDisplayPosition =
   | "standalone"
   | "after-previous-month"
   | "before-next-month";
+export type TimelineGridRowCount = 2 | 3 | 4;
 export type NegativeYearDisplayMode = "signed" | "absolute";
 export type LargeYearFormat = "plain" | "abbreviated";
 export type EraYearDisplayMode = "absolute" | "relative";
@@ -97,6 +98,7 @@ export interface FrontmatterEventImportSource {
   notePath: string;
   importedAt: string;
   explicitSyncId?: string;
+  multiDate?: boolean;
 }
 
 export interface FantasyTimeConfig {
@@ -128,6 +130,8 @@ export interface CalendarTimelineStyle {
   cardWidth?: number;
   cardHeight?: number;
   boxHeight?: number;
+  gridRows?: TimelineGridRowCount;
+  gridTileHeight?: number;
   sideGapLeft?: number;
   sideGapRight?: number;
   colors?: TimelineStyleColors;
@@ -273,6 +277,7 @@ export interface CalendarFile {
   definition: FantasyCalendarDefinition;
   state: CalendarState;
   linkedTagPackIds: string[];
+  linkedCalendarIds: string[];
   linkedWeatherPackIds: string[];
   weatherEnabled: boolean;
   markers: DayMarker[];

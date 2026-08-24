@@ -132,6 +132,7 @@ export const DEFAULT_CALENDAR_FILE: CalendarFile = {
     showEraDescription: false
   },
   linkedTagPackIds: [],
+  linkedCalendarIds: [],
   linkedWeatherPackIds: [],
   weatherEnabled: true,
   defaultWeatherPackId: "general",
@@ -233,6 +234,7 @@ export function normalizeCalendarFile(raw: unknown): CalendarFile {
     definition,
     state,
     linkedTagPackIds: readStringArray(record.linkedTagPackIds),
+	linkedCalendarIds: readStringArray(record.linkedCalendarIds),
     linkedWeatherPackIds: readStringArray(record.linkedWeatherPackIds),
 	weatherEnabled: readBoolean(record.weatherEnabled, true),
     defaultWeatherPackId:
@@ -844,6 +846,8 @@ function readTimelineStyle(raw: unknown): CalendarTimelineStyle | undefined {
     cardWidth: readOptionalInteger(record.cardWidth),
     cardHeight: readOptionalInteger(record.cardHeight),
     boxHeight: readOptionalInteger(record.boxHeight),
+    gridRows: readTimelineGridRows(record.gridRows),
+    gridTileHeight: readOptionalPositiveInteger(record.gridTileHeight),
     sideGapLeft: readOptionalInteger(record.sideGapLeft),
     sideGapRight: readOptionalInteger(record.sideGapRight),
     colors,
@@ -885,6 +889,22 @@ function readTimelineMonthNames(raw: unknown): string[] {
 function readOptionalInteger(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value)
     ? Math.trunc(value)
+    : undefined;
+}
+
+function readOptionalPositiveInteger(value: unknown): number | undefined {
+  const parsed = readOptionalInteger(value);
+
+  return typeof parsed === "number" && parsed > 0
+    ? parsed
+    : undefined;
+}
+
+function readTimelineGridRows(
+  value: unknown
+): CalendarTimelineStyle["gridRows"] {
+  return value === 2 || value === 3 || value === 4
+    ? value
     : undefined;
 }
 
@@ -1040,6 +1060,8 @@ function hasTimelineStyleValues(value: CalendarTimelineStyle): boolean {
     typeof value.cardWidth === "number" ||
     typeof value.cardHeight === "number" ||
     typeof value.boxHeight === "number" ||
+    typeof value.gridRows === "number" ||
+    typeof value.gridTileHeight === "number" ||
     typeof value.sideGapLeft === "number" ||
     typeof value.sideGapRight === "number" ||
     (Array.isArray(value.monthNames) && value.monthNames.length > 0) ||
@@ -1203,6 +1225,7 @@ export function cloneCalendarFile(calendar: CalendarFile): CalendarFile {
       showEraDescription: calendar.state.showEraDescription
     },
     linkedTagPackIds: [...calendar.linkedTagPackIds],
+	linkedCalendarIds: [...calendar.linkedCalendarIds],
     linkedWeatherPackIds: [...calendar.linkedWeatherPackIds],
 	weatherEnabled: calendar.weatherEnabled,
     defaultWeatherPackId: calendar.defaultWeatherPackId,

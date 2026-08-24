@@ -38,6 +38,7 @@ import {
 import {
   CalendarEditorModal,
   CalendarManagerModal,
+  CalendarSwitcherModal,
   TagPackEditorModal,
   TagPackManagerModal
 } from "./modals";
@@ -115,6 +116,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
   private timelineLayoutMode: "vertical" | "horizontal" | "grid" = "vertical";
   private readonly timelineIncludedTagRefs = new Set<string>();
   private readonly timelineExcludedTagRefs = new Set<string>();
+  private readonly timelineAdditionalCalendarIds = new Set<string>();
   private pendingActiveCalendarStateSaveTimer: number | null = null;
 
   /**
@@ -354,7 +356,8 @@ export default class TtrpgToolsTimePlugin extends Plugin {
 	
 	await this.migrateLegacyEventStorage(calendars);
 
-    const active =
+    this.clearTimelineCalendarFilters(false);
+	const active =
       (this.settings.activeCalendarId
         ? calendars.find((calendar) => calendar.id === this.settings.activeCalendarId)
         : null) ?? calendars[0];
@@ -420,6 +423,10 @@ export default class TtrpgToolsTimePlugin extends Plugin {
 
   openManageCalendarsModal(): void {
     new CalendarManagerModal(this).open();
+  }
+  
+  openCalendarSwitcherModal(): void {
+    new CalendarSwitcherModal(this).open();
   }
 
   openManageTagPacksModal(): void {
@@ -861,6 +868,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
 
     this.activeCalendar = calendar;
 	this.clearTimelineTagFilters(false);
+	this.clearTimelineCalendarFilters(false);
     await this.replaceSettings({
       ...this.settings,
       activeCalendarId: calendar.id
@@ -869,11 +877,87 @@ export default class TtrpgToolsTimePlugin extends Plugin {
 	await this.ensureWeatherReferencesForCalendarYear(calendar, calendar.state.cursorDate.year);
     this.refreshOpenViews();
   }
+  
+  canSwitchToNextLinkedCalendar(): boolean {
+    const calendar = this.activeCalendar;
+
+    return Boolean(
+      calendar &&
+      calendar.linkedCalendarIds.some((linkedId) => linkedId !== calendar.id)
+    );
+  }
+
+  async switchToNextLinkedCalendar(): Promise<void> {
+    const activeCalendar = this.activeCalendar;
+
+    if (!activeCalendar) {
+      return;
+    }
+
+    const linkedIds = new Set([
+      activeCalendar.id,
+      ...activeCalendar.linkedCalendarIds
+    ]);
+
+    const candidates = (await this.listCalendars())
+      .filter((calendar) => linkedIds.has(calendar.id))
+      .sort((left, right) => {
+        const nameComparison = left.name.localeCompare(
+          right.name,
+          undefined,
+          { sensitivity: "base" }
+        );
+
+        return nameComparison !== 0
+          ? nameComparison
+          : left.id.localeCompare(right.id, undefined, {
+              sensitivity: "base"
+            });
+      });
+
+    if (candidates.length < 2) {
+      return;
+    }
+
+    const currentIndex = candidates.findIndex(
+      (calendar) => calendar.id === activeCalendar.id
+    );
+    const nextIndex =
+      currentIndex >= 0
+        ? (currentIndex + 1) % candidates.length
+        : 0;
+    const nextCalendar = candidates[nextIndex];
+
+    if (!nextCalendar || nextCalendar.id === activeCalendar.id) {
+      return;
+    }
+
+    await this.setActiveCalendarById(nextCalendar.id);
+  }
 
   async saveCalendar(calendar: CalendarFile, setActive = false): Promise<void> {
 	await this.flushPendingActiveCalendarStateSave();
-    const normalized = normalizeCalendarFile(calendar);
+    let normalized = normalizeCalendarFile(calendar);
+    const previous = await this.dataStore.loadCalendarById(normalized.id);
+    const knownCalendarIds = new Set(
+      (await this.dataStore.listCalendars()).map((entry) => entry.id)
+    );
+
+    normalized = {
+      ...normalized,
+      linkedCalendarIds: [...new Set(normalized.linkedCalendarIds)]
+        .filter((id) => id !== normalized.id)
+        .filter((id) => knownCalendarIds.has(id))
+        .sort((left, right) =>
+          left.localeCompare(right, undefined, { sensitivity: "base" })
+        )
+    };
+
     await this.dataStore.saveCalendar(normalized);
+    await this.syncCalendarLinks(
+      normalized,
+      previous?.linkedCalendarIds ?? []
+    );
 
     if (setActive || this.activeCalendar?.id === normalized.id || this.activeCalendar === null) {
       this.activeCalendar = normalized;
@@ -883,6 +967,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
       });
     }
 	this.clearTimelineTagFilters(false);
+	this.clearTimelineCalendarFilters(false);
 	
     if (this.activeCalendar?.id === normalized.id) {
       await this.ensureWeatherReferencesForCalendarYear(normalized, normalized.state.cursorDate.year);
@@ -1122,6 +1207,30 @@ export default class TtrpgToolsTimePlugin extends Plugin {
   isTimelineTagExcluded(tagRef: string): boolean {
     return this.timelineExcludedTagRefs.has(tagRef);
   }
+  
+  getTimelineAdditionalCalendarIds(): string[] {
+    return [...this.timelineAdditionalCalendarIds];
+  }
+
+  isTimelineCalendarIncluded(calendarId: string): boolean {
+    return this.timelineAdditionalCalendarIds.has(calendarId);
+  }
+
+  toggleTimelineCalendar(calendarId: string): void {
+    const activeCalendarId = this.activeCalendar?.id;
+
+    if (!calendarId || calendarId === activeCalendarId) {
+      return;
+    }
+
+    if (this.timelineAdditionalCalendarIds.has(calendarId)) {
+      this.timelineAdditionalCalendarIds.delete(calendarId);
+    } else {
+      this.timelineAdditionalCalendarIds.add(calendarId);
+    }
+
+    this.refreshOpenViews();
+  }
 
   toggleTimelineIncludedTag(tagRef: string): void {
     if (this.timelineIncludedTagRefs.has(tagRef)) {
@@ -1148,6 +1257,14 @@ export default class TtrpgToolsTimePlugin extends Plugin {
   clearTimelineTagFilters(refresh = true): void {
     this.timelineIncludedTagRefs.clear();
     this.timelineExcludedTagRefs.clear();
+
+    if (refresh) {
+      this.refreshOpenViews();
+    }
+  }
+  
+  clearTimelineCalendarFilters(refresh = true): void {
+    this.timelineAdditionalCalendarIds.clear();
 
     if (refresh) {
       this.refreshOpenViews();
@@ -1604,7 +1721,8 @@ export default class TtrpgToolsTimePlugin extends Plugin {
   async saveEvent(
     event: CalendarEventDefinition,
     previousEvent?: CalendarEventDefinition,
-    refreshViews = true
+    refreshViews = true,
+    writeToFrontmatter = true
   ): Promise<void> {
     const normalized = normalizeCalendarEventDefinition(event);
     const currentCalendar =
@@ -1692,11 +1810,13 @@ export default class TtrpgToolsTimePlugin extends Plugin {
       );
     }
 	
-    try {
-      await this.writeEventToFrontmatter(normalized, currentCalendar);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      new Notice(`Event saved, but frontmatter export failed: ${message}`);
+    if (writeToFrontmatter) {
+      try {
+        await this.writeEventToFrontmatter(normalized, currentCalendar);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        new Notice(`Event saved, but frontmatter export failed: ${message}`);
+      }
     }
 
     if (refreshViews) {
@@ -1711,6 +1831,10 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     const exportSettings = this.settings.frontmatterExport;
 
     if (!exportSettings.enabled) {
+      return;
+    }
+	
+    if (event.importSource?.kind === "frontmatter" && event.importSource.multiDate) {
       return;
     }
 
@@ -1855,86 +1979,106 @@ export default class TtrpgToolsTimePlugin extends Plugin {
       };
     }
 
-    const candidate = parsed.candidate;
-    const existing = importedMap.get(candidate.syncKey);
+    const candidates = parsed.candidates;
+    const configuredExplicitSyncId = candidates.find(
+      (candidate) => candidate.explicitSyncId
+    )?.explicitSyncId;
+    const syncIdProperty = this.settings.frontmatterImport.syncIdProperty?.trim();
+    const generatedSyncId =
+      configuredExplicitSyncId ??
+      (syncIdProperty
+        ? createEventId(candidates[0]?.title ?? file.basename)
+        : undefined);
 
-    if (existing) {
-      const didUpdateNoteRef = await this.tryUpdateImportedEventNoteRef(
-        existing,
-        file.path,
-        suppressRefresh
-      );
+    let importedCount = 0;
+    let updatedExistingNoteRef = false;
 
-      if (didUpdateNoteRef) {
-        importedMap.set(candidate.syncKey, {
-          ...existing,
-          noteRef: file.path,
-          importSource: existing.importSource
-            ? {
-                ...existing.importSource,
-                notePath: file.path
-              }
-            : existing.importSource
-        });
+    for (const candidate of candidates) {
+      const syncKey = generatedSyncId
+        ? `frontmatter-sync:${generatedSyncId}${candidate.syncKeySuffix ?? ""}`
+        : candidate.syncKey;
+      const existing = importedMap.get(syncKey);
+
+      if (existing) {
+        const didUpdateNoteRef = await this.tryUpdateImportedEventNoteRef(
+          existing,
+          file.path,
+          suppressRefresh
+        );
+
+        if (didUpdateNoteRef) {
+          updatedExistingNoteRef = true;
+          importedMap.set(syncKey, {
+            ...existing,
+            noteRef: file.path,
+            importSource: existing.importSource
+              ? {
+                  ...existing.importSource,
+                  notePath: file.path
+                }
+              : existing.importSource
+          });
+        }
+
+        continue;
       }
 
-      return {
-        status: "skipped",
-        changed: didUpdateNoteRef,
-        message: didUpdateNoteRef
-          ? `Updated linked note for existing imported event from ${file.path}.`
-          : `Skipped ${file.path}: event already imported.`
+      const now = new Date().toISOString();
+      const eventId = createEventId(candidate.title);
+      const event: CalendarEventDefinition = {
+        id: eventId,
+        calendarId: calendar.id,
+        title: candidate.title,
+        date: candidate.date,
+        endDate: candidate.endDate,
+        startTime: candidate.startTime,
+        endTime: candidate.endTime,
+        description: candidate.description,
+        color: candidate.color,
+        tagRefs: candidate.tagRefs,
+        weatherPackId: candidate.weatherPackId,
+        imageRef: candidate.imageRef,
+        noteRef: candidate.noteRef,
+        createdAt: now,
+        recurrence: candidate.recurrence,
+        importSource: {
+          kind: "frontmatter",
+          syncKey,
+          notePath: candidate.noteRef,
+          importedAt: now,
+          explicitSyncId: generatedSyncId,
+          multiDate: candidate.multipleDates || undefined
+        },
+        updatedAt: now
       };
+
+      await this.saveEvent(event, undefined, !suppressRefresh, false);
+      importedMap.set(syncKey, event);
+      importedCount += 1;
     }
 
-    const now = new Date().toISOString();
-    const eventId = createEventId(candidate.title);
-    const syncIdProperty = this.settings.frontmatterImport.syncIdProperty?.trim();
-    const explicitSyncId =
-      candidate.explicitSyncId ??
-      (syncIdProperty ? eventId : undefined);
-    const syncKey = explicitSyncId
-      ? `frontmatter-sync:${explicitSyncId}`
-      : candidate.syncKey;
-
-    const event: CalendarEventDefinition = {
-      id: eventId,
-      calendarId: calendar.id,
-      title: candidate.title,
-      date: candidate.date,
-      endDate: candidate.endDate,
-      startTime: candidate.startTime,
-      endTime: candidate.endTime,
-      description: candidate.description,
-      color: candidate.color,
-      tagRefs: candidate.tagRefs,
-      weatherPackId: candidate.weatherPackId,
-      imageRef: candidate.imageRef,
-      noteRef: candidate.noteRef,
-      createdAt: now,
-      recurrence: candidate.recurrence,
-      importSource: {
-        kind: "frontmatter",
-        syncKey,
-        notePath: candidate.noteRef,
-        importedAt: now,
-        explicitSyncId
-      },
-      updatedAt: now
-    };
-
-    await this.saveEvent(event, undefined, !suppressRefresh);
-
-    if (syncIdProperty && explicitSyncId && !candidate.explicitSyncId) {
-      void this.tryWriteImportedSyncIdToNote(file, syncIdProperty, explicitSyncId);
+    if (
+      syncIdProperty &&
+      generatedSyncId &&
+      !configuredExplicitSyncId &&
+      importedCount > 0
+    ) {
+      void this.tryWriteImportedSyncIdToNote(
+        file,
+        syncIdProperty,
+        generatedSyncId
+      );
     }
-
-    importedMap.set(syncKey, event);
 
     return {
-      status: "imported",
-      changed: true,
-      message: `Imported event from ${file.path}.`
+      status: importedCount > 0 ? "imported" : "skipped",
+      changed: importedCount > 0 || updatedExistingNoteRef,
+      message:
+        importedCount > 0
+          ? `Imported ${importedCount} event${importedCount === 1 ? "" : "s"} from ${file.path}.`
+          : updatedExistingNoteRef
+            ? `Updated linked note for imported event(s) from ${file.path}.`
+            : `Skipped ${file.path}: event(s) already imported.`
     };
   }
 
@@ -1975,7 +2119,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
       updatedAt: new Date().toISOString()
     };
 
-    await this.saveEvent(updated, event, !suppressRefresh);
+    await this.saveEvent(updated, event, !suppressRefresh, false);
     return true;
   }
   
@@ -2430,6 +2574,26 @@ export default class TtrpgToolsTimePlugin extends Plugin {
 	delete this.fantasyClock.byCalendarId[id];
 
     const remaining = await this.listCalendars();
+
+    for (const calendar of remaining) {
+      if (!calendar.linkedCalendarIds.includes(id)) {
+        continue;
+      }
+
+      const updatedCalendar: CalendarFile = {
+        ...calendar,
+        linkedCalendarIds: calendar.linkedCalendarIds.filter(
+          (linkedId) => linkedId !== id
+        )
+      };
+
+      await this.dataStore.saveCalendar(updatedCalendar);
+
+      if (this.activeCalendar?.id === updatedCalendar.id) {
+        this.activeCalendar = updatedCalendar;
+      }
+    }
+
     const nextActive =
       this.settings.activeCalendarId === id
         ? remaining[0] ?? null
@@ -2438,6 +2602,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
           null;
 
     this.activeCalendar = nextActive;
+	this.clearTimelineCalendarFilters(false);
     await this.replaceSettings({
       ...this.settings,
       activeCalendarId: nextActive?.id ?? null
@@ -2656,6 +2821,63 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     }
 
     return await this.dataStore.loadCalendarById(id);
+  }
+  
+  private async syncCalendarLinks(
+    calendar: CalendarFile,
+    previousLinkedCalendarIds: string[]
+  ): Promise<void> {
+    const previousIds = new Set(previousLinkedCalendarIds);
+    const nextIds = new Set(calendar.linkedCalendarIds);
+    const affectedIds = new Set([
+      ...previousIds,
+      ...nextIds
+    ]);
+
+    for (const linkedCalendarId of affectedIds) {
+      if (linkedCalendarId === calendar.id) {
+        continue;
+      }
+
+      const linkedCalendar = await this.dataStore.loadCalendarById(
+        linkedCalendarId
+      );
+
+      if (!linkedCalendar) {
+        continue;
+      }
+
+      const linkedIds = new Set(linkedCalendar.linkedCalendarIds);
+      const shouldBeLinked = nextIds.has(linkedCalendarId);
+
+      if (shouldBeLinked) {
+        linkedIds.add(calendar.id);
+      } else {
+        linkedIds.delete(calendar.id);
+      }
+
+      const nextLinkedIds = [...linkedIds].sort((left, right) =>
+        left.localeCompare(right, undefined, { sensitivity: "base" })
+      );
+
+      if (
+        nextLinkedIds.join("\u0000") ===
+        linkedCalendar.linkedCalendarIds.join("\u0000")
+      ) {
+        continue;
+      }
+
+      const updatedLinkedCalendar: CalendarFile = {
+        ...linkedCalendar,
+        linkedCalendarIds: nextLinkedIds
+      };
+
+      await this.dataStore.saveCalendar(updatedLinkedCalendar);
+
+      if (this.activeCalendar?.id === updatedLinkedCalendar.id) {
+        this.activeCalendar = updatedLinkedCalendar;
+      }
+    }
   }
 
   private async resolveDefaultWeatherPackId(calendar: CalendarFile): Promise<string> {

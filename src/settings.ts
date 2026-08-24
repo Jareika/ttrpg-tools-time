@@ -286,7 +286,7 @@ export class TimeSettingTab extends PluginSettingTab {
         cls: "time-collection-editor__input"
       });
       iconInput.type = "text";
-      iconInput.placeholder = "timer";
+      iconInput.placeholder = "Timer";
       iconInput.value = button.icon ?? "";
       iconInput.setAttr("aria-label", "Obsidian icon name");
       iconInput.addEventListener("input", () => {

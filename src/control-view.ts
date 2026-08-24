@@ -114,6 +114,16 @@ export class TimeControlView extends ItemView {
         void this.plugin.activateView();
       }
     });
+	
+    this.createActionButton(quickActions, {
+      icon: "repeat-2",
+      label: "Next linked calendar",
+      iconOnly: true,
+      disabled: !this.plugin.canSwitchToNextLinkedCalendar(),
+      onClick: () => {
+        void this.plugin.switchToNextLinkedCalendar();
+      }
+    });
 
     this.createActionButton(quickActions, {
       icon: "sun",

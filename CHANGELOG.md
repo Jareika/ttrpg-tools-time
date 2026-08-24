@@ -1,5 +1,24 @@
 Changelog
 
+0.8.0
+- Expanded horizontal Timeline Grid mode with configurable 2, 3, or 4 grid rows.
+- Added configurable Grid tile sizing through per-calendar Timeline Style settings.
+- Removed the Calendar View cap for event dots: all events for a day are now rendered instead of limiting the display to three markers.
+- Extended Frontmatter date imports:
+  - `fc-date` can now be a YAML list of concrete dates.
+  - Each list entry creates an independent event while retaining the same linked Markdown note.
+  - Date lists intentionally cannot be combined with a shared end date or interval recurrence fields.
+- Improved Frontmatter date parsing for fantasy calendars with intercalary and standalone days:
+  - regular month names, for example `1456-Eleint-30`
+  - month ids, for example `1456-eleint-30`
+  - unambiguous month-name or month-id prefixes with at least three characters, for example `1456-HIG-01`
+  - standalone-day ordinals via `SD`, for example `1456-SD-04`
+  - non-annual standalone leap-day ordinals via `SL`, for example `1456-SL-01`
+- Added bidirectional calendar linking.
+- Added linked-calendar navigation to the Calendar rail/banner, the Controls pane, and the public TTRPG Tools - Controls API.
+- Added linked-calendar selection to the Timeline Filter pane, allowing linked calendars to be included in the standalone timeline.
+- Per‑calendar timeline styles when displaying multiple calendars.
+
 0.7.0
 - Added and documented Timeline Grid mode for standalone and embedded horizontal timelines.
 - Grid mode renders one-day events as compact portrait tiles and multi-day events as spanning range cards.

@@ -16,6 +16,8 @@ import type {
 
 export interface FrontmatterImportCandidate {
   syncKey: string;
+  syncKeySuffix?: string;
+  multipleDates: boolean;
   explicitSyncId?: string;
   title: string;
   date: FantasyDate;
@@ -32,7 +34,7 @@ export interface FrontmatterImportCandidate {
 }
 
 export type FrontmatterImportParseResult =
-  | { status: "ok"; candidate: FrontmatterImportCandidate }
+  | { status: "ok"; candidates: FrontmatterImportCandidate[] }
   | { status: "skip"; reason: string }
   | { status: "invalid"; reason: string };
 
@@ -65,15 +67,13 @@ export function buildFrontmatterImportCandidate(
     };
   }
 
-  const parsedStart = parseFrontmatterDateDefinition(startDateValue, calendar);
-  if (parsedStart.kind === "invalid") {
+  const parsedStarts = parseFrontmatterDateDefinitions(startDateValue, calendar);
+  if (parsedStarts.status === "invalid") {
     return {
       status: "invalid",
-      reason: parsedStart.reason
+      reason: parsedStarts.reason
     };
   }
-
-  const startDate = parsedStart.date;
 
   const endDateValue = getFrontmatterValue(frontmatter, settings.endDateProperty);
   const parsedEnd = parseOptionalExactFrontmatterDate(endDateValue, calendar);
@@ -120,29 +120,68 @@ export function buildFrontmatterImportCandidate(
     ?? resolveMappedColor(frontmatter, settings);
 
   const importedIntervalRecurrence = readFrontmatterRecurrence(frontmatter, settings, calendar);
-  const recurrence =
-    parsedStart.kind === "pattern"
-      ? mergePatternRecurrence(parsedStart.recurrence, importedIntervalRecurrence)
-      : importedIntervalRecurrence;
+  const hasMultipleDates = parsedStarts.definitions.length > 1;
+
+  if (hasMultipleDates && normalizedEndDate) {
+    return {
+      status: "invalid",
+      reason: "A date list cannot be combined with one shared end date. Import each range as its own note/event instead."
+    };
+  }
+
+  if (hasMultipleDates && importedIntervalRecurrence) {
+    return {
+      status: "invalid",
+      reason: "A date list cannot be combined with interval recurrence fields. Each listed date is already imported as an independent event."
+    };
+  }
+
+  if (
+    hasMultipleDates &&
+    parsedStarts.definitions.some((entry) => entry.kind === "pattern")
+  ) {
+    return {
+      status: "invalid",
+      reason: "A date list may only contain concrete dates. Calendarium wildcard patterns must be imported as a single value."
+    };
+  }
+
+  const baseSyncKey = buildSyncKey(file, explicitSyncId);
 
   return {
     status: "ok",
-    candidate: {
-      syncKey: buildSyncKey(file, explicitSyncId),
-      explicitSyncId: explicitSyncId ?? undefined,
-      title: title.trim(),
-      date: startDate,
-      endDate: normalizedEndDate,
-      startTime,
-      endTime,
-      description: readScalarString(getFrontmatterValue(frontmatter, settings.descriptionProperty)) ?? undefined,
-      imageRef: readScalarString(getFrontmatterValue(frontmatter, settings.imageProperty)) ?? undefined,
-      weatherPackId: readScalarString(getFrontmatterValue(frontmatter, settings.weatherPackProperty)) ?? undefined,
-      tagRefs,
-      color,
-      recurrence,
-      noteRef: file.path
-    }
+    candidates: parsedStarts.definitions.map((parsedStart) => {
+      const syncKeySuffix = hasMultipleDates
+        ? buildDateListSyncSuffix(parsedStart.date)
+        : "";
+
+      const recurrence =
+        parsedStart.kind === "pattern"
+          ? mergePatternRecurrence(
+              parsedStart.recurrence,
+              importedIntervalRecurrence
+            )
+          : importedIntervalRecurrence;
+
+      return {
+        syncKey: `${baseSyncKey}${syncKeySuffix}`,
+        syncKeySuffix: syncKeySuffix || undefined,
+        multipleDates: hasMultipleDates,
+        explicitSyncId: explicitSyncId ?? undefined,
+        title: title.trim(),
+        date: parsedStart.date,
+        endDate: normalizedEndDate,
+        startTime,
+        endTime,
+        description: readScalarString(getFrontmatterValue(frontmatter, settings.descriptionProperty)) ?? undefined,
+        imageRef: readScalarString(getFrontmatterValue(frontmatter, settings.imageProperty)) ?? undefined,
+        weatherPackId: readScalarString(getFrontmatterValue(frontmatter, settings.weatherPackProperty)) ?? undefined,
+        tagRefs,
+        color,
+        recurrence,
+        noteRef: file.path
+      };
+    })
   };
 }
 
@@ -222,7 +261,7 @@ function readFrontmatterRecurrence(
       : readScalarString(untilRaw);
   const untilDate =
     endMode === "until" && untilText !== undefined
-      ? parseFantasyDateValue(untilText)
+      ? parseFantasyDateValue(untilText, calendar)
       : undefined;
 
   return {
@@ -390,18 +429,54 @@ function readStringList(value: unknown): string[] {
   return [];
 }
 
-function parseFantasyDateValue(value: string): FantasyDate | null {
-  const match = value.trim().match(/^(-?\d+)[-/.](\d{1,2})[-/.](\d{1,2})$/);
+function parseFantasyDateValue(
+  value: string,
+  calendar?: CalendarFile
+): FantasyDate | null {
+  const match = value.trim().match(/^(-?\d+)[-/.](.+)[-/.](\d{1,3})$/);
   if (!match) {
     return null;
   }
 
   const [, yearRaw, monthRaw, dayRaw] = match;
   const year = Number(yearRaw);
-  const month = Number(monthRaw);
   const day = Number(dayRaw);
 
-  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+  if (!Number.isFinite(year) || !Number.isFinite(day)) {
+    return null;
+  }
+  
+  if (calendar) {
+    const standaloneDate = resolveStandaloneDateToken(
+      monthRaw ?? "",
+      Math.trunc(day),
+      calendar,
+      Math.trunc(year)
+    );
+
+    if (standaloneDate !== undefined) {
+      return standaloneDate;
+    }
+
+    const monthIndex = resolveFrontmatterMonthIndex(
+      monthRaw ?? "",
+      calendar,
+      Math.trunc(year)
+    );
+
+    if (monthIndex === null || monthIndex === undefined) {
+      return null;
+    }
+
+    return {
+      year: Math.trunc(year),
+      monthIndex,
+      day: Math.max(1, Math.trunc(day))
+    };
+  }
+
+  const month = Number(monthRaw);
+  if (!Number.isFinite(month)) {
     return null;
   }
 
@@ -410,6 +485,73 @@ function parseFantasyDateValue(value: string): FantasyDate | null {
     monthIndex: Math.max(0, Math.trunc(month) - 1),
     day: Math.max(1, Math.trunc(day))
   };
+}
+
+function resolveStandaloneDateToken(
+  rawToken: string,
+  ordinal: number,
+  calendar: CalendarFile,
+  year: number
+): FantasyDate | null | undefined {
+  const token = rawToken.trim().toLowerCase();
+
+  if (token !== "sd" && token !== "sl") {
+    return undefined;
+  }
+
+  const standaloneDates = getMonthsForYear(calendar.definition, year)
+    .map((month, monthIndex) => {
+      if (
+        month.kind !== "intercalary-day" ||
+        !month.intercalaryDayId
+      ) {
+        return null;
+      }
+
+      const rule = calendar.definition.intercalaryDays.find(
+        (candidate) => candidate.id === month.intercalaryDayId
+      );
+
+      if (!rule || rule.displayPosition !== "standalone") {
+        return null;
+      }
+
+      return {
+        date: { year, monthIndex, day: 1 },
+        rule
+      };
+    })
+    .filter(
+      (
+        entry
+      ): entry is {
+        date: FantasyDate;
+        rule: CalendarFile["definition"]["intercalaryDays"][number];
+      } => entry !== null
+    )
+    .filter((entry) =>
+      token === "sl"
+        ? !isAnnualStandaloneDay(entry.rule)
+        : true
+    );
+
+  const selected = standaloneDates[Math.trunc(ordinal) - 1];
+  return selected ? selected.date : null;
+}
+
+function isAnnualStandaloneDay(
+  rule: CalendarFile["definition"]["intercalaryDays"][number]
+): boolean {
+  return (
+    rule.cycleYears === 1 &&
+    rule.activeYearPositions.length === 1 &&
+    rule.activeYearPositions[0] === 1 &&
+    rule.skipYearsDivisibleBy.length === 0
+  );
+}
+
+function buildDateListSyncSuffix(date: FantasyDate): string {
+  return `::date:${date.year}:${date.monthIndex}:${date.day}`;
 }
 
 function parseInteger(value: unknown): number | null {
@@ -541,6 +683,11 @@ type ParsedFrontmatterDateDefinition =
   | { kind: "exact"; date: FantasyDate }
   | { kind: "pattern"; date: FantasyDate; recurrence: Extract<EventRecurrenceRule, { kind: "pattern" }> }
   | { kind: "invalid"; reason: string };
+  
+type ValidParsedFrontmatterDateDefinition = Exclude<
+  ParsedFrontmatterDateDefinition,
+  { kind: "invalid" }
+>;
 
 function parseFrontmatterDateDefinition(
   value: unknown,
@@ -548,7 +695,7 @@ function parseFrontmatterDateDefinition(
 ): ParsedFrontmatterDateDefinition {
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     const scalar = readScalarString(value);
-    const parsed = scalar ? parseFantasyDateValue(scalar) : null;
+    const parsed = scalar ? parseFantasyDateValue(scalar, calendar) : null;
 
     if (!parsed) {
       return {
@@ -624,6 +771,59 @@ function parseFrontmatterDateDefinition(
   };
 }
 
+function parseFrontmatterDateDefinitions(
+  value: unknown,
+  calendar: CalendarFile
+):
+  | {
+      status: "ok";
+      definitions: ValidParsedFrontmatterDateDefinition[];
+    }
+  | {
+      status: "invalid";
+      reason: string;
+    } {
+  const values = Array.isArray(value) ? value : [value];
+
+  if (values.length === 0) {
+    return {
+      status: "invalid",
+      reason: "The configured start date list is empty."
+    };
+  }
+
+  const definitions: ValidParsedFrontmatterDateDefinition[] = [];
+  const seen = new Set<string>();
+
+  for (const entry of values) {
+    const parsed = parseFrontmatterDateDefinition(entry, calendar);
+
+    if (parsed.kind === "invalid") {
+      return {
+        status: "invalid",
+        reason: parsed.reason
+      };
+    }
+	
+	const validDefinition: ValidParsedFrontmatterDateDefinition = parsed;
+
+    const key =
+      validDefinition.kind === "pattern"
+        ? `pattern:${validDefinition.recurrence.year ?? "*"}:${validDefinition.recurrence.monthIndex ?? "*"}:${validDefinition.recurrence.day}`
+        : `exact:${validDefinition.date.year}:${validDefinition.date.monthIndex}:${validDefinition.date.day}`;
+
+    if (!seen.has(key)) {
+      seen.add(key);
+      definitions.push(validDefinition);
+    }
+  }
+
+  return {
+    status: "ok",
+    definitions
+  };
+}
+
 function parseOptionalExactFrontmatterDate(
   value: unknown,
   calendar: CalendarFile
@@ -634,7 +834,7 @@ function parseOptionalExactFrontmatterDate(
 
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     const scalar = readScalarString(value);
-    const parsed = scalar ? parseFantasyDateValue(scalar) : null;
+    const parsed = scalar ? parseFantasyDateValue(scalar, calendar) : null;
 
     if (!parsed) {
       return {
@@ -729,13 +929,34 @@ function resolveFrontmatterMonthIndex(
 
   const months = getMonthsForYear(calendar.definition, year ?? 0);
   const normalized = trimmed.toLowerCase();
-  const byName = months.findIndex((month) => month.name.trim().toLowerCase() === normalized);
-  if (byName >= 0) {
-    return byName;
+
+  const exactMatches = months
+    .map((month, index) => ({ month, index }))
+    .filter(({ month }) =>
+      month.name.trim().toLowerCase() === normalized ||
+      month.id.trim().toLowerCase() === normalized
+    )
+    .map(({ index }) => index);
+
+  if (exactMatches.length === 1) {
+    return exactMatches[0] ?? null;
   }
 
-  const byId = months.findIndex((month) => month.id.trim().toLowerCase() === normalized);
-  return byId >= 0 ? byId : null;
+  if (normalized.length < 3) {
+    return null;
+  }
+
+  const prefixMatches = months
+    .map((month, index) => ({ month, index }))
+    .filter(({ month }) =>
+      month.name.trim().toLowerCase().startsWith(normalized) ||
+      month.id.trim().toLowerCase().startsWith(normalized)
+    )
+    .map(({ index }) => index);
+
+  return prefixMatches.length === 1
+    ? prefixMatches[0] ?? null
+    : null;
 }
 
 function validateExactFantasyDate(

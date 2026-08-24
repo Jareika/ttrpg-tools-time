@@ -124,7 +124,11 @@ export class TimeCalendarView extends ItemView {
     );
 
     const rail = parent.createDiv({ cls: "time-calendar__rail" });
-    const bannerImageRef = calendar.bannerImageRef?.trim();
+    rail.addEventListener("click", () => {
+      void this.plugin.switchToNextLinkedCalendar();
+    });
+
+	const bannerImageRef = calendar.bannerImageRef?.trim();
     if (bannerImageRef) {
       const file = this.plugin.resolveStoredFileRef(bannerImageRef);
       if (file) {
@@ -183,7 +187,7 @@ export class TimeCalendarView extends ItemView {
     this.createIconButton(toolbar, "chevron-left", "Previous", () => {
       void this.navigate(-1);
     });
-
+	
     const modeSwitch = toolbar.createDiv({ cls: "time-calendar__mode-switch" });
     this.createModeIconButton(modeSwitch, "week", "calendar", "Week view", state.activeView);
     this.createModeIconButton(modeSwitch, "month", "moon", "Month view", state.activeView);
@@ -533,7 +537,7 @@ export class TimeCalendarView extends ItemView {
         cls: "time-intercalary-day__markers"
       });
 
-      events.slice(0, 5).forEach((event) => {
+      events.forEach((event) => {
         const marker = markers.createDiv({
           cls: "time-day-marker time-day-marker--event"
         });
@@ -725,7 +729,7 @@ export class TimeCalendarView extends ItemView {
 
     const markersEl = cell.createDiv({ cls: "time-day-cell__markers" });
 
-    eventDots.slice(0, 3).forEach((dot) => {
+    eventDots.forEach((dot) => {
       const markerEl = markersEl.createDiv({ cls: "time-day-marker time-day-marker--event" });
       markerEl.style.backgroundColor = dot.color;
     });
@@ -813,7 +817,7 @@ export class TimeCalendarView extends ItemView {
       cls: "time-day-cell__markers time-day-cell__markers--intercalary"
     });
 
-    eventDots.slice(0, 2).forEach((dot) => {
+    eventDots.forEach((dot) => {
       const markerEl = markersEl.createDiv({
         cls: "time-day-marker time-day-marker--event"
       });

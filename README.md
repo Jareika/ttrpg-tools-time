@@ -1,379 +1,288 @@
 # TTRPG Tools - Time
 
-**TTRPG Tools - Time** is an Obsidian plugin for fantasy calendars, event tracking, moons, seasons, generated weather, timeline views, embedded timelines, and lightweight in-world time control for tabletop RPG campaigns and worldbuilding.
+**TTRPG Tools - Time** is an Obsidian plugin for fantasy calendars, campaign events, timelines, moons, seasons, weather generation, Frontmatter-based event imports, and lightweight in-world time tracking.
 
-> This plugin is still an early release. Expect rough edges, ongoing UI changes, and data formats that may still evolve.
+All calendar, event, weather, tag-pack, and reference data is stored as readable JSON files inside your vault.
 
 ---
 
 ## Features
 
-### Calendar system
+## Calendar system
 
 - Week, month, and year calendar views
-- Custom weekdays
-- Custom months
-- Custom eras
+- Fully custom weekdays and months
+- Custom weekday flow:
+  - continuous across months
+  - reset at the beginning of every month
+- Custom eras with:
+  - start dates
+  - optional end dates
+  - short labels
+  - descriptions
 - Named years
-- Custom seasons
-- Leap months
-- Leap day blocks
-- Named / intercalary days outside of months
-- Inline named holidays in adjacent month grids
+- Named calendar weeks
+- Per-month accent colors
 - Configurable start weekday
-- Per-holiday icon or vault image
-- Configurable holiday gradient via Style Settings
-- Optional exact time system for fantasy calendars
-- Style Settings Plugin options
-- Weather-cycle mapping:
-  - calendar-based weather years
-  - fixed climate-cycle years
-- Multiple moons with:
-  - custom cycle length
-  - custom phase count
-  - custom phase labels
-  - optional phase images
-  - continuous cycles or month-reset cycles
+- Leap months
+- Leap day blocks appended to months
+- Named and intercalary days outside regular months
+- Standalone named-day cards
+- Inline named days rendered directly at the start or end of a month grid
+- Optional weekday-free intercalary days
+- Conditional intercalary leap days
+- Year display options:
+  - signed or absolute negative years
+  - abbreviated large years
+  - era-relative year numbers
+- Optional exact fantasy-time system
+- Per-calendar banner / rail images
+- Bidirectional linked calendars
 
-### Views
+## Linked calendars
+
+Calendars can be linked to one another. Links are automatically saved in both directions.
+
+Linked calendars can be used to:
+
+- switch to the next linked calendar from the calendar rail/banner
+- switch calendars from the Controls pane
+- switch calendars through the public **TTRPG Tools - Controls API**
+- include selected linked calendars in the standalone Timeline View
+
+The Timeline Filter pane provides calendar chips for linked calendars. Click a chip to add or remove that calendar from the standalone timeline.
+
+---
+
+## Views
+
+The plugin provides the following views:
 
 - Calendar side pane
 - Day view side pane
 - Event editor tab
+- Event explorer modal
 - Timeline view
 - Timeline filter side pane
-- **Control side pane**
+- Controls side pane
 
-### Control side pane
+---
 
-The Time control actions are also exposed through a small versioned public
-Controls API. See also TTRPG Tools - Controls.
+## Calendar View
 
-The control pane provides quick actions in a compact one-column button list.
+The Calendar View supports week, month, and year modes.
 
-Current actions:
+### Calendar features
 
-- Open calendar
-- Open timeline
-- Insert timeline block
-- Create event
-- Plugin settings
-- Edit calendar
+- Event dots for **all** events on a day
+- Marker dots
+- Season-color top borders
+- Weather information in day-cell tooltips
+- Today and selected-date highlighting
+- Context actions for calendar days:
+  - set as today
+  - create event
+  - open day view
+- Scroll-to-selected-day behavior in year view
+- Optional calendar week-number column
+- Inline intercalary holidays with:
+  - vault image
+  - Obsidian icon
+  - event dots
+  - custom color
 
-It can also show a fantasy-time section with custom time-advance buttons if configured in plugin settings.
+### Calendar rail / banner
 
-### Day view
+The left calendar rail displays:
 
-- Formatted fantasy date
+- selected day
+- era label
+- month name
+- year
+- optional banner image
+
+Clicking the rail switches to the next linked calendar when linked calendars are configured.
+
+---
+
+## Day View
+
+The Day View displays information for the selected calendar date.
+
+### Day View features
+
+- Configurable fantasy-date formatting
+- Previous / next day navigation
 - Weather summary with hover details
-- Event list for the selected day
-- Marker list for the selected day
-- Moon display for the selected day
+- Events for the selected day
+- Event start and end times
+- Manual markers
+- Moon phases
+- Day-specific weather editing
+- Weather-pack application actions
+- Event context menu:
+  - open details
+  - edit event
+  - delete event
 
-### Events
+---
+
+## Events
+
+Events are stored as individual source JSON files and are indexed automatically for calendar and timeline rendering.
+
+### Event features
 
 - Single-day events
 - Multi-day events
 - Optional start and end time
-- Optional recurrence:
-  - daily
-  - weekly
-  - monthly
-  - yearly
-- Recurrence end modes:
-  - never
-  - after count
-  - until date
 - Description
-- Linked note
+- Event color
+- Linked Markdown note
 - Image attachment
-- Color marker
-- Tag support via linked tag packs
+- Tags from linked tag packs
+- Weather-pack assignment
 - Event presets
-- Optional weather-pack link for non-recurring events
+- Event explorer
+- Frontmatter import and export
+- Recurrence support
 
-### Timeline system
+### Recurrence modes
 
-- Dedicated timeline view
-- Dedicated timeline filter pane
-- Vertical timeline layout
-- Horizontal timeline layout
-- Horizontal stacked mode for same-date grouping
-- Horizontal mixed mode
-- Horizontal stacked mode for same-date grouping
-- Horizontal grid mode with day tiles and multi-day range cards
-- Tag include/exclude filtering
-- Per-calendar timeline styling
-- Embedded timeline rendering inside Markdown code blocks
+#### Interval recurrence
+
+- Daily
+- Weekly
+- Monthly
+- Yearly
+- Custom interval
+- Never-ending recurrence
+- End after occurrence count
+- End at a specific date
+- Excluded occurrences
+
+#### Calendarium pattern recurrence
+
+Pattern recurrence supports calendar-native rules such as:
+
+- every month on a specific day
+- every year on a specific day in a selected month
+- every month in one selected year
+- one exact calendar pattern date
+- optional end date
+
+This is useful for holidays, anniversaries, festivals, or calendar-specific repeating events.
+
+---
+
+## Event Explorer
+
+The Event Explorer lets you browse and manage events.
+
+Features:
+
+- Browse events by year
+- Filter the current result set by title or description
+- Search event titles across all indexed years
+- Edit events
+- Delete events
+- Delete one recurrence occurrence, following occurrences, or the full series
+
+---
+
+## Timeline system
+
+The plugin provides standalone timelines and Markdown-embedded timelines.
+
+### Standalone Timeline View
+
+Features:
+
+- Vertical cross timeline
+- Horizontal mixed timeline
+- Horizontal stacked timeline
+- Horizontal Grid mode
+- Tag include / exclude filters
+- Linked-calendar inclusion
+- Today jump button
 - Event cards with:
   - title
   - date range
   - image
   - summary
-  - linked note hover/open behavior
-- **Insert timeline modal** for generating YAML code blocks directly from UI selections
+  - linked-note hover preview
+  - context actions
+- Per-calendar timeline styling
 
-### Embedded timeline insertion
+### Per-calendar Timeline Styles
 
-The control pane can open a modal that generates a timeline embed block for the current note.
+Each calendar can define its own timeline style.
 
-Configurable options:
+Available settings include:
 
-- layout:
-  - vertical
-  - horizontal
-- title / heading
-- one or more calendars
-- included tags
-- excluded tags
-- optional `jumpTo: today`
+- timeline title
+- image alignment
+- moon display
+- moon size
+- summary line count
+- card width
+- card height
+- text-box height
+- Grid row count:
+  - 2 rows
+  - 3 rows
+  - 4 rows
+- Grid tile height
+- inner left and right spacing
+- card background color
+- border/accent color
+- hover color
+- title color
+- date color
+- optional custom month names
 
-The generated YAML block is inserted into the last known Markdown editor cursor position.
+When multiple linked calendars are shown in the standalone timeline, each event keeps the Timeline Style configured for its originating calendar.
 
-### Fantasy time controls
+### Timeline Grid mode
 
-The plugin can store a lightweight internal fantasy time in plugin data.
+Horizontal Grid mode renders:
 
-- Time is stored per calendar
-- Time advances through custom buttons configured in plugin settings
-- Buttons can define:
-  - label
-  - icon
-  - hours
-  - minutes
-- Day rollover is automatic
-- When time passes into the next day, the calendar updates its current day automatically
-
-This is intended as a lightweight in-world time tracker, not yet a full simulation system.
-
-### Weather system
-
-- Weather packs
-- Per-month climate profiles
-- Generated weather reference years
-- Generated day-view weather years
-- Manual day weather editing
-- Weather-day locking
-- Apply weather packs:
-  - to a single day
-  - to a date range
-  - from current day to year end
-- Weather pack import/export
-- Regenerate single reference years
-- Regenerate all reference years for a pack
-- Linked weather packs per calendar
-- Default weather pack per calendar
-- Optional auto-generation of linked weather references
-
-### Storage
-
-All plugin data is stored as JSON files inside your vault, so it can be inspected, backed up, and version-controlled.
+- one-day events as portrait tiles
+- event images as tile backgrounds where available
+- a compact date overlay for one-day events
+- multi-day events as range cards spanning multiple grid columns
+- configurable Grid row counts
+- configurable tile size through Timeline Style settings
+- additional layout width only where overlapping ranges require it
 
 ---
 
-## Installation
+## Timeline Filter Pane
 
-### Requirements
+The Timeline Filter pane supports tag filtering and linked-calendar selection.
 
-- Obsidian **1.13.0** or newer
+### Tag filtering
 
-### Manual installation
+- **Click** a tag to include it
+- **Double-click** a tag to exclude it
+- Excluded tags always take priority over included tags
+- Use **Clear filters** to reset all tag filters
 
-1. Build or download the plugin files.
-2. Create this folder inside your vault:
+### Linked calendar filtering
 
-   ```text
-   .obsidian/plugins/ttrpg-tools-time
-   ```
+When the active calendar has linked calendars, the pane also displays calendar chips.
 
-3. Copy these files into that folder:
-
-   ```text
-   main.js
-   styles.css
-   manifest.json
-   ```
-
-4. Open Obsidian.
-5. Go to **Settings → Community plugins**.
-6. Disable **Restricted mode** if required.
-7. Enable **TTRPG Tools - Time**.
+- Click a linked calendar to add it to the standalone timeline
+- Click it again to remove it
+- The active calendar always remains included
 
 ---
 
-## Development
+## Embedded Timelines
 
-Install dependencies:
+Timelines can be rendered directly in Markdown notes through code blocks.
 
-```bash
-npm install
-```
-
-Development build / watch mode:
-
-```bash
-npm run dev
-```
-
-Production build:
-
-```bash
-npm run build
-```
-
-Lint:
-
-```bash
-npm run lint
-```
-
-Auto-fix lint issues:
-
-```bash
-npm run lint:fix
-```
-
----
-
-## Data storage
-
-By default, plugin data is stored in:
-
-```text
-TTRPG/Time
-```
-
-The data folder can be changed in plugin settings.
-
-Typical subfolders include:
-
-```text
-TTRPG/Time/calendars
-TTRPG/Time/tag-packs
-TTRPG/Time/weather-packs
-TTRPG/Time/weather-reference
-TTRPG/Time/weather-dayview
-TTRPG/Time/event-details
-TTRPG/Time/event-index
-TTRPG/Time/event-presets
-```
-
-Plugin-level settings and fantasy-time state are stored in the plugin data JSON via Obsidian’s plugin storage.
-
----
-
-## Basic usage
-
-### Create a calendar
-
-1. Open the command palette.
-2. Run **TTRPG Tools - Time: Create calendar JSON**.
-3. Configure:
-   - weekdays
-   - months
-   - eras
-   - seasons
-   - moons
-   - leap rules
-   - weather-cycle mapping
-   - optional exact time system
-4. Save the calendar.
-
-### Open the main views
-
-Available ribbons / commands include:
-
-- Open calendar side pane
-- Open day pane
-- Open event editor
-- Open timeline view
-- Open timeline filter pane
-- Open control pane
-- Jump to today
-
-### Create tag packs
-
-Tag packs are used for event categorization and timeline filtering.
-
-Use:
-
-- **Create tag pack JSON**
-- **Manage tag packs**
-
-### Create weather packs
-
-Weather packs define climate behavior and weather generation.
-
-Use:
-
-- **Create weather pack JSON**
-- **Manage weather packs**
-
-### Create an event
-
-1. Open the event editor.
-2. Enter a title.
-3. Choose start and end date.
-4. Optionally add:
-   - start and end time
-   - description
-   - image
-   - linked note
-   - tags
-   - weather pack
-   - recurrence
-5. Save the event.
-
-### Use the control pane
-
-The control pane is meant as a quick-access side pane.
-
-Typical workflow:
-
-1. Open a Markdown note
-2. Place the cursor where the timeline block should be inserted
-3. Open the control pane
-4. Click **Insert timeline**
-5. Configure the embed
-6. Insert the YAML block into the note
-
-If fantasy-time buttons are configured and the active calendar has a time system enabled, the control pane also shows the current in-world time and your configured time-advance buttons.
-
----
-
-## Timeline views
-
-### Dedicated timeline view
-
-The plugin includes a standalone timeline view that reads events from the active calendar.
-
-Features:
-
-- vertical or horizontal layout
-- quick jump to today
-- horizontal grid mode for compact chronological event cards
-- filter integration
-- note/image cards
-- tag-aware accent colors
-- context actions for opening notes, day view, or editing events
-
-### Timeline filter pane
-
-The filter pane shows tags from the active calendar’s linked tag packs.
-
-Interaction:
-
-- **Click** a tag to **include** it
-- **Double-click** a tag to **exclude** it
-- Excluded tags take priority over included tags
-
----
-
-## Embedded timeline blocks
-
-The plugin can render timelines directly in Markdown via code blocks.
-
-### Vertical / cross timeline
+### Vertical timeline
 
 ````md
 ```time-timeline-cal
@@ -411,11 +320,11 @@ sideGapRight: 40
 ```
 ````
 
-### Horizontal grid timeline
+### Horizontal Grid timeline
 
 ````md
 ```time-timeline-h
-title: Campaign overview
+title: Campaign Overview
 calendar: my-calendar
 jumpTo: today
 mode: grid
@@ -425,32 +334,25 @@ boxHeight: 289
 ```
 ````
 
-Grid mode renders:
-
-- one-day events as compact portrait tiles
-- event images as tile backgrounds where available
-- multi-day events as range cards spanning connected grid columns
-- additional rows only when visual overlap requires them
-
 ### Supported YAML options
 
 - `title`  
-  Optional title above the embed
+  Optional heading displayed above the embedded timeline.
 
 - `calendar` / `calendars`  
-  One or more calendar ids
+  One or more calendar ids.
 
 - `includeTags`  
-  Tags to include
+  Tags to include.
 
 - `excludeTags`  
-  Tags to exclude
+  Tags to exclude.
 
 - `jumpTo: today`  
-  Shows a **Today** button in the embed
+  Adds a Today button and automatically jumps to the configured current day.
 
 - `mode`  
-  Horizontal only:
+  Horizontal timelines only:
   - `mixed`
   - `stacked`
   - `grid`
@@ -460,99 +362,269 @@ Grid mode renders:
   - `right`
 
 - `maxSummaryLines`
+
 - `cardWidth`
+
 - `cardHeight`
+
 - `boxHeight`
+
 - `sideGapLeft`
+
 - `sideGapRight`
-
-### Named weeks
-
-Calendars can optionally assign names to calendar-year week numbers. These
-names are available in the day-view format via the `WeekName` token.
 
 ### Tag filter syntax
 
-Tag filters accept either:
+Tag filters accept either a full tag reference:
 
-- full tag refs like:
+```text
+locations:city
+```
 
-  ```text
-  locations:city
-  ```
+or a short tag id:
 
-- or short tag ids like:
+```text
+city
+```
 
-  ```text
-  city
-  ```
-
-If you want precise control, prefer full `packId:tagId` references.
+Use full references when multiple tag packs contain the same tag id.
 
 ---
 
-## Calendar concepts
+## Frontmatter import and export
 
-### Eras
+The plugin can import event data from Markdown note Frontmatter and export event data back to linked Markdown notes.
 
-Eras define labeled historical periods.
+Import is manual. Use the Controls pane or plugin commands to scan either:
 
-Each era has:
+- the active note
+- the complete vault
 
-- name
-- short label
-- start year
-- start month
-- start day
+### Frontmatter import features
 
-### Leap months and leap days
+- Configurable property mappings
+- Optional title fallback to the note file name
+- Dates, date ranges, times, tags, colors, images, weather packs, and recurrence data
+- Configurable stable synchronization id
+- Color mapping rules
+- Calendar-aware month parsing
+- Fantasy-calendar and intercalary-day support
+- YAML list support for multiple independent event dates in one note
 
-Leap rules can insert extra month blocks or extra day blocks into matching years.
+### `fc-date` as a YAML list
 
-Each rule has:
+The configured start-date property can be a YAML list of concrete dates.
 
-- name
-- insert position
-- cycle length in years
-- active positions in the cycle
+Each entry creates an independent event. All generated events retain the same linked Markdown note.
 
-Example:
+```yaml
+fc-date:
+  - 1456-Eleint-30
+  - 1456-Hammer-12
+  - 1457-HIG-01
+```
 
-- cycle = `4`
-- positions = `4`
+A date list cannot be combined with:
 
-This means the leap rule triggers every fourth year.
+- one shared end date
+- interval recurrence fields
 
-### Named / intercalary days
+Use separate notes if each imported date needs its own date range or recurrence rule.
 
-Named days are one-day calendar entries that exist **outside normal months**.
-They are useful for feast days, year-end days, epagomenal days, and special
-leap days such as the Shire calendar's Overlithe.
+### Supported date formats
+
+Numeric dates:
+
+```yaml
+fc-date: 1456-02-14
+```
+
+Regular month names:
+
+```yaml
+fc-date: 1456-Eleint-30
+```
+
+Month ids:
+
+```yaml
+fc-date: 1456-eleint-30
+```
+
+Unambiguous month-name or month-id prefixes with at least three characters:
+
+```yaml
+fc-date: 1456-HIG-01
+```
+
+Standalone intercalary-day ordinal:
+
+```yaml
+fc-date: 1456-SD-04
+```
+
+`SD` means: the fourth active standalone day in the specified year.
+
+Standalone leap-day ordinal:
+
+```yaml
+fc-date: 1456-SL-01
+```
+
+`SL` means: the first active standalone day in the specified year which is **not** an annually recurring standalone named day.
+
+This is intended for calendars with conditional leap days or special intercalary days.
+
+### Pattern recurrence from Frontmatter
+
+The importer also supports Calendarium-style wildcard patterns through YAML objects.
+
+```yaml
+fc-date:
+  month: Eleint
+  day: 30
+```
+
+This creates a yearly pattern recurrence.
+
+```yaml
+fc-date:
+  year: 1456
+  day: 12
+```
+
+This creates a monthly recurrence restricted to year `1456`.
+
+```yaml
+fc-date:
+  day: 1
+```
+
+This creates a monthly pattern recurrence for day `1`.
+
+---
+
+## Weather system
+
+Weather is generated from reusable weather packs.
+
+### Weather features
+
+- Weather packs
+- Per-month climate profiles
+- Generated weather reference years
+- Generated day-view weather years
+- Manual weather editing per day
+- Weather-day locking
+- Apply a weather pack:
+  - to one day
+  - to a custom date range
+  - from the selected date to year end
+  - through a multi-range batch modal
+- Import and export weather packs
+- Regenerate one reference year
+- Regenerate all known reference years for a weather pack
+- Linked weather packs per calendar
+- Default weather pack per calendar
+- Optional automatic reference-year generation
+
+### Weather pack configuration
+
+Weather packs support:
+
+- annual temperature range
+- humidity
+- precipitation
+- storminess
+- cloudiness
+- fogginess
+- windiness
+- seasonality
+- front frequency
+- front strength
+- volatility
+- stable-weather duration
+- front duration
+- snow threshold
+- per-month climate baselines
+
+### Generated conditions
+
+The weather generator can produce:
+
+- clear
+- mostly clear
+- partly cloudy
+- scattered clouds
+- broken clouds
+- overcast
+- mist
+- fog
+- drizzle
+- rain
+- heavy rain
+- thunderstorm
+- sleet
+- flurries
+- snow
+- blizzard
+
+Weather generation is designed for useful campaign-facing weather rather than real-world meteorological simulation.
+
+---
+
+## Moons
+
+Calendars can define multiple moons.
+
+Each moon supports:
+
+- custom name
+- custom cycle length
+- custom offset
+- continuous absolute-day cycle
+- month-reset cycle
+- custom phase count
+- custom phase labels
+- optional phase images
+- custom display size
+- custom color
+
+Moon phases are displayed in the Day View and can optionally be shown in the standalone Timeline header.
+
+When exact time is enabled, event details can also show moon phase transitions occurring on that day.
+
+---
+
+## Named and intercalary days
+
+Named days are calendar entries outside normal months.
+
+They can be used for:
+
+- feast days
+- epagomenal days
+- year-end holidays
+- special leap days
+- Shire-style Lithe days
+- custom setting-specific holidays
 
 Each named day supports:
 
-- an insertion point before or after a base month
-- a display order when multiple named days share that insertion point
-- a display position:
-  - standalone card
-  - end of the previous month
-  - start of the next month
-- whether it participates in weekday progression
-- optional Obsidian icon or vault image
-- a cycle length and active positions
-- optional exclusions for years divisible by one or more values
+- insertion before the first month or after a regular month
+- display order
+- standalone-card display
+- rendering at the end of the previous month
+- rendering at the start of the next month
+- participation in weekday progression
+- optional custom color
+- Obsidian icon
+- vault image
+- cycle years
+- active cycle positions
+- skip rules for years divisible by configured values
 
-Named days that participate in weekday progression can be rendered directly in
-an adjacent month grid. They use the holiday gradient and show an icon or image
-instead of a day number.
-
-For example, Shire-style Lithe days can be configured like this:
-
-- **1 Lithe** → `End of previous month`
-- **Midyear's Day** → `Standalone card`, `No weekday`
-- **2 Lithe** → `Start of next month`
-
-Example: Shire-style named days:
+Example:
 
 ```json
 {
@@ -561,7 +633,7 @@ Example: Shire-style named days:
       "id": "second-yule",
       "name": "2 Yule",
       "insertAfterMonthIndex": -1,
-	  "displayPosition": "standalone",
+      "displayPosition": "standalone",
       "order": 10,
       "weekdayMode": "none",
       "cycleYears": 1,
@@ -572,7 +644,7 @@ Example: Shire-style named days:
       "id": "first-lithe",
       "name": "1 Lithe",
       "insertAfterMonthIndex": 5,
-	  "displayPosition": "after-previous-month",
+      "displayPosition": "after-previous-month",
       "order": 10,
       "weekdayMode": "normal",
       "cycleYears": 1,
@@ -583,7 +655,7 @@ Example: Shire-style named days:
       "id": "overlithe",
       "name": "Overlithe",
       "insertAfterMonthIndex": 5,
-	  "displayPosition": "standalone",
+      "displayPosition": "standalone",
       "order": 30,
       "weekdayMode": "none",
       "cycleYears": 4,
@@ -594,268 +666,215 @@ Example: Shire-style named days:
 }
 ```
 
-`skipYearsDivisibleBy: [100]` means that a day active every fourth year is
-suppressed in years 100, 200, 300, and so on.
-
-### Weather cycle mapping
-
-Calendars can map climate/weather in two ways.
-
-#### 1. Calendar mapping
-
-Weather follows the actual calendar year and month structure, including leap months and leap day blocks.
-
-#### 2. Fixed climate cycle
-
-Weather follows a separate fixed-length climate year.
-
-This is useful if your calendar structure and your climate cycle should not match exactly.
-
-### Moons
-
-Moons support two anchors:
-
-#### Continuous
-
-Moon phase is based on absolute day count.
-
-#### Month reset
-
-Moon phase starts over at the beginning of each month.
-
-### Optional exact time system
-
-A calendar can enable exact time with:
-
-- hours per day
-- minutes per hour
-
-This is used for:
-
-- optional event times
-- moon phase timing in event/day detail contexts
-- fantasy-time control rollover logic
-
 ---
 
-## Weather generation overview
+## Fantasy time controls
 
-Weather is generated from a **weather pack**.  
-A weather pack does **not** directly assign one fixed weather type to each day. Instead, it defines climate tendencies and instability values that are used to generate daily results.
+The plugin stores a lightweight internal fantasy clock per calendar.
 
-### Core climate values
+### Features
 
-These values define the overall regional climate:
+- Time stored per calendar
+- Configurable hours per day
+- Configurable minutes per hour
+- Custom time-advance buttons
+- Automatic day rollover
+- Automatic update of calendar today date after day rollover
+- Left-click a configured button to advance time
+- Right-click a configured button to subtract time
 
-- `temperatureMin` / `temperatureMax`  
-  Overall annual temperature range
+Example buttons:
 
-- `humidity`  
-  General air moisture
-
-- `precipitation`  
-  General tendency toward wet weather
-
-- `storminess`  
-  Likelihood of strong storm fronts and thunderstorms
-
-- `cloudiness`  
-  General amount of cloud cover
-
-- `fogginess`  
-  Tendency toward mist and fog
-
-- `windiness`  
-  General wind strength tendency
-
-- `seasonality`  
-  Strength of temperature shifts across the year
-
-- `frontFrequency`  
-  How often unstable weather fronts appear
-
-- `frontStrength`  
-  How strong those fronts are
-
-- `volatility`  
-  How changeable the weather is overall
-
-- `stableSpanMin` / `stableSpanMax`  
-  Typical duration of stable weather phases in days
-
-- `frontSpanMin` / `frontSpanMax`  
-  Typical duration of front-driven weather phases in days
-
-- `snowTemperature`  
-  Threshold below which precipitation may turn into snow, sleet, flurries, or blizzard conditions
-
-### Monthly climate profiles
-
-Each month can define its own baseline values:
-
-- `temperatureOffset`
-- `humidity`
-- `precipitation`
-- `cloudiness`
-- `fogginess`
-- `windiness`
-- `frontBias`
-
-These values are interpolated across the year to shape seasonal weather behavior.
-
-### Internal weather phases
-
-Before a visible weather result is chosen, the generator first selects an internal phase:
-
-- `clear`
-- `cloudy`
-- `wet-front`
-- `storm-front`
-- `fog-bank`
-- `snow-front`
-- `warm-spell`
-- `cold-snap`
-
-These phases influence:
-
-- how long a weather pattern lasts
-- how temperature shifts
-- how cloudy it gets
-- how windy it gets
-- how likely precipitation becomes
-
-### Final visible weather conditions
-
-The generator then resolves the final visible day result into one of these conditions:
-
-- `clear`
-- `mostly-clear`
-- `partly-cloudy`
-- `scattered-clouds`
-- `broken-clouds`
-- `overcast`
-- `mist`
-- `fog`
-- `drizzle`
-- `rain`
-- `heavy-rain`
-- `thunderstorm`
-- `sleet`
-- `flurries`
-- `snow`
-- `blizzard`
-
-### How conditions are influenced
-
-#### Clear and cloudy skies
-
-Cloud-based weather is mainly driven by:
-
-- cloudiness
-- humidity
-- the active internal phase
-
-Lower cloud cover tends toward:
-
-- `clear`
-- `mostly-clear`
-- `partly-cloudy`
-
-Higher cloud cover tends toward:
-
-- `scattered-clouds`
-- `broken-clouds`
-- `overcast`
-
-#### Mist and fog
-
-Mist and fog are mainly influenced by:
-
-- fogginess
-- humidity
-- low wind
-- the `fog-bank` phase
-
-Higher fogginess increases the chance of mist and fog.
-
-#### Drizzle, rain, and heavy rain
-
-Wet weather is mainly influenced by:
-
-- precipitation
-- humidity
-- front frequency
-- front strength
-
-Typical progression:
-
-- lower wetness → `drizzle`
-- medium wetness → `rain`
-- higher wetness → `heavy-rain`
-
-#### Thunderstorms
-
-Thunderstorms are mainly influenced by:
-
-- storminess
-- front frequency
-- strong unstable fronts
-- warm and wet conditions
-
-Higher storminess makes thunderstorm results more likely.
-
-#### Snow, sleet, flurries, and blizzards
-
-Winter precipitation depends on:
-
-- wetness from precipitation/fronts
-- temperature
-- `snowTemperature`
-- wind strength
-
-Typical progression:
-
-- near freezing → `sleet`
-- below snow threshold, lighter snow → `flurries`
-- below snow threshold, stronger snow → `snow`
-- strong snow plus high wind → `blizzard`
-
----
-
-## Plugin settings
-
-The settings tab lets you manage:
-
-- data folder
-- startup behavior
-- day-view date format
-- calendar week numbers
-- calendars
-- tag packs
-- weather packs
-- control pane access
-- custom fantasy-time advance buttons
-
-### Fantasy-time advance buttons
-
-You can configure custom buttons for the control pane.
-
-Each button can define:
-
-- label
-- icon
-- hours
-- minutes
-
-Examples:
-
-- `+8h`
-- `+10h`
 - `+30m`
+- `+8h`
 - `Long Rest`
 - `Travel Watch`
+- `Night Watch`
 
-If no time buttons are configured, the fantasy-time section is hidden from the control pane.
+This system is intentionally lightweight and is not intended as a full simulation engine.
+
+---
+
+## Controls pane
+
+The Controls pane provides compact quick actions.
+
+Available actions include:
+
+- Open calendar
+- Switch to next linked calendar
+- Open day view
+- Jump to today
+- Open timeline
+- Open timeline filters
+- Insert timeline block
+- Create event
+- Open event explorer
+- Apply weather packs to date ranges
+- Manage weather packs
+- Manage Frontmatter mappings
+- Scan active-note Frontmatter
+- Scan whole-vault Frontmatter
+- Manage tag packs
+- Edit calendar
+- Toggle era description
+- Open plugin settings
+- Advance fantasy time
+
+---
+
+## Public Controls API
+
+For integration with **TTRPG Tools - Controls**, the plugin exposes:
+
+```ts
+plugin.controlsApi
+```
+
+The API is versioned and currently uses version `1`.
+
+Available methods:
+
+```ts
+plugin.controlsApi.getActions();
+plugin.controlsApi.executeAction(actionId);
+```
+
+The API provides actions for:
+
+- calendar navigation
+- linked-calendar switching
+- day view
+- event creation and exploration
+- timeline views and insertion
+- weather tools
+- Frontmatter tools
+- tag-pack and calendar management
+- era descriptions
+- plugin settings
+- configured fantasy-time buttons
+
+External plugins should use this public API instead of accessing internal views or modal classes.
+
+---
+
+## Style Settings
+
+The plugin includes Style Settings metadata in `styles.css`.
+
+Available styling options include:
+
+- calendar accent color
+- panel radius
+- calendar grid gap
+- day-cell radius
+- calendar title color and size
+- year-title color and size
+- calendar rail colors
+- banner image opacity and fit
+- month-label color source
+- holiday gradient colors
+- holiday icon size
+- event-marker size and spacing
+- Day View date color and size
+- Day View section-title color
+- weather badge background
+- status-bar visibility
+
+---
+
+## Installation
+
+### Requirements
+
+- Obsidian **1.13.0** or newer
+
+### Manual installation
+
+1. Build or download the plugin files.
+2. Create this folder inside your vault:
+
+   ```text
+   .obsidian/plugins/ttrpg-tools-time
+   ```
+
+3. Copy these files into the folder:
+
+   ```text
+   main.js
+   manifest.json
+   styles.css
+   ```
+
+4. Open Obsidian.
+5. Open **Settings → Community plugins**.
+6. Disable Restricted mode if necessary.
+7. Enable **TTRPG Tools - Time**.
+
+---
+
+## Basic usage
+
+### Create a calendar
+
+1. Open the Command Palette.
+2. Run **TTRPG Tools - Time: Create calendar JSON**.
+3. Configure:
+   - weekdays
+   - months
+   - eras
+   - seasons
+   - named years and weeks
+   - leap rules
+   - named / intercalary days
+   - moons
+   - weather mapping
+   - optional exact time
+4. Save the calendar.
+
+### Link calendars
+
+1. Open the Calendar Editor.
+2. Choose **Linked calendars**.
+3. Select one or more calendars.
+4. Save the calendar.
+
+The links are synchronized in both directions.
+
+### Create an event
+
+1. Open the Event Editor.
+2. Enter a title.
+3. Select start and end dates.
+4. Optionally configure:
+   - exact time
+   - description
+   - image
+   - linked note
+   - color
+   - tags
+   - weather pack
+   - recurrence
+5. Save the event.
+
+### Import events from Frontmatter
+
+1. Open **Manage Frontmatter**.
+2. Enable Frontmatter import.
+3. Configure at least the start-date property.
+4. Optionally configure title, tags, times, color, image, weather, and recurrence properties.
+5. Use:
+   - **Scan active note frontmatter**
+   - **Scan whole vault frontmatter**
+
+### Use the Controls pane
+
+1. Open a Markdown note.
+2. Place the editor cursor where a timeline should be inserted.
+3. Open the Controls pane.
+4. Select **Insert timeline**.
+5. Configure the timeline.
+6. Insert the generated YAML code block.
 
 ---
 
@@ -866,6 +885,7 @@ The plugin currently registers commands for:
 - Open side pane
 - Open day pane
 - Open event editor
+- Open event explorer
 - Open control pane
 - Open timeline view
 - Open timeline filter pane
@@ -881,38 +901,48 @@ The plugin currently registers commands for:
 
 ---
 
-## Public Controls API
+## Data storage
 
-For integration with **TTRPG Tools - Controls**, the plugin exposes:
+By default, plugin data is stored in:
 
-```ts
-plugin.controlsApi
+```text
+TTRPG/Time
 ```
 
-The API currently has version `1` and provides:
+The data folder can be changed in plugin settings.
 
-- `getActions()`
-- `executeAction(actionId)`
+Typical folders include:
 
-Available action ids include calendar navigation, event actions, timeline
-actions, weather tools, Frontmatter tools, calendar/tag-pack management, and
-configured fantasy-time buttons.
+```text
+TTRPG/Time/calendars
+TTRPG/Time/tag-packs
+TTRPG/Time/weather-packs
+TTRPG/Time/weather-reference
+TTRPG/Time/weather-dayview
+TTRPG/Time/event-source
+TTRPG/Time/event-index
+TTRPG/Time/event-presets
+```
+
+Legacy yearly event files may be migrated automatically into source-event storage and archived in:
+
+```text
+TTRPG/Time/event-details-legacy-backup
+```
+
+Plugin-level settings and fantasy-clock state are stored through Obsidian plugin storage.
 
 ---
 
 ## Current limitations
 
-- The plugin is still an early release.
-- Some UI labels and workflows may still change.
-- The fantasy-time system is intentionally lightweight and currently stores only the current in-world clock per calendar.
-- The timeline insert modal inserts into the last known Markdown editor cursor position. If no Markdown editor is available, insertion is not possible until a note editor has been focused.
-
----
-
-## Notes
-
-This plugin is made for campaign management and fantasy worldbuilding.  
-It does not try to model real-world astronomy or meteorology exactly. You can use realistic values if you want, but the plugin is optimized for useful, configurable game-facing results rather than scientific simulation.
+- The plugin is still under active development.
+- UI labels and workflows may change between releases.
+- The fantasy-time system stores only the current clock value per calendar.
+- Timeline insertion requires an active Markdown editor.
+- Frontmatter import is manual and does not continuously synchronize notes.
+- A Frontmatter date list creates independent events only; it cannot define a shared range or shared interval recurrence.
+- Weather generation is designed for configurable worldbuilding utility, not scientific meteorological accuracy.
 
 ---
 

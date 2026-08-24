@@ -33,7 +33,8 @@ interface RowState {
 const MAX_LAYOUT_PASSES = 64;
 
 export function buildTimelineGridLayout<T>(
-  source: TimelineGridSource<T>[]
+  source: TimelineGridSource<T>[],
+  preferredRows = 2
 ): TimelineGridLayout<T> {
   if (source.length === 0) {
     return {
@@ -43,6 +44,7 @@ export function buildTimelineGridLayout<T>(
     };
   }
 
+  const rowCount = normalizeRowCount(preferredRows);
   const sorted = source
     .map((entry, sourceIndex) => ({
       value: entry.value,
@@ -71,10 +73,10 @@ export function buildTimelineGridLayout<T>(
     sourceIndex: entry.sourceIndex
   }));
 
-  const rows: RowState[] = [
-    { tail: 0 },
-    { tail: 0 }
-  ];
+  const rows: RowState[] = Array.from(
+    { length: rowCount },
+    () => ({ tail: 0 })
+  );
 
   resolveGridLayout(drafts, rows);
 
@@ -88,7 +90,7 @@ export function buildTimelineGridLayout<T>(
       .sort((left, right) => left.sourceIndex - right.sourceIndex)
       .map(({ sourceIndex: _sourceIndex, ...placement }) => placement),
     columnCount,
-    rowCount: Math.max(2, rows.length)
+    rowCount
   };
 }
 
@@ -113,11 +115,12 @@ function assignRows<T>(
   drafts: DraftPlacement<T>[],
   rows: RowState[]
 ): void {
+  const rowCount = normalizeRowCount(rows.length);
+
   rows.splice(
     0,
     rows.length,
-    { tail: 0 },
-    { tail: 0 }
+    ...Array.from({ length: rowCount }, () => ({ tail: 0 }))
   );
 
   drafts.forEach((placement) => {
@@ -184,7 +187,10 @@ function getRequiredRangeSpan<T>(
 function chooseRowForPlacement(
   rows: RowState[]
 ): number {
-  return chooseMostCompactRow(rows, [0, 1]);
+  return chooseMostCompactRow(
+    rows,
+    Array.from({ length: rows.length }, (_entry, index) => index)
+  );
 }
 
 function chooseMostCompactRow(
@@ -238,4 +244,12 @@ function compareFantasyDate(left: FantasyDate, right: FantasyDate): number {
   }
 
   return left.day - right.day;
+}
+
+function normalizeRowCount(value: number): 2 | 3 | 4 {
+  if (value === 3 || value === 4) {
+    return value;
+  }
+
+  return 2;
 }

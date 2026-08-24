@@ -148,6 +148,7 @@ export class CalendarEditorModal extends Modal {
   private defaultWeatherPackId: string;
   private weatherEnabled: boolean;
   private readonly selectedTagPackIds: Set<string>;
+  private readonly selectedCalendarIds: Set<string>;
   private readonly selectedWeatherPackIds: Set<string>;
   private autoGenerateLinkedWeatherReferences: boolean;
   private timeline: CalendarTimelineStyle | undefined;
@@ -263,6 +264,7 @@ export class CalendarEditorModal extends Modal {
 	this.defaultWeatherPackId = source?.defaultWeatherPackId ?? "general";
 	this.weatherEnabled = source?.weatherEnabled ?? true;
     this.selectedTagPackIds = new Set(source?.linkedTagPackIds ?? []);
+	this.selectedCalendarIds = new Set(source?.linkedCalendarIds ?? []);
     this.selectedWeatherPackIds = new Set(source?.linkedWeatherPackIds ?? []);
     this.autoGenerateLinkedWeatherReferences = source?.autoGenerateLinkedWeatherReferences ?? false;
 	this.timeline = cloneCalendarTimelineStyle(source?.timeline);
@@ -375,6 +377,21 @@ export class CalendarEditorModal extends Modal {
           this.autoGenerateLinkedWeatherReferences = result.autoGenerateLinkedWeatherReferences;
           this.selectedWeatherPackIds.clear();
           result.linkedWeatherPackIds.forEach((id) => this.selectedWeatherPackIds.add(id));
+          void this.render();
+        }
+      ).open();
+    });
+	
+    createManagerButton(shortcutGrid, "Linked calendars", () => {
+      new CalendarLinksModal(
+        this.plugin,
+        this.existing?.id ?? this.id,
+        [...this.selectedCalendarIds],
+        (calendarIds) => {
+          this.selectedCalendarIds.clear();
+          calendarIds.forEach((calendarId) =>
+            this.selectedCalendarIds.add(calendarId)
+          );
           void this.render();
         }
       ).open();
@@ -955,6 +972,7 @@ export class CalendarEditorModal extends Modal {
 	  autoGenerateLinkedWeatherReferences: this.autoGenerateLinkedWeatherReferences,
 	  timeline: cloneCalendarTimelineStyle(this.timeline),
       linkedTagPackIds: [...this.selectedTagPackIds],
+	  linkedCalendarIds: [...this.selectedCalendarIds],
 	  linkedWeatherPackIds: [...this.selectedWeatherPackIds],
       markers: this.existing?.markers ?? []
     });
@@ -963,6 +981,186 @@ export class CalendarEditorModal extends Modal {
     this.close();
     this.onSaved?.();
     new Notice(`Saved calendar "${calendar.name}".`);
+  }
+}
+
+class CalendarLinksModal extends Modal {
+  private readonly linkedCalendarIds: Set<string>;
+
+  constructor(
+    private readonly plugin: TtrpgToolsTimePlugin,
+    private readonly currentCalendarId: string,
+    linkedCalendarIds: string[],
+    private readonly onSave: (calendarIds: string[]) => void
+  ) {
+    super(plugin.app);
+    this.linkedCalendarIds = new Set(linkedCalendarIds);
+  }
+
+  onOpen(): void {
+    prepareFlexibleModal(this);
+    void this.render();
+  }
+
+  private async render(): Promise<void> {
+    const { contentEl } = this;
+    const calendars = (await this.plugin.listCalendars()).filter(
+      (calendar) => calendar.id !== this.currentCalendarId
+    );
+
+    contentEl.empty();
+    contentEl.addClass("time-modal", "time-manager");
+    contentEl.createEl("h2", { text: "Linked calendars" });
+    contentEl.createEl("p", {
+      cls: "setting-item-description",
+      text: "Linked calendars can be selected from the calendar rail and added individually to the standalone timeline. Links are saved in both directions."
+    });
+
+    const list = contentEl.createDiv({ cls: "time-manager__list" });
+
+    if (calendars.length === 0) {
+      list.createDiv({
+        cls: "time-manager__empty",
+        text: "No other calendars are available yet."
+      });
+    }
+
+    calendars.forEach((calendar) => {
+      const isLinked = this.linkedCalendarIds.has(calendar.id);
+      const row = list.createDiv({ cls: "time-manager__item" });
+
+      const toggle = row.createEl("button", {
+        cls: "time-manager__toggle",
+        text: isLinked ? "✓" : ""
+      });
+      toggle.type = "button";
+      toggle.setAttr(
+        "aria-label",
+        isLinked
+          ? `Unlink ${calendar.name}`
+          : `Link ${calendar.name}`
+      );
+
+      if (isLinked) {
+        toggle.addClass("is-selected");
+      }
+
+      toggle.addEventListener("click", () => {
+        if (this.linkedCalendarIds.has(calendar.id)) {
+          this.linkedCalendarIds.delete(calendar.id);
+        } else {
+          this.linkedCalendarIds.add(calendar.id);
+        }
+
+        void this.render();
+      });
+
+      const body = row.createDiv({ cls: "time-manager__body" });
+      body.createDiv({
+        cls: "time-manager__title",
+        text: calendar.name
+      });
+      body.createDiv({
+        cls: "time-manager__meta",
+        text: calendar.id
+      });
+    });
+
+    const footer = contentEl.createDiv({ cls: "time-modal__footer" });
+
+    createManagerButton(footer, "Save", () => {
+      this.onSave(
+        [...this.linkedCalendarIds].sort((left, right) =>
+          left.localeCompare(right, undefined, { sensitivity: "base" })
+        )
+      );
+      this.close();
+    }, false, true);
+
+    createManagerButton(footer, "Cancel", () => this.close());
+  }
+}
+
+export class CalendarSwitcherModal extends Modal {
+  constructor(private readonly plugin: TtrpgToolsTimePlugin) {
+    super(plugin.app);
+  }
+
+  onOpen(): void {
+    prepareFlexibleModal(this);
+    void this.render();
+  }
+
+  private async render(): Promise<void> {
+    const { contentEl } = this;
+    const activeCalendar = this.plugin.activeCalendar;
+
+    contentEl.empty();
+    contentEl.addClass("time-modal", "time-manager");
+    contentEl.createEl("h2", { text: "Switch calendar" });
+
+    if (!activeCalendar) {
+      contentEl.createDiv({
+        cls: "time-manager__empty",
+        text: "No active calendar loaded."
+      });
+      return;
+    }
+
+    const linkedIds = new Set([
+      activeCalendar.id,
+      ...activeCalendar.linkedCalendarIds
+    ]);
+    const calendars = (await this.plugin.listCalendars()).filter(
+      (calendar) => linkedIds.has(calendar.id)
+    );
+
+    contentEl.createEl("p", {
+      cls: "setting-item-description",
+      text: "Only the active calendar and its linked calendars are shown here."
+    });
+
+    const list = contentEl.createDiv({ cls: "time-manager__list" });
+
+    calendars.forEach((calendar) => {
+      const isActive = calendar.id === activeCalendar.id;
+      const row = list.createDiv({ cls: "time-manager__item" });
+
+      const toggle = row.createEl("button", {
+        cls: "time-manager__toggle",
+        text: isActive ? "✓" : ""
+      });
+      toggle.type = "button";
+      toggle.disabled = isActive;
+
+      if (isActive) {
+        toggle.addClass("is-selected");
+      }
+
+      const body = row.createDiv({ cls: "time-manager__body" });
+      body.createDiv({
+        cls: "time-manager__title",
+        text: isActive ? `${calendar.name} (Active)` : calendar.name
+      });
+      body.createDiv({
+        cls: "time-manager__meta",
+        text: calendar.id
+      });
+
+      const actions = row.createDiv({ cls: "time-manager__actions" });
+      createManagerButton(actions, "Switch", () => {
+        void (async () => {
+          await this.plugin.setActiveCalendarById(calendar.id);
+          this.close();
+        })();
+      }, isActive, !isActive);
+    });
+
+    const footer = contentEl.createDiv({ cls: "time-manager__footer" });
+    createManagerButton(footer, "Manage calendars", () => {
+      this.plugin.openManageCalendarsModal();
+    });
+    createManagerButton(footer, "Close", () => this.close());
   }
 }
 
@@ -1322,6 +1520,35 @@ class TimelineStyleModal extends Modal {
       "289",
       (value) => {
         this.draft.boxHeight = value;
+      }
+    );
+	
+    new Setting(contentEl)
+      .setName("Grid rows")
+      .setDesc(
+        "Number of rows used by horizontal grid mode. Cards fill from top to bottom, then continue in the next column."
+      )
+      .addDropdown((dropdown) => {
+        dropdown.addOption("2", "2 Rows");
+        dropdown.addOption("3", "3 Rows");
+        dropdown.addOption("4", "4 Rows");
+        dropdown.setValue(String(this.draft.gridRows ?? 2));
+        dropdown.onChange((value) => {
+          this.draft.gridRows =
+            value === "3"
+              ? 3
+              : value === "4"
+                ? 4
+                : 2;
+        });
+      });
+
+    addOptionalNumberField(
+      "Grid tile height",
+      this.draft.gridTileHeight,
+      "315",
+      (value) => {
+        this.draft.gridTileHeight = value;
       }
     );
 
@@ -2419,7 +2646,7 @@ class IntercalaryDayEditorModal extends Modal {
         cls: "time-collection-editor__input"
       });
       iconInput.type = "text";
-      iconInput.placeholder = "sparkles";
+      iconInput.placeholder = "Sparkles";
       iconInput.value = rule.icon ?? "";
       iconInput.title = "Any Obsidian icon name. Used when no image is selected.";
       iconInput.addEventListener("input", () => {
@@ -4337,6 +4564,8 @@ function normalizeCalendarTimelineStyle(
     cardWidth: normalizeOptionalInteger(timeline.cardWidth),
     cardHeight: normalizeOptionalInteger(timeline.cardHeight),
     boxHeight: normalizeOptionalInteger(timeline.boxHeight),
+    gridRows: normalizeTimelineGridRows(timeline.gridRows),
+    gridTileHeight: normalizePositiveInteger(timeline.gridTileHeight),
     sideGapLeft: normalizeOptionalInteger(timeline.sideGapLeft),
     sideGapRight: normalizeOptionalInteger(timeline.sideGapRight),
     colors,
@@ -4400,6 +4629,14 @@ function normalizePositiveInteger(value: number | undefined): number | undefined
     : undefined;
 }
 
+function normalizeTimelineGridRows(
+  value: number | undefined
+): CalendarTimelineStyle["gridRows"] {
+  return value === 2 || value === 3 || value === 4
+    ? value
+    : undefined;
+}
+
 function hasCalendarTimelineStyleValues(value: CalendarTimelineStyle): boolean {
   return (
     typeof value.name === "string" ||
@@ -4410,6 +4647,8 @@ function hasCalendarTimelineStyleValues(value: CalendarTimelineStyle): boolean {
     typeof value.cardWidth === "number" ||
     typeof value.cardHeight === "number" ||
     typeof value.boxHeight === "number" ||
+    typeof value.gridRows === "number" ||
+    typeof value.gridTileHeight === "number" ||
     typeof value.sideGapLeft === "number" ||
     typeof value.sideGapRight === "number" ||
     (Array.isArray(value.monthNames) && value.monthNames.length > 0) ||
