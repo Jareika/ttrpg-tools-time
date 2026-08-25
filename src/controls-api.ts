@@ -166,6 +166,18 @@ export function createTimeControlsApi(
       }
     },
     {
+      id: "community-library.open",
+      name: "Open community downloads",
+      icon: "download",
+      group: "Community",
+      description: "Browse downloadable community calendars and weather packs.",
+      isAvailable: () =>
+        plugin.settings.communityLibraryIndexUrl.trim().length > 0,
+      execute: async () => {
+        plugin.openCommunityLibraryModal();
+      }
+    },
+    {
       id: "frontmatter.manage",
       name: "Manage frontmatter",
       icon: "hammer",

@@ -206,6 +206,15 @@ export class TimeControlView extends ItemView {
     }
 
     this.createActionButton(quickActions, {
+      icon: "download",
+      label: "Download calendars and weather packs",
+      iconOnly: true,
+      onClick: () => {
+        this.plugin.openCommunityLibraryModal();
+      }
+    });
+
+    this.createActionButton(quickActions, {
       icon: "cloud",
       label: "Manage weather packs",
       iconOnly: true,

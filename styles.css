@@ -743,6 +743,96 @@ body .status-bar {
 }
 
 /* ==========================================================================
+   Community library
+   ========================================================================== */
+
+.time-community-library {
+  min-width: min(760px, 88vw);
+}
+
+.time-community-library__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.time-community-library__tabs .time-manager__button.is-active {
+  border-color: var(--time-accent);
+  background: var(--time-accent);
+  color: #fff8ef;
+}
+
+.time-community-library__filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 132px 156px;
+  gap: 10px;
+  margin-bottom: 12px;
+  align-items: stretch;
+}
+
+.time-community-library__filters .time-event-editor__input {
+  height: 40px;
+  min-height: 40px;
+  box-sizing: border-box;
+}
+
+.time-community-library__language-select {
+  min-width: 0;
+}
+
+.time-community-library__month-select {
+  min-width: 0;
+}
+
+.time-community-library__list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.time-community-library__entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--time-border);
+  border-radius: 12px;
+  background: var(--time-card-bg);
+}
+
+.time-community-library__entry-body {
+  min-width: 0;
+}
+
+.time-community-library__entry-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--time-strong-text);
+}
+
+.time-community-library__entry-description {
+  margin-top: 4px;
+  line-height: 1.4;
+  color: var(--time-strong-text);
+}
+
+.time-community-library__entry-meta {
+  margin-top: 8px;
+  font-size: 0.82rem;
+  color: var(--time-muted-text);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 620px) {
+  .time-community-library__filters,
+  .time-community-library__entry {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ==========================================================================
    Control view
    ========================================================================== */
 

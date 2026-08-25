@@ -1,4 +1,13 @@
-import { App, MarkdownView, Notice, Plugin, TFile, WorkspaceLeaf } from "obsidian";
+import {
+  App,
+  MarkdownView,
+  Notice,
+  Plugin,
+  TFile,
+  TFolder,
+  WorkspaceLeaf,
+  normalizePath
+} from "obsidian";
 import {
   clampDate,
   getEraForDate,
@@ -6,8 +15,15 @@ import {
   normalizeCalendarFile,
   normalizeSettings,
   sameDate,
-  shiftDay
+  shiftDay,
+  slugify
 } from "./calendar";
+import { CommunityLibraryModal } from "./community-library-modal";
+import {
+  downloadCommunityLibraryAsset,
+  downloadCommunityLibraryEntry,
+  type CommunityLibraryEntry
+} from "./community-library";
 import {
   CONTROL_VIEW_TYPE,
   TimeControlView,
@@ -449,6 +465,181 @@ export default class TtrpgToolsTimePlugin extends Plugin {
 
   openFrontmatterManagerModal(): void {
     new FrontmatterManagerModal(this).open();
+  }
+  
+  openCommunityLibraryModal(): void {
+    new CommunityLibraryModal(this).open();
+  }
+
+  async installCommunityLibraryEntry(
+    entry: CommunityLibraryEntry
+  ): Promise<void> {
+    const raw = await downloadCommunityLibraryEntry(entry);
+    const source = asRecord(raw);
+
+    if (entry.kind === "calendar") {
+      if (source.kind !== "calendar") {
+        throw new Error("The downloaded file is not a calendar JSON file.");
+      }
+
+      const imported = normalizeCalendarFile(raw);
+
+      if (imported.id !== entry.id) {
+        throw new Error("The calendar id does not match the library index entry.");
+      }
+
+      const targetId = await this.getAvailableCommunityId(
+        imported.id,
+        (candidate) => this.calendarExists(candidate)
+      );
+      const copied = targetId !== imported.id;
+      const name = copied ? `${imported.name} (Community copy)` : imported.name;
+	  
+      const assetRefs = await this.installCommunityCalendarAssets(
+        entry,
+        targetId
+      );
+
+      const calendar = normalizeCalendarFile({
+        ...imported,
+        id: targetId,
+        name,
+        definition: {
+          ...imported.definition,
+          id: targetId,
+          name,
+          moons: imported.definition.moons.map((moon) => ({
+            ...moon,
+            phaseImages: moon.phaseImages.flatMap((phaseImage) => {
+              const imageRef = assetRefs.get(phaseImage.imageRef);
+
+              return imageRef
+                ? [{ ...phaseImage, imageRef }]
+                : [];
+            })
+          })),
+          intercalaryDays: imported.definition.intercalaryDays.map((day) => ({
+            ...day,
+            imageRef: day.imageRef
+              ? assetRefs.get(day.imageRef)
+              : undefined
+          }))
+        },
+        bannerImageRef: imported.bannerImageRef
+          ? assetRefs.get(imported.bannerImageRef)
+          : undefined,
+        linkedTagPackIds: [],
+        linkedCalendarIds: [],
+        linkedWeatherPackIds: [],
+        defaultWeatherPackId: "general"
+      });
+
+      await this.saveCalendar(calendar, false);
+      new Notice(`Installed calendar "${calendar.name}".`);
+      return;
+    }
+
+    if (source.kind !== "weather-pack") {
+      throw new Error("The downloaded file is not a weather-pack JSON file.");
+    }
+
+    const imported = normalizeWeatherPackFile(raw);
+
+    if (imported.id !== entry.id) {
+      throw new Error("The weather-pack id does not match the library index entry.");
+    }
+
+    const targetId = await this.getAvailableCommunityId(
+      imported.id,
+      (candidate) => this.weatherPackExists(candidate)
+    );
+    const copied = targetId !== imported.id;
+    const pack = normalizeWeatherPackFile({
+      ...imported,
+      id: targetId,
+      name: copied ? `${imported.name} (Community copy)` : imported.name
+    });
+
+    await this.saveWeatherPack(pack);
+    new Notice(`Installed weather pack "${pack.name}".`);
+  }
+  
+  private async installCommunityCalendarAssets(
+    entry: CommunityLibraryEntry,
+    calendarId: string
+  ): Promise<Map<string, string>> {
+    const result = new Map<string, string>();
+
+    for (let index = 0; index < entry.assets.length; index += 1) {
+      const asset = entry.assets[index];
+      if (!asset) {
+        continue;
+      }
+
+      const bytes = await downloadCommunityLibraryAsset(asset);
+      const storedPath = await this.storeCommunityAsset(
+        calendarId,
+        asset.ref,
+        bytes,
+        index
+      );
+
+      result.set(asset.ref, storedPath);
+    }
+
+    return result;
+  }
+
+  private async storeCommunityAsset(
+    calendarId: string,
+    sourceRef: string,
+    bytes: ArrayBuffer,
+    index: number
+  ): Promise<string> {
+    const folder = normalizePath(
+      `${this.settings.dataFolder}/community-assets/${slugify(calendarId)}`
+    );
+
+    await this.ensureVaultFolder(folder);
+
+    const sourceFileName = sourceRef.split("/").pop() ?? `asset-${index + 1}`;
+    const safeFileName = sourceFileName
+      .replace(/[^a-zA-Z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    const path = normalizePath(
+      `${folder}/${String(index + 1).padStart(2, "0")}-${safeFileName || "asset"}`
+    );
+
+    const existing = this.app.vault.getAbstractFileByPath(path);
+
+    if (existing instanceof TFile) {
+      await this.app.vault.modifyBinary(existing, bytes);
+      return existing.path;
+    }
+
+    const created = await this.app.vault.createBinary(path, bytes);
+    return created.path;
+  }
+
+  private async ensureVaultFolder(folderPath: string): Promise<void> {
+    const parts = normalizePath(folderPath)
+      .split("/")
+      .filter((part) => part.length > 0);
+    let current = "";
+
+    for (const part of parts) {
+      current = current.length > 0 ? `${current}/${part}` : part;
+      const existing = this.app.vault.getAbstractFileByPath(current);
+
+      if (existing === null) {
+        await this.app.vault.createFolder(current);
+        continue;
+      }
+
+      if (!(existing instanceof TFolder)) {
+        throw new Error(`Asset folder path "${current}" is not a folder.`);
+      }
+    }
   }
   
   openEventExplorerModal(): void {
@@ -2821,6 +3012,29 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     }
 
     return await this.dataStore.loadCalendarById(id);
+  }
+  
+  private async getAvailableCommunityId(
+    originalId: string,
+    exists: (id: string) => Promise<boolean>
+  ): Promise<string> {
+    if (!(await exists(originalId))) {
+      return originalId;
+    }
+
+    const base = slugify(`${originalId}-community`);
+    if (!(await exists(base))) {
+      return base;
+    }
+
+    for (let index = 2; index < 10_000; index += 1) {
+      const candidate = `${base}-${index}`;
+      if (!(await exists(candidate))) {
+        return candidate;
+      }
+    }
+
+    return `${base}-${Date.now().toString(36)}`;
   }
   
   private async syncCalendarLinks(

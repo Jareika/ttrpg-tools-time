@@ -349,6 +349,7 @@ export interface TtrpgToolsTimeSettings {
   showCalendarWeekNumbers: boolean;
   temperatureUnit: TemperatureUnit;
   controlTimeButtons: TimeAdvanceButtonConfig[];
+  communityLibraryIndexUrl: string;
   frontmatterImport: FrontmatterImportSettings;
   frontmatterExport: FrontmatterExportSettings;
 }

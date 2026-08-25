@@ -66,11 +66,29 @@ export class TimeSettingTab extends PluginSettingTab {
             }
           },
           {
+            name: "Community downloads",
+            desc: "Open the community calendar and weather-pack library.",
+            aliases: ["downloads", "community", "library"],
+            action: () => {
+              this.plugin.openCommunityLibraryModal();
+            }
+          },
+          {
             name: "Data folder",
             desc: "Base folder for calendar and tag-pack JSON files. Saving reloads plugin data from the new location.",
             aliases: ["storage", "JSON folder"],
             render: (setting) => {
               this.renderDataFolderSetting(setting);
+            }
+          },
+          {
+            name: "Community library index URL",
+            desc: "HTTPS URL to the public index.json of the TTRPG Tools – Time community library.",
+            aliases: ["community", "downloads", "index"],
+            control: {
+              type: "text",
+              key: "communityLibraryIndexUrl",
+              placeholder: "https://jareika.github.io/ttrpg-tools-time-library/index.json"
             }
           },
           {
@@ -202,6 +220,15 @@ export class TimeSettingTab extends PluginSettingTab {
         await this.plugin.replaceSettings({
           ...this.plugin.settings,
           temperatureUnit: value === "f" ? "f" : "c"
+        });
+        break;
+      case "communityLibraryIndexUrl":
+        await this.plugin.replaceSettings({
+          ...this.plugin.settings,
+          communityLibraryIndexUrl:
+            typeof value === "string"
+              ? value.trim()
+              : ""
         });
         break;
       default:

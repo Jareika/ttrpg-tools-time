@@ -159,6 +159,7 @@ export const DEFAULT_SETTINGS: TtrpgToolsTimeSettings = {
   showCalendarWeekNumbers: false,
   temperatureUnit: "c",
   controlTimeButtons: [],
+  communityLibraryIndexUrl: "https://jareika.github.io/ttrpg-tools-time-library/index.json",
   frontmatterImport: cloneFrontmatterImportSettings(DEFAULT_FRONTMATTER_IMPORT_SETTINGS),
   frontmatterExport: cloneFrontmatterExportSettings(DEFAULT_FRONTMATTER_EXPORT_SETTINGS)
 };
@@ -177,6 +178,10 @@ export function normalizeSettings(raw: unknown): TtrpgToolsTimeSettings {
     showCalendarWeekNumbers: readBoolean(record.showCalendarWeekNumbers, DEFAULT_SETTINGS.showCalendarWeekNumbers),
     temperatureUnit: readTemperatureUnit(record.temperatureUnit),
 	controlTimeButtons: readTimeAdvanceButtons(record.controlTimeButtons),
+    communityLibraryIndexUrl: readString(
+      record.communityLibraryIndexUrl,
+      DEFAULT_SETTINGS.communityLibraryIndexUrl
+    ),
     frontmatterImport: readFrontmatterImportSettings(record.frontmatterImport),
     frontmatterExport: readFrontmatterExportSettings(record.frontmatterExport)
   };

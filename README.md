@@ -783,6 +783,24 @@ Available styling options include:
 
 ---
 
+## Community downloads
+
+The plugin can optionally load a public community-library index containing
+downloadable calendars and weather packs.
+
+The Download modal provides:
+
+- separate Calendar and Weather Pack tabs
+- search by name, author, description, license, or tag
+- month-count filters
+- one-click installation
+- automatic collision-safe ids for locally existing calendar or weather-pack ids
+
+For submitting your fantasy calendars or weather packs visit here:
+https://github.com/Jareika/ttrpg-tools-time-library
+
+---
+
 ## Installation
 
 ### Requirements
