@@ -1,4 +1,4 @@
-import { App, Modal, Notice, Setting } from "obsidian";
+import { App, Modal, Notice, Setting, setIcon } from "obsidian";
 import type TtrpgToolsTimePlugin from "./main";
 import { slugify } from "./calendar";
 import type {
@@ -9,8 +9,12 @@ import type {
 } from "./types";
 import {
   DEFAULT_WEATHER_PACK,
+  createWeatherPreviewReferenceYear,
+  formatTemperatureForDisplay,
+  formatTemperatureRangeForDisplay,
   fromDisplayTemperature,
   getTemperatureUnitLabel,
+  getWeatherConditionLabel,
   getWeatherProfileMonths,
   toDisplayTemperature,
   normalizeWeatherPackFile,
@@ -58,6 +62,8 @@ export class WeatherPackEditorModal extends Modal {
   private frontSpanMax: number;
   private snowTemperature: number;
   private monthProfiles: WeatherPackMonthProfile[];
+  private previewRefreshTimer: number | null = null;
+  private readonly previewHosts = new Map<number, HTMLElement>();
 
   constructor(
     plugin: TtrpgToolsTimePlugin,
@@ -98,13 +104,29 @@ export class WeatherPackEditorModal extends Modal {
 
   onOpen(): void {
     prepareFlexibleModal(this);
+	this.modalEl.addClass("time-weather-pack-editor-modal");
     this.render();
+  }
+  
+  onClose(): void {
+    if (this.previewRefreshTimer !== null) {
+      window.clearTimeout(this.previewRefreshTimer);
+      this.previewRefreshTimer = null;
+    }
+
+    this.previewHosts.clear();
+    this.contentEl.empty();
   }
 
   private render(): void {
+    this.renderCompactEditor();
+  }
+
+  private renderCompactEditor(): void {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.addClass("time-modal");
+    contentEl.addClass("time-modal", "time-weather-pack-editor");
+    this.previewHosts.clear();
 
     contentEl.createEl("h2", {
       text: this.existing ? "Edit weather pack" : "Create weather pack"
@@ -119,150 +141,652 @@ export class WeatherPackEditorModal extends Modal {
       text: monthSourceText
     });
 
-    new Setting(contentEl)
-      .setName("Pack name")
-      .setDesc("Display name of the weather pack.")
-      .addText((text) => {
-        text.setValue(this.name);
-        text.onChange((value) => {
-          this.name = value.trim();
-        });
-      });
+    const identitySection = this.createEditorSection(
+      contentEl,
+      "Pack details",
+      "Name, technical id, and an optional description for this weather pack."
+    );
+    const identityGrid = identitySection.createDiv({
+      cls: "time-weather-pack-editor__field-grid time-weather-pack-editor__field-grid--identity"
+    });
 
-    new Setting(contentEl)
-      .setName("Pack ID")
-      .setDesc("Stable file identifier. Locked for existing packs.")
-      .addText((text) => {
-        text.setValue(this.id);
-        text.setDisabled(this.existing !== null);
-        text.onChange((value) => {
-          if (this.existing) {
-            return;
-          }
+    this.createTextField(identityGrid, {
+      label: "Pack name",
+      tooltip: "The display name shown for this weather pack.",
+      value: this.name,
+      onInput: (value) => {
+        this.name = value;
+      }
+    });
+
+    this.createTextField(identityGrid, {
+      label: "Pack ID",
+      tooltip: "Stable technical identifier. It is locked for existing weather packs.",
+      value: this.id,
+      disabled: this.existing !== null,
+      onInput: (value) => {
+        if (!this.existing) {
           this.id = slugify(value);
+        }
+      }
+    });
+
+    this.createTextField(identityGrid, {
+      label: "Description",
+      tooltip: "Optional description used to identify this weather pack.",
+      value: this.description,
+      onInput: (value) => {
+        this.description = value;
+      }
+    });
+
+    const topSections = contentEl.createDiv({
+      cls: "time-weather-pack-editor__section-grid"
+    });
+
+    const temperatureSection = this.createEditorSection(
+      topSections,
+      "Temperature & seasonality",
+      "Base temperatures, seasonal variation, and short-term weather changes."
+    );
+
+    const temperatureGrid = temperatureSection.createDiv({
+      cls: "time-weather-pack-editor__field-grid"
+    });
+
+    this.createNumberField(temperatureGrid, {
+      label: `Temp min (${getTemperatureUnitLabel(this.temperatureUnit)})`,
+	  isTemperature: true,
+      tooltip: "Absolute lower temperature limit. Generated temperatures will not fall below it.",
+      value: this.temperatureMin,
+      onInput: (value) => {
+        this.temperatureMin = fromDisplayTemperature(value, this.temperatureUnit);
+      }
+    });
+
+    this.createNumberField(temperatureGrid, {
+      label: `Temp max (${getTemperatureUnitLabel(this.temperatureUnit)})`,
+      isTemperature: true,
+	  tooltip: "Absolute upper temperature limit. Generated temperatures will not exceed it.",
+      value: this.temperatureMax,
+      onInput: (value) => {
+        this.temperatureMax = fromDisplayTemperature(value, this.temperatureUnit);
+      }
+    });
+
+    this.createNumberField(temperatureGrid, {
+      label: "Seasonality",
+      tooltip: "Strength of the annual temperature cycle. Higher values increase the difference between cold and warm seasons.",
+      value: this.seasonality,
+      min: 0,
+      max: 100,
+      onInput: (value) => {
+        this.seasonality = clamp(value, 0, 100);
+      }
+    });
+
+    this.createNumberField(temperatureGrid, {
+      label: `Snow temp (${getTemperatureUnitLabel(this.temperatureUnit)})`,
+      isTemperature: true,
+	  tooltip: "Temperature threshold below which precipitation is more likely to become snow, flurries, or sleet.",
+      value: this.snowTemperature,
+      onInput: (value) => {
+        this.snowTemperature = fromDisplayTemperature(value, this.temperatureUnit);
+      }
+    });
+
+    this.createNumberField(temperatureGrid, {
+      label: "Volatility",
+      tooltip: "How strongly weather may vary in the short term. Higher values create more warm spells and cold snaps.",
+      value: this.volatility,
+      min: 0,
+      max: 100,
+      onInput: (value) => {
+        this.volatility = clamp(value, 0, 100);
+      }
+    });
+
+    const atmosphereSection = this.createEditorSection(
+      topSections,
+      "Humidity, sky & wind",
+      "Global defaults. Monthly values below can refine this baseline.",
+      "time-weather-pack-editor__section--atmosphere"
+    );
+
+    const atmosphereGrid = atmosphereSection.createDiv({
+      cls: "time-weather-pack-editor__field-grid"
+    });
+
+    this.createNumberField(atmosphereGrid, {
+      label: "Humidity",
+      tooltip: "Global humidity level. Higher values favor damp, foggy, and precipitation-heavy weather.",
+      value: this.humidity,
+      min: 0,
+      max: 100,
+      onInput: (value) => {
+        this.humidity = clamp(value, 0, 100);
+      }
+    });
+
+    this.createNumberField(atmosphereGrid, {
+      label: "Rain",
+      tooltip: "Global precipitation tendency. Higher values increase the chance of drizzle, rain, or snow.",
+      value: this.precipitation,
+      min: 0,
+      max: 100,
+      onInput: (value) => {
+        this.precipitation = clamp(value, 0, 100);
+      }
+    });
+
+    this.createNumberField(atmosphereGrid, {
+      label: "Storm",
+      tooltip: "Increases the chance of thunderstorms and heavy rain, especially at warmer temperatures.",
+      value: this.storminess,
+      min: 0,
+      max: 100,
+      onInput: (value) => {
+        this.storminess = clamp(value, 0, 100);
+      }
+    });
+
+    this.createNumberField(atmosphereGrid, {
+      label: "Clouds",
+      tooltip: "Global cloud-cover tendency. Higher values produce overcast conditions more often.",
+      value: this.cloudiness,
+      min: 0,
+      max: 100,
+      onInput: (value) => {
+        this.cloudiness = clamp(value, 0, 100);
+      }
+    });
+
+    this.createNumberField(atmosphereGrid, {
+      label: "Fog",
+      tooltip: "Global fog tendency. It is especially effective with high humidity and low wind.",
+      value: this.fogginess,
+      min: 0,
+      max: 100,
+      onInput: (value) => {
+        this.fogginess = clamp(value, 0, 100);
+      }
+    });
+
+    this.createNumberField(atmosphereGrid, {
+      label: "Wind",
+      tooltip: "Global wind strength. Higher values produce stronger winds and gusts more often.",
+      value: this.windiness,
+      min: 0,
+      max: 100,
+      onInput: (value) => {
+        this.windiness = clamp(value, 0, 100);
+      }
+    });
+
+    const frontsSection = this.createEditorSection(
+      topSections,
+      "Fronts & durations",
+      "Controls how often weather phases change and how long stable or front-based conditions last.",
+      "time-weather-pack-editor__section--wide"
+    );
+
+    const frontsGrid = frontsSection.createDiv({
+      cls: "time-weather-pack-editor__field-grid"
+    });
+
+    this.createNumberField(frontsGrid, {
+      label: "Front frequency",
+      tooltip: "Global tendency for weather fronts. The monthly Front value can override this baseline.",
+      value: this.frontFrequency,
+      min: 0,
+      max: 100,
+      onInput: (value) => {
+        this.frontFrequency = clamp(value, 0, 100);
+      }
+    });
+
+    this.createNumberField(frontsGrid, {
+      label: "Front strength",
+      tooltip: "Strength of temperature and weather changes during a front.",
+      value: this.frontStrength,
+      min: 0,
+      max: 100,
+      onInput: (value) => {
+        this.frontStrength = clamp(value, 0, 100);
+      }
+    });
+
+    this.createNumberField(frontsGrid, {
+      label: "Stable span min",
+      tooltip: "Minimum number of days for a stable weather phase.",
+      value: this.stableSpanMin,
+      min: 1,
+      onInput: (value) => {
+        this.stableSpanMin = Math.max(1, value);
+      }
+    });
+
+    this.createNumberField(frontsGrid, {
+      label: "Stable span max",
+      tooltip: "Maximum number of days for a stable weather phase.",
+      value: this.stableSpanMax,
+      min: 1,
+      onInput: (value) => {
+        this.stableSpanMax = Math.max(1, value);
+      }
+    });
+
+    this.createNumberField(frontsGrid, {
+      label: "Front span min",
+      tooltip: "Minimum number of days for a weather front.",
+      value: this.frontSpanMin,
+      min: 1,
+      onInput: (value) => {
+        this.frontSpanMin = Math.max(1, value);
+      }
+    });
+
+    this.createNumberField(frontsGrid, {
+      label: "Front span max",
+      tooltip: "Maximum number of days for a weather front.",
+      value: this.frontSpanMax,
+      min: 1,
+      onInput: (value) => {
+        this.frontSpanMax = Math.max(1, value);
+      }
+    });
+
+    const baselineSection = this.createEditorSection(
+      contentEl,
+      "Month baselines & preview",
+      "Changes update the preview immediately. The preview is not saved and remains reproducible for identical values."
+    );
+
+    const baselineScroll = baselineSection.createDiv({
+      cls: "time-weather-pack-editor__baseline-scroll"
+    });
+    const baselineTable = baselineScroll.createDiv({
+      cls: "time-weather-pack-editor__baseline-table"
+    });
+
+    const header = baselineTable.createDiv({
+      cls: "time-weather-pack-editor__baseline-header"
+    });
+
+    [
+      "Month",
+      `Temp (${getTemperatureUnitLabel(this.temperatureUnit)})`,
+      "Hum",
+      "Prec",
+      "Cloud",
+      "Fog",
+      "Wind",
+      "Front"
+    ].forEach((label) => {
+      header.createDiv({
+        cls: "time-weather-pack-editor__baseline-label",
+        text: label
+      });
+    });
+
+    this.months.forEach((month, monthIndex) => {
+      const profile = this.monthProfiles[monthIndex] ?? {
+        monthIndex,
+        temperatureOffset: 0,
+        humidity: this.humidity,
+        precipitation: this.precipitation,
+        cloudiness: this.cloudiness,
+        fogginess: this.fogginess,
+        windiness: this.windiness,
+        frontBias: this.frontFrequency
+      };
+
+      this.monthProfiles[monthIndex] = {
+        ...profile,
+        monthIndex
+      };
+
+      const row = baselineTable.createDiv({
+        cls: "time-weather-pack-editor__baseline-row"
+      });
+
+      row.createDiv({
+        cls: "time-weather-pack-editor__month-name",
+        text: month.name
+      });
+
+      const draft = this.monthProfiles[monthIndex];
+
+      this.createBaselineInput(
+        row,
+        "Monthly temperature baseline",
+        "Target daily high temperature for this month. Different monthly values replace the global seasonal temperature curve.",
+        formatEditableTemperature(draft.temperatureOffset, this.temperatureUnit),
+        (value) => {
+          draft.temperatureOffset = fromDisplayTemperature(value, this.temperatureUnit);
+        }
+      );
+      this.createBaselineInput(row, "Monthly humidity", "Humidity for this month.", String(draft.humidity), (value) => {
+        draft.humidity = clamp(value, 0, 100);
+      });
+
+      this.createBaselineInput(row, "Monthly precipitation", "Precipitation tendency for this month.", String(draft.precipitation), (value) => {
+        draft.precipitation = clamp(value, 0, 100);
+      });
+
+      this.createBaselineInput(row, "Monthly cloudiness", "Cloud-cover tendency for this month.", String(draft.cloudiness), (value) => {
+        draft.cloudiness = clamp(value, 0, 100);
+      });
+      this.createBaselineInput(row, "Monthly fogginess", "Fog tendency for this month.", String(draft.fogginess), (value) => {
+        draft.fogginess = clamp(value, 0, 100);
+      });
+      this.createBaselineInput(row, "Monthly windiness", "Wind strength for this month.", String(draft.windiness), (value) => {
+        draft.windiness = clamp(value, 0, 100);
+      });
+      this.createBaselineInput(row, "Monthly front frequency", "Weather-front tendency for this month.", String(draft.frontBias), (value) => {
+        draft.frontBias = clamp(value, 0, 100);
+      });
+
+      const preview = baselineTable.createDiv({
+        cls: "time-weather-pack-editor__preview-row"
+      });
+      const previewColumnCount = Math.min(31, Math.max(1, month.days));
+	  preview.style.setProperty(
+        "--time-weather-preview-columns",
+        String(previewColumnCount)
+      );
+      preview.toggleClass("is-wrapped", month.days > previewColumnCount);
+      this.previewHosts.set(monthIndex, preview);
+    });
+	
+	const footer = contentEl.createDiv({ cls: "time-modal__footer" });
+
+    const saveButton = footer.createEl("button", {
+      cls: "time-manager__button mod-cta",
+      text: this.existing ? "Save weather pack" : "Create weather pack"
+    });
+
+    saveButton.type = "button";
+    saveButton.addEventListener("click", () => {
+      void this.submit();
+    });
+
+    const cancelButton = footer.createEl("button", {
+      cls: "time-manager__button",
+      text: "Cancel"
+    });
+    cancelButton.type = "button";
+    cancelButton.addEventListener("click", () => this.close());
+
+    this.refreshPreview();
+  }
+
+  private createEditorSection(
+    parent: HTMLElement,
+    title: string,
+    description: string,
+    extraClass = ""
+  ): HTMLElement {
+    const section = parent.createDiv({
+      cls: [
+        "time-weather-pack-editor__section",
+        extraClass
+      ].filter((className) => className.length > 0).join(" ")
+    });
+
+    section.createEl("h3", {
+      cls: "time-weather-pack-editor__section-title",
+      text: title
+    });
+    section.createDiv({
+      cls: "time-weather-pack-editor__section-description",
+      text: description
+    });
+
+    return section;
+  }
+
+  private createTextField(
+    parent: HTMLElement,
+    options: {
+      label: string;
+      tooltip: string;
+      value: string;
+      disabled?: boolean;
+      onInput: (value: string) => void;
+    }
+  ): void {
+    const field = parent.createDiv({
+      cls: "time-weather-pack-editor__field"
+    });
+    field.createEl("label", {
+      cls: "time-weather-pack-editor__field-label",
+      text: options.label
+    });
+
+    const input = field.createEl("input", {
+      cls: "time-weather-pack-editor__input"
+    });
+    input.type = "text";
+    input.value = options.value;
+    input.disabled = options.disabled ?? false;
+    input.title = options.tooltip;
+    input.setAttr("aria-label", `${options.label}. ${options.tooltip}`);
+    input.addEventListener("input", () => options.onInput(input.value));
+  }
+
+  private createNumberField(
+    parent: HTMLElement,
+    options: {
+      label: string;
+      tooltip: string;
+      value: number;
+      min?: number;
+      max?: number;
+	  isTemperature?: boolean;
+      onInput: (value: number) => void;
+    }
+  ): void {
+    const field = parent.createDiv({
+      cls: "time-weather-pack-editor__field"
+    });
+    field.createEl("label", {
+      cls: "time-weather-pack-editor__field-label",
+      text: options.label
+    });
+
+    const input = field.createEl("input", {
+      cls: "time-weather-pack-editor__input"
+    });
+    input.type = "number";
+    input.step = "any";
+    input.value = options.isTemperature
+      ? formatEditableTemperature(options.value, this.temperatureUnit)
+      : String(options.value);
+    input.title = options.tooltip;
+    input.setAttr("aria-label", `${options.label}. ${options.tooltip}`);
+
+    if (typeof options.min === "number") input.min = String(options.min);
+    if (typeof options.max === "number") input.max = String(options.max);
+
+    input.addEventListener("input", () => {
+      options.onInput(Number(input.value) || 0);
+      this.schedulePreviewRefresh();
+    });
+  }
+
+  private createBaselineInput(
+    parent: HTMLElement,
+    label: string,
+    tooltip: string,
+    value: string,
+    onInput: (value: number) => void
+  ): void {
+    const input = parent.createEl("input", {
+      cls: "time-weather-pack-editor__baseline-input"
+    });
+    input.type = "number";
+    input.step = "any";
+    input.value = value;
+    input.title = tooltip;
+    input.setAttr("aria-label", `${label}. ${tooltip}`);
+    input.addEventListener("input", () => {
+      onInput(Number(input.value) || 0);
+      this.schedulePreviewRefresh();
+    });
+  }
+
+  private schedulePreviewRefresh(): void {
+    if (this.previewRefreshTimer !== null) {
+      window.clearTimeout(this.previewRefreshTimer);
+    }
+
+    this.previewRefreshTimer = window.setTimeout(() => {
+      this.previewRefreshTimer = null;
+      this.refreshPreview();
+    }, 120);
+  }
+
+  private refreshPreview(): void {
+    const previewCalendar = this.createPreviewCalendar();
+
+    if (!previewCalendar) {
+      this.previewHosts.forEach((host) => {
+        host.empty();
+        host.createDiv({
+          cls: "time-weather-pack-editor__preview-empty",
+          text: "An active calendar is required for the weather preview."
         });
       });
+      return;
+    }
 
-    new Setting(contentEl)
-      .setName("Description")
-      .addTextArea((text) => {
-        text.setValue(this.description);
-        text.inputEl.rows = 3;
-        text.onChange((value) => {
-          this.description = value.trim();
+    const preview = createWeatherPreviewReferenceYear(
+      previewCalendar,
+      this.buildPreviewPack()
+    );
+
+    this.months.forEach((month, monthIndex) => {
+      const host = this.previewHosts.get(monthIndex);
+      if (!host) return;
+
+      host.empty();
+
+      for (let day = 1; day <= month.days; day += 1) {
+        const entry = preview.days[`${monthIndex}-${day}`];
+        if (!entry) continue;
+
+        const cell = host.createDiv({
+          cls: "time-weather-pack-editor__preview-day"
         });
-      });
 
-    contentEl.createEl("h3", { text: "Temperature & seasonality" });
+        cell.title = [
+          `${month.name} • Day ${day}`,
+          formatTemperatureRangeForDisplay(
+            entry.tempLow,
+            entry.tempHigh,
+            this.temperatureUnit
+          ),
+          getWeatherConditionLabel(entry.condition),
+          entry.windLabel,
+          entry.cloudsLabel
+        ].join(" • ");
 
-    createTemperatureSetting(contentEl, "Temperature min", this.temperatureMin, this.temperatureUnit, (value) => {
-      this.temperatureMin = value;
-    });
-
-    createTemperatureSetting(contentEl, "Temperature max", this.temperatureMax, this.temperatureUnit, (value) => {
-      this.temperatureMax = value;
-    });
-
-    createNumberSetting(contentEl, "Seasonality", this.seasonality, (value) => {
-      this.seasonality = clamp(value, 0, 100);
-    }, "0–100");
-
-    createTemperatureSetting(contentEl, "Snow temperature", this.snowTemperature, this.temperatureUnit, (value) => {
-      this.snowTemperature = value;
-    });
-
-    createNumberSetting(contentEl, "Volatility", this.volatility, (value) => {
-      this.volatility = clamp(value, 0, 100);
-    }, "0–100");
-
-    contentEl.createEl("h3", { text: "Humidity, sky & wind" });
-
-    createNumberSetting(contentEl, "Humidity", this.humidity, (value) => {
-      this.humidity = clamp(value, 0, 100);
-    }, "0–100");
-
-    createNumberSetting(contentEl, "Precipitation", this.precipitation, (value) => {
-      this.precipitation = clamp(value, 0, 100);
-    }, "0–100");
-
-    createNumberSetting(contentEl, "Storminess", this.storminess, (value) => {
-      this.storminess = clamp(value, 0, 100);
-    }, "0–100");
-
-    createNumberSetting(contentEl, "Cloudiness", this.cloudiness, (value) => {
-      this.cloudiness = clamp(value, 0, 100);
-    }, "0–100");
-
-    createNumberSetting(contentEl, "Fogginess", this.fogginess, (value) => {
-      this.fogginess = clamp(value, 0, 100);
-    }, "0–100");
-
-    createNumberSetting(contentEl, "Windiness", this.windiness, (value) => {
-      this.windiness = clamp(value, 0, 100);
-    }, "0–100");
-
-    contentEl.createEl("h3", { text: "Fronts & durations" });
-
-    createNumberSetting(contentEl, "Front frequency", this.frontFrequency, (value) => {
-      this.frontFrequency = clamp(value, 0, 100);
-    }, "0–100");
-
-    createNumberSetting(contentEl, "Front strength", this.frontStrength, (value) => {
-      this.frontStrength = clamp(value, 0, 100);
-    }, "0–100");
-
-    createNumberSetting(contentEl, "Stable span min", this.stableSpanMin, (value) => {
-      this.stableSpanMin = Math.max(1, value);
-    });
-
-    createNumberSetting(contentEl, "Stable span max", this.stableSpanMax, (value) => {
-      this.stableSpanMax = Math.max(1, value);
-    });
-
-    createNumberSetting(contentEl, "Front span min", this.frontSpanMin, (value) => {
-      this.frontSpanMin = Math.max(1, value);
-    });
-
-    createNumberSetting(contentEl, "Front span max", this.frontSpanMax, (value) => {
-      this.frontSpanMax = Math.max(1, value);
-    });
-
-    new Setting(contentEl)
-      .setName("Month baselines")
-      .setDesc(
-        `${this.monthProfiles.length} month profile${this.monthProfiles.length === 1 ? "" : "s"} configured. Use these values to shape the yearly baseline per month.`
-      )
-      .addButton((button) => {
-        button.setButtonText("Configure");
-        button.onClick(() => {
-          new WeatherPackMonthProfilesModal(
-            this.app,
-            this.months,
-            this.monthProfiles,
-			this.temperatureUnit,
-            (nextProfiles) => {
-              this.monthProfiles = nextProfiles.map((profile) => ({ ...profile }));
-              this.render();
-            }
-          ).open();
+        cell.createSpan({
+          cls: "time-weather-pack-editor__preview-day-number",
+          text: String(day)
         });
-      });
 
-    const footer = contentEl.createDiv({ cls: "time-modal__footer" });
+        const icon = cell.createSpan({
+          cls: "time-weather-pack-editor__preview-icon"
+        });
+        setIcon(icon, entry.icon);
 
-    new Setting(footer).addButton((button) => {
-      button.setButtonText(this.existing ? "Save" : "Create pack");
-      button.setCta();
-      button.onClick(() => {
-        void this.submit();
-      });
+        cell.createSpan({
+          cls: "time-weather-pack-editor__preview-temperature",
+          text: formatTemperatureForDisplay(entry.tempHigh, this.temperatureUnit)
+        });
+      }
     });
+  }
 
-    new Setting(footer).addButton((button) => {
-      button.setButtonText("Cancel");
-      button.onClick(() => {
-        this.close();
-      });
+  private createPreviewCalendar(): import("./types").CalendarFile | null {
+    const activeCalendar = this.plugin.activeCalendar;
+    if (!activeCalendar || this.months.length === 0) {
+      return null;
+    }
+
+    const previewMonths = this.months.map((month) => ({
+      id: month.id,
+      name: month.name,
+      days: Math.max(1, Math.trunc(month.days)),
+      color: month.color
+    }));
+    const previewYearLength = previewMonths.reduce(
+      (sum, month) => sum + month.days,
+      0
+    );
+
+    return {
+      ...activeCalendar,
+      id: `${activeCalendar.id}-weather-preview`,
+      markers: [],
+      definition: {
+        ...activeCalendar.definition,
+        id: `${activeCalendar.definition.id}-weather-preview`,
+        months: previewMonths,
+        leapMonths: [],
+        leapDays: [],
+        intercalaryDays: [],
+        weatherProfile: {
+          mode: "calendar",
+          climateYearLength: previewYearLength,
+          baseOffsetDays: 0,
+          cycleReset: "none"
+        }
+      },
+      state: {
+        ...activeCalendar.state,
+        todayDate: { year: 1, monthIndex: 0, day: 1 },
+        cursorDate: { year: 1, monthIndex: 0, day: 1 }
+      }
+    };
+  }
+
+  private buildPreviewPack(): WeatherPackFile {
+    return normalizeWeatherPackFile({
+      version: 1,
+      kind: "weather-pack",
+      id: slugify(this.id || this.name || "weather-preview"),
+      name: this.name.trim() || "Weather preview",
+      description: this.description.trim() || undefined,
+      temperatureMin: Math.min(this.temperatureMin, this.temperatureMax),
+      temperatureMax: Math.max(this.temperatureMin, this.temperatureMax),
+      humidity: clamp(this.humidity, 0, 100),
+      precipitation: clamp(this.precipitation, 0, 100),
+      storminess: clamp(this.storminess, 0, 100),
+      cloudiness: clamp(this.cloudiness, 0, 100),
+      fogginess: clamp(this.fogginess, 0, 100),
+      windiness: clamp(this.windiness, 0, 100),
+      seasonality: clamp(this.seasonality, 0, 100),
+      frontFrequency: clamp(this.frontFrequency, 0, 100),
+      frontStrength: clamp(this.frontStrength, 0, 100),
+      volatility: clamp(this.volatility, 0, 100),
+      stableSpanMin: Math.max(1, Math.trunc(this.stableSpanMin)),
+      stableSpanMax: Math.max(this.stableSpanMin, Math.trunc(this.stableSpanMax)),
+      frontSpanMin: Math.max(1, Math.trunc(this.frontSpanMin)),
+      frontSpanMax: Math.max(this.frontSpanMin, Math.trunc(this.frontSpanMax)),
+      snowTemperature: this.snowTemperature,
+      monthProfiles: this.monthProfiles.map((profile, monthIndex) => ({
+        monthIndex,
+        temperatureOffset: Number(profile.temperatureOffset) || 0,
+        humidity: clamp(Number(profile.humidity) || 0, 0, 100),
+        precipitation: clamp(Number(profile.precipitation) || 0, 0, 100),
+        cloudiness: clamp(Number(profile.cloudiness) || 0, 0, 100),
+        fogginess: clamp(Number(profile.fogginess) || 0, 0, 100),
+        windiness: clamp(Number(profile.windiness) || 0, 0, 100),
+        frontBias: clamp(Number(profile.frontBias) || 0, 0, 100)
+      }))
     });
   }
 
@@ -328,142 +852,6 @@ export class WeatherPackEditorModal extends Modal {
     this.close();
     this.onSaved?.();
     new Notice(`Saved weather pack "${pack.name}".`);
-  }
-}
-
-class WeatherPackMonthProfilesModal extends Modal {
-  private readonly months: FantasyMonth[];
-  private profiles: WeatherPackMonthProfile[];
-  private readonly temperatureUnit: TemperatureUnit;
-  private readonly onSave: (profiles: WeatherPackMonthProfile[]) => void;
-
-  constructor(
-    app: App,
-    months: FantasyMonth[],
-    profiles: WeatherPackMonthProfile[],
-	temperatureUnit: TemperatureUnit,
-    onSave: (profiles: WeatherPackMonthProfile[]) => void
-  ) {
-    super(app);
-    this.months = months.map((month) => ({ ...month }));
-    this.profiles = profiles.map((profile) => ({ ...profile }));
-	this.temperatureUnit = temperatureUnit;
-    this.onSave = onSave;
-  }
-
-  onOpen(): void {
-    prepareFlexibleModal(this);
-    this.render();
-  }
-
-  private render(): void {
-    const { contentEl } = this;
-    contentEl.empty();
-    contentEl.addClass("time-modal");
-
-    contentEl.createEl("h2", { text: "Configure month baselines" });
-    contentEl.createEl("p", {
-      cls: "time-weather-pack-months__meta",
-      text: "Each row defines the baseline for a month. The generator interpolates these values across the year."
-    });
-
-    const table = contentEl.createDiv({ cls: "time-weather-pack-months__table" });
-    const header = table.createDiv({ cls: "time-weather-pack-months__header" });
-    createHeaderCell(header, "Month");
-    createHeaderCell(header, `Temp (${getTemperatureUnitLabel(this.temperatureUnit)})`);
-    createHeaderCell(header, "Hum");
-    createHeaderCell(header, "Prec");
-    createHeaderCell(header, "Cloud");
-    createHeaderCell(header, "Fog");
-    createHeaderCell(header, "Wind");
-    createHeaderCell(header, "Front");
-
-    this.months.forEach((month, index) => {
-      const profile = this.profiles[index] ?? {
-        monthIndex: index,
-        temperatureOffset: 0,
-        humidity: 50,
-        precipitation: 50,
-        cloudiness: 50,
-        fogginess: 10,
-        windiness: 30,
-        frontBias: 40
-      };
-
-      this.profiles[index] = { ...profile, monthIndex: index };
-	  
-      const profileDraft = this.profiles[index];
-      if (!profileDraft) {
-        return;
-      }
-
-      const row = table.createDiv({ cls: "time-weather-pack-months__row" });
-      row.createDiv({
-        cls: "time-weather-pack-months__label",
-        text: month.name
-      });
-
-      createRowNumberInput(
-        row,
-        formatEditableTemperature(profileDraft.temperatureOffset, this.temperatureUnit),
-        (value) => {
-          profileDraft.temperatureOffset = fromDisplayTemperature(value, this.temperatureUnit);
-        }
-      );
-
-      createRowNumberInput(row, String(profileDraft.humidity), (value) => {
-        profileDraft.humidity = clamp(value, 0, 100);
-      });
-
-      createRowNumberInput(row, String(profileDraft.precipitation), (value) => {
-        profileDraft.precipitation = clamp(value, 0, 100);
-      });
-
-      createRowNumberInput(row, String(profileDraft.cloudiness), (value) => {
-        profileDraft.cloudiness = clamp(value, 0, 100);
-      });
-
-      createRowNumberInput(row, String(profileDraft.fogginess), (value) => {
-        profileDraft.fogginess = clamp(value, 0, 100);
-      });
-
-      createRowNumberInput(row, String(profileDraft.windiness), (value) => {
-        profileDraft.windiness = clamp(value, 0, 100);
-      });
-
-      createRowNumberInput(row, String(profileDraft.frontBias), (value) => {
-        profileDraft.frontBias = clamp(value, 0, 100);
-      });
-    });
-
-    const footer = contentEl.createDiv({ cls: "time-modal__footer" });
-
-    new Setting(footer).addButton((button) => {
-      button.setButtonText("Save");
-      button.setCta();
-      button.onClick(() => {
-        this.onSave(
-          this.profiles.map((profile, index) => ({
-            monthIndex: index,
-            temperatureOffset: Number(profile.temperatureOffset) || 0,
-            humidity: clamp(Number(profile.humidity) || 0, 0, 100),
-            precipitation: clamp(Number(profile.precipitation) || 0, 0, 100),
-            cloudiness: clamp(Number(profile.cloudiness) || 0, 0, 100),
-            fogginess: clamp(Number(profile.fogginess) || 0, 0, 100),
-            windiness: clamp(Number(profile.windiness) || 0, 0, 100),
-            frontBias: clamp(Number(profile.frontBias) || 0, 0, 100)
-          }))
-        );
-        this.close();
-      });
-    });
-
-    new Setting(footer).addButton((button) => {
-      button.setButtonText("Cancel");
-      button.onClick(() => {
-        this.close();
-      });
-    });
   }
 }
 
@@ -1015,72 +1403,11 @@ function exportWeatherPack(doc: Document, pack: WeatherPackFile): void {
   new Notice(`Exported weather pack "${pack.name}".`);
 }
 
-function createNumberSetting(
-  parent: HTMLElement,
-  name: string,
-  value: number,
-  onChange: (value: number) => void,
-  desc?: string
-): void {
-  new Setting(parent)
-    .setName(name)
-    .setDesc(desc ?? "")
-    .addText((text) => {
-      text.inputEl.type = "number";
-      text.setValue(String(value));
-      text.onChange((nextValue) => {
-        onChange(Number(nextValue) || 0);
-      });
-    });
-}
-
-function createTemperatureSetting(
-  parent: HTMLElement,
-  name: string,
-  value: number,
-  unit: TemperatureUnit,
-  onChange: (value: number) => void,
-  desc?: string
-): void {
-  new Setting(parent)
-    .setName(`${name} (${getTemperatureUnitLabel(unit)})`)
-    .setDesc(desc ?? "")
-    .addText((text) => {
-      text.inputEl.type = "number";
-      text.setValue(formatEditableTemperature(value, unit));
-      text.onChange((nextValue) => {
-        onChange(fromDisplayTemperature(Number(nextValue) || 0, unit));
-      });
-    });
-}
-
 function formatEditableTemperature(value: number, unit: TemperatureUnit): string {
   const converted = Math.round(toDisplayTemperature(value, unit) * 10) / 10;
   return String(converted);
 }
 
-function createHeaderCell(parent: HTMLElement, text: string): void {
-  parent.createDiv({
-    cls: "time-weather-pack-months__header-cell",
-    text
-  });
-}
-
-function createRowNumberInput(
-  parent: HTMLElement,
-  value: string,
-  onChange: (value: number) => void
-): HTMLInputElement {
-  const input = parent.createEl("input", {
-    cls: "time-weather-pack-months__input"
-  });
-  input.type = "number";
-  input.value = value;
-  input.addEventListener("input", () => {
-    onChange(Number(input.value) || 0);
-  });
-  return input;
-}
 
 function createManagerButton(
   parent: HTMLElement,

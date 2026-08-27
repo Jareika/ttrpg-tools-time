@@ -2774,9 +2774,271 @@ body .status-bar {
    Weather pack month table
    ========================================================================== */
 
+.modal-container .modal.time-flex-modal.time-weather-pack-editor-modal {
+  max-width: min(98vw, 1500px);
+}
+
+.modal-container .modal.time-flex-modal.time-weather-pack-editor-modal
+  .time-flex-modal__content {
+  width: min(96vw, 1450px);
+  max-width: min(96vw, 1450px);
+}
+
+.time-weather-pack-editor {
+  width: 100%;
+}
+
+.time-weather-pack-editor__section-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.time-weather-pack-editor__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--time-border);
+  border-radius: 12px;
+  background: var(--time-card-bg);
+}
+
+.time-weather-pack-editor__section--wide {
+  grid-column: 1 / -1;
+}
+
+.time-weather-pack-editor__section-title {
+  margin: 0;
+  color: var(--time-heading);
+  font-size: 1rem;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.time-weather-pack-editor__section-description {
+  margin: 0;
+  color: var(--time-muted-text);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.time-weather-pack-editor__field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 8px;
+}
+
+.time-weather-pack-editor__section--atmosphere
+  .time-weather-pack-editor__field-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.time-weather-pack-editor__field-grid--identity {
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+}
+
+.time-weather-pack-editor__field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.time-weather-pack-editor__field-label {
+  color: var(--time-muted-text);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.time-weather-pack-editor__input,
+.time-weather-pack-editor__baseline-input {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 7px;
+  color: var(--text-normal);
+  background: var(--background-primary);
+}
+
+.time-weather-pack-editor__input:hover,
+.time-weather-pack-editor__baseline-input:hover {
+  border-color: var(--time-accent);
+}
+
+.time-weather-pack-editor__input:focus,
+.time-weather-pack-editor__baseline-input:focus {
+  border-color: var(--time-accent);
+  box-shadow: 0 0 0 2px var(--time-accent-soft);
+}
+
+.time-weather-pack-editor__baseline-scroll {
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+
+.time-weather-pack-editor__baseline-table {
+  min-width: 900px;
+  display: grid;
+  gap: 7px;
+}
+
+.time-weather-pack-editor__baseline-header,
+.time-weather-pack-editor__baseline-row {
+  display: grid;
+  grid-template-columns: minmax(155px, 1.45fr) repeat(7, minmax(62px, 0.7fr));
+  gap: 8px;
+  align-items: center;
+}
+
+.time-weather-pack-editor__baseline-header {
+  padding: 0 2px;
+}
+
+.time-weather-pack-editor__baseline-label {
+  color: var(--time-heading-soft);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.time-weather-pack-editor__baseline-row {
+  padding: 7px 8px;
+  border: 1px solid var(--time-border);
+  border-radius: 10px;
+  background: var(--time-card-bg);
+}
+
+.time-weather-pack-editor__month-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--time-strong-text);
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.time-weather-pack-editor__preview-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(var(--time-weather-preview-columns, 30), minmax(34px, 1fr));
+  gap: clamp(2px, 0.35cqi, 6px);
+  margin-top: 1px;
+  padding-top: 7px;
+  border-top: 1px solid var(--time-border);
+}
+
+.time-weather-pack-editor__preview-day {
+  position: relative;
+  min-width: 0;
+  min-height: 52px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(15px, 1fr);
+  align-items: center;
+  justify-items: center;
+  padding: 3px;
+  border-radius: 7px;
+  color: var(--time-strong-text);
+  background: var(--time-weather-bg);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--time-accent) 13%, transparent);
+  cursor: default;
+}
+
+.time-weather-pack-editor__preview-day:hover {
+  background: var(--time-accent-faint);
+  box-shadow: inset 0 0 0 1px var(--time-accent);
+}
+
+.time-weather-pack-editor__preview-day-number {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: center;
+  align-self: start;
+  color: var(--time-muted-text);
+  font-size: 0.62rem;
+  line-height: 1;
+}
+
+.time-weather-pack-editor__preview-icon {
+  grid-column: 1;
+  grid-row: 3;
+  width: 15px;
+  height: 15px;
+  color: var(--time-heading);
+}
+
+.time-weather-pack-editor__preview-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.time-weather-pack-editor__preview-temperature {
+  grid-column: 1;
+  grid-row: 2;
+  justify-self: center;
+  align-self: center;
+  color: var(--time-strong-text);
+  font-size: 0.56rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.time-weather-pack-editor__preview-empty {
+  grid-column: 1 / -1;
+  padding: 6px 0;
+  color: var(--time-muted-text);
+  font-size: 0.82rem;
+}
+
+@media (max-width: 900px) {
+  .time-weather-pack-editor__section-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .time-weather-pack-editor__section--wide {
+    grid-column: auto;
+  }
+
+  .time-weather-pack-editor__field-grid {
+    grid-template-columns: repeat(3, minmax(118px, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .time-weather-pack-editor__field-grid,
+  .time-weather-pack-editor__field-grid--identity {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .time-weather-pack-months__meta {
   margin-bottom: 10px;
   color: var(--text-muted);
+}
+
+@media (max-width: 900px) {
+  .time-weather-pack-editor__field-grid {
+    grid-template-columns: repeat(3, minmax(130px, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .time-weather-pack-editor__field-grid,
+  .time-weather-pack-editor__field-grid--identity {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .time-weather-pack-months__table {

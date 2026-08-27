@@ -1,5 +1,19 @@
 Changelog
 
+0.9.5
+- Improved the **Edit weather pack** workflow with a more compact, structured editor layout.
+- Added a live weather preview for monthly weather-pack baselines.
+- The preview updates while changing weather-pack values and shows daily weather icons, high temperatures, and detailed hover information.
+- Improved temperature input handling in the weather-pack editor for the configured Celsius/Fahrenheit display unit.
+
+0.9.0
+- Added **Community downloads** for public fantasy calendars and weather packs.
+- Added a Community Library modal with separate Calendar and Weather Pack tabs.
+- Added search for community entries by name, author, description, license, or tag.
+- Added filters for language and month count.
+- Community calendar imports can download and store referenced assets such as banner images, moon-phase images, and named-day images.
+- Imported community content uses collision-safe ids and never overwrites existing local calendars or weather packs.
+
 0.8.0
 - Expanded horizontal Timeline Grid mode with configurable 2, 3, or 4 grid rows.
 - Added configurable Grid tile sizing through per-calendar Timeline Style settings.

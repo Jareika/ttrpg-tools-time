@@ -353,14 +353,58 @@ export function getWeatherProfileMonths(
   }));
 }
 
+export function createWeatherPreviewReferenceYear(
+  calendar: CalendarFile,
+  pack: WeatherPackFile,
+  previewYear = 1
+): WeatherReferenceYearFile {
+  const seedMaterial = JSON.stringify({
+    temperatureMin: pack.temperatureMin,
+    temperatureMax: pack.temperatureMax,
+    humidity: pack.humidity,
+    precipitation: pack.precipitation,
+    storminess: pack.storminess,
+    cloudiness: pack.cloudiness,
+    fogginess: pack.fogginess,
+    windiness: pack.windiness,
+    seasonality: pack.seasonality,
+    frontFrequency: pack.frontFrequency,
+    frontStrength: pack.frontStrength,
+    volatility: pack.volatility,
+    stableSpanMin: pack.stableSpanMin,
+    stableSpanMax: pack.stableSpanMax,
+    frontSpanMin: pack.frontSpanMin,
+    frontSpanMax: pack.frontSpanMax,
+    snowTemperature: pack.snowTemperature,
+    monthProfiles: pack.monthProfiles.map((profile) => ({
+      monthIndex: profile.monthIndex,
+      temperatureOffset: profile.temperatureOffset,
+      humidity: profile.humidity,
+      precipitation: profile.precipitation,
+      cloudiness: profile.cloudiness,
+      fogginess: profile.fogginess,
+      windiness: profile.windiness,
+      frontBias: profile.frontBias
+    }))
+  });
+
+  return createWeatherReferenceYear(
+    calendar,
+    pack,
+    previewYear,
+    hashString(`weather-pack-preview:${calendar.definition.id}:${seedMaterial}`)
+  );
+}
+
 export function createWeatherReferenceYear(
   calendar: CalendarFile,
   pack: WeatherPackFile,
-  year: number
+  year: number,
+  seedOverride?: number
 ): WeatherReferenceYearFile {
   const definition = calendar.definition;
   const yearLength = getYearLength(definition, year);
-  const seed = hashString(`${calendar.id}:${pack.id}:${year}`);
+  const seed = seedOverride ?? hashString(`${calendar.id}:${pack.id}:${year}`);
   const rng = createRng(seed);
   const days: Record<string, WeatherDayEntry> = {};
   const weatherProfileMonths = getWeatherProfileMonths(calendar, pack, year);

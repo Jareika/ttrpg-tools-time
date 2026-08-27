@@ -113,10 +113,6 @@ export class CommunityLibraryModal extends Modal {
     search.type = "search";
     search.placeholder = "Search by name, author or tag";
     search.value = this.query;
-    search.addEventListener("input", () => {
-      this.query = search.value;
-      this.render();
-    });
 	
     const languageSelect = controls.createEl("select", {
       cls: "time-event-editor__input time-community-library__language-select"
@@ -162,13 +158,24 @@ export class CommunityLibraryModal extends Modal {
       this.render();
     });
 
-    const entries = this.getVisibleEntries();
     const list = contentEl.createDiv({
       cls: "time-community-library__list"
     });
+	
+    search.addEventListener("input", () => {
+      this.query = search.value;
+      this.renderEntryList(list);
+    });
+
+    this.renderEntryList(list);
+  }
+
+  private renderEntryList(parent: HTMLElement): void {
+    const entries = this.getVisibleEntries();
+    parent.empty();
 
     if (entries.length === 0) {
-      list.createDiv({
+      parent.createDiv({
         cls: "time-manager__empty",
         text: "No matching entries found."
       });
@@ -176,7 +183,7 @@ export class CommunityLibraryModal extends Modal {
     }
 
     entries.forEach((entry) => {
-      this.renderEntry(list, entry);
+      this.renderEntry(parent, entry);
     });
   }
 
