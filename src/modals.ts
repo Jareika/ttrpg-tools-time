@@ -974,6 +974,7 @@ export class CalendarEditorModal extends Modal {
       linkedTagPackIds: [...this.selectedTagPackIds],
 	  linkedCalendarIds: [...this.selectedCalendarIds],
 	  linkedWeatherPackIds: [...this.selectedWeatherPackIds],
+	  frontmatterImportValues: [...(this.existing?.frontmatterImportValues ?? [])],
       markers: this.existing?.markers ?? []
     });
 

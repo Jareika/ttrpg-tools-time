@@ -521,6 +521,7 @@ function renderGridRangeCard(
   const card = parent.createDiv({ cls: "time-timeline-grid__range-card" });
   const imageSrc = entry.img ? resolveImageSrc(plugin, entry.img) : undefined;
   card.toggleClass("is-without-image", !imageSrc);
+  card.toggleClass("is-without-note", !entry.notePath);
 
   if (imageSrc) {
     const media = card.createDiv({ cls: "time-timeline-grid__range-media" });
@@ -628,7 +629,13 @@ function renderCardRow(
   }
 
   const box = grid.createDiv({
-    cls: `tl-box callout time-timeline__box ${hasMedia ? "has-media" : "no-media"}`
+    cls: [
+      "tl-box",
+      "callout",
+      "time-timeline__box",
+      hasMedia ? "has-media" : "no-media",
+      !entry.notePath ? "is-without-note" : ""
+    ].filter(Boolean).join(" ")
   });
   box.setCssProps({
     "--time-tl-box-h": `${style.boxHeight}px`,

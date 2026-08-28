@@ -2448,6 +2448,28 @@ body .status-bar {
   gap: 8px;
 }
 
+.time-frontmatter-calendar-assignment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.time-frontmatter-calendar-assignment {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.75fr) minmax(0, 1.25fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--time-border);
+  border-radius: 10px;
+  background: var(--time-card-bg);
+}
+
+.time-frontmatter-calendar-assignment__label {
+  min-width: 0;
+  font-weight: 700;
+}
+
 /* ==========================================================================
    Manager / editor lists
    ========================================================================== */
@@ -3295,6 +3317,10 @@ body .status-bar {
     grid-template-columns: minmax(0, 1fr);
   }
   
+  .time-frontmatter-calendar-assignment {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  
   .time-settings-button-header {
     display: none;
   }
@@ -3742,6 +3768,32 @@ body .status-bar {
 
 .time-timeline-view .simple-timeline .time-timeline__summary {
   --tl-summary-lh: 1.4;
+}
+
+.time-timeline-view .simple-timeline .tl-box.callout.is-without-note
+  .tl-summary {
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+  -webkit-line-clamp: unset;
+  -webkit-box-orient: initial;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.time-timeline-view .simple-timeline
+  .time-timeline-grid__range-card.is-without-note
+  .time-timeline-grid__range-summary {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  -webkit-line-clamp: unset;
+  -webkit-box-orient: initial;
 }
 
 .time-timeline-view .simple-timeline .tl-media:hover + .tl-box.callout.has-media,

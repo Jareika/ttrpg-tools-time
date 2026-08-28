@@ -66,6 +66,14 @@ export function buildFrontmatterImportCandidate(
       reason: "No matching start date property found."
     };
   }
+  
+  if (!matchesCalendarImportFilter(frontmatter, calendar, settings)) {
+    return {
+      status: "skip",
+      reason:
+        "The note has a calendar filter value which is not assigned to this calendar."
+    };
+  }
 
   const parsedStarts = parseFrontmatterDateDefinitions(startDateValue, calendar);
   if (parsedStarts.status === "invalid") {
@@ -399,6 +407,40 @@ function getFrontmatterValue(
   return undefined;
 }
 
+function matchesCalendarImportFilter(
+  frontmatter: Record<string, unknown>,
+  calendar: CalendarFile,
+  settings: FrontmatterImportSettings
+): boolean {
+  const property = settings.calendarProperty?.trim();
+
+  if (!property) {
+    return true;
+  }
+
+  const rawValue = getFrontmatterValue(frontmatter, property);
+
+  if (rawValue === undefined) {
+    return true;
+  }
+
+  const requestedValues = readStringList(rawValue).map((value) =>
+    value.toLowerCase()
+  );
+
+  if (requestedValues.length === 0) {
+    return true;
+  }
+
+  const acceptedValues = new Set(
+    (calendar.frontmatterImportValues ?? []).map((value) =>
+      value.trim().toLowerCase()
+    )
+  );
+
+  return requestedValues.some((value) => acceptedValues.has(value));
+}
+
 function readScalarString(value: unknown): string | undefined {
   if (typeof value === "string") {
     const trimmed = value.trim();
@@ -413,20 +455,20 @@ function readScalarString(value: unknown): string | undefined {
 }
 
 function readStringList(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value
-      .map((entry) => readScalarString(entry) ?? "")
-      .filter((entry) => entry.length > 0);
-  }
+  const values = Array.isArray(value) ? value : [value];
 
-  if (typeof value === "string") {
-    return value
+  return values.flatMap((entry) => {
+    const scalar = readScalarString(entry);
+
+    if (!scalar) {
+      return [];
+    }
+
+    return scalar
       .split(/[,\n;]+/g)
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0);
-  }
-
-  return [];
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0);
+  });
 }
 
 function parseFantasyDateValue(
@@ -605,6 +647,12 @@ export function applyEventToFrontmatter(
   setMappedValue(frontmatter, settings.imageProperty, event.imageRef, clearMissing);
   setMappedValue(frontmatter, settings.weatherPackProperty, event.weatherPackId, clearMissing);
   setMappedValue(frontmatter, settings.colorProperty, event.color, clearMissing);
+  setMappedValue(
+    frontmatter,
+    settings.calendarProperty,
+    resolveCalendarExportValue(calendar),
+    clearMissing
+  );
   setMappedValue(
     frontmatter,
     settings.syncIdProperty,
@@ -1044,6 +1092,33 @@ function resolveExportSyncId(event: CalendarEventDefinition): string {
   }
 
   return event.id;
+}
+
+ 
+function resolveCalendarExportValue(
+  calendar?: CalendarFile
+): string | string[] | undefined {
+  if (!calendar) {
+    return undefined;
+  }
+
+  const seen = new Set<string>();
+  const values = (calendar.frontmatterImportValues ?? []).filter((value) => {
+    const normalized = value.trim().toLowerCase();
+
+    if (normalized.length === 0 || seen.has(normalized)) {
+      return false;
+    }
+
+    seen.add(normalized);
+    return true;
+  });
+
+  if (values.length === 0) {
+    return undefined;
+  }
+
+  return values.length === 1 ? values[0] : values;
 }
 
 function formatFantasyDate(date: FantasyDate): string {

@@ -504,6 +504,49 @@ This creates a monthly pattern recurrence for day `1`.
 
 ---
 
+### Calendar-specific Frontmatter imports
+
+Frontmatter imports can optionally be filtered per calendar.
+
+Configure a **Calendar filter property** in **Manage Frontmatter**, for example:
+
+```text
+fc-calendar
+```
+
+Then assign one or more accepted values to every calendar in the
+**Calendar filter assignments** section.
+
+Example assignment:
+
+```text
+Faerûn calendar: 1, faerun
+Eberron calendar: 2, eberron
+```
+
+Notes without the configured property are imported into every calendar that is
+scanned. Notes with the property are only imported into calendars with at least
+one matching assigned value.
+
+Single values, comma-separated values, and YAML lists are supported:
+
+```yaml
+# Imported only into calendars assigned to "1"
+fc-calendar: 1
+```
+
+```yaml
+# Imported into both matching calendars
+fc-calendar:
+  - 1
+  - 2
+```
+
+The property name is configurable, so existing vault conventions such as
+`fc-calender` can also be used.
+
+---
+
 ## Weather system
 
 Weather is generated from reusable weather packs.
@@ -843,6 +886,7 @@ https://github.com/Jareika/ttrpg-tools-time-library
    - eras
    - seasons
    - named years and weeks
+   - progressive season-color transitions between adjacent seasons
    - leap rules
    - named / intercalary days
    - moons

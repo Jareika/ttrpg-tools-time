@@ -2,6 +2,7 @@ import { Modal, Notice } from "obsidian";
 import { slugify } from "./calendar";
 import type TtrpgToolsTimePlugin from "./main";
 import type {
+  CalendarFile,
   FrontmatterColorMappingRule,
   FrontmatterExportSettings,
   FrontmatterImportSettings
@@ -10,6 +11,8 @@ import type {
 export class FrontmatterManagerModal extends Modal {
   private importDraft: FrontmatterImportSettings;
   private exportDraft: FrontmatterExportSettings;
+  private calendarAssignments: CalendarFile[] | null = null;
+  private readonly calendarImportValueDrafts = new Map<string, string>();
 
   constructor(private readonly plugin: TtrpgToolsTimePlugin) {
     super(plugin.app);
@@ -19,10 +22,12 @@ export class FrontmatterManagerModal extends Modal {
 
   onOpen(): void {
     prepareFlexibleModal(this);
-    this.render();
+    void this.render();
   }
 
-  private render(): void {
+  private async render(): Promise<void> {
+    await this.ensureCalendarAssignmentsLoaded();
+
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("time-modal");
@@ -124,6 +129,12 @@ export class FrontmatterManagerModal extends Modal {
         onChange: (value) => { this.importDraft.tagProperty = value; }
       },
       {
+        label: "Calendar filter property",
+        placeholder: "fc-calendar",
+        value: this.importDraft.calendarProperty,
+        onChange: (value) => { this.importDraft.calendarProperty = value; }
+      },
+      {
         label: "Weather-pack property",
         placeholder: "fc-weather",
         value: this.importDraft.weatherPackProperty,
@@ -142,6 +153,8 @@ export class FrontmatterManagerModal extends Modal {
         onChange: (value) => { this.importDraft.syncIdProperty = value; }
       }
     ]);
+
+    this.renderCalendarFilterAssignments(grid);
 
     const timeBlock = createSetupBlock(
       grid,
@@ -273,7 +286,7 @@ export class FrontmatterManagerModal extends Modal {
         deleteButton.title = "Delete";
         deleteButton.addEventListener("click", () => {
           this.importDraft.colorMappings.splice(index, 1);
-          this.render();
+          void this.render();
         });
       });
     }
@@ -286,7 +299,7 @@ export class FrontmatterManagerModal extends Modal {
     addRuleButton.type = "button";
     addRuleButton.addEventListener("click", () => {
       this.importDraft.colorMappings.push(createEmptyColorRule(this.importDraft.colorMappings.length));
-      this.render();
+      void this.render();
     });
   }
 
@@ -353,6 +366,12 @@ export class FrontmatterManagerModal extends Modal {
         placeholder: "fc-tags",
         value: this.exportDraft.tagProperty,
         onChange: (value) => { this.exportDraft.tagProperty = value; }
+      },
+      {
+        label: "Calendar filter property",
+        placeholder: "fc-calendar",
+        value: this.exportDraft.calendarProperty,
+        onChange: (value) => { this.exportDraft.calendarProperty = value; }
       },
       {
         label: "Weather-pack property",
@@ -457,9 +476,90 @@ export class FrontmatterManagerModal extends Modal {
       frontmatterImport: sanitizeImportSettings(this.importDraft),
       frontmatterExport: sanitizeExportSettings(this.exportDraft)
     });
+	
+    for (const calendar of this.calendarAssignments ?? []) {
+      const nextValues = parseCalendarImportValues(
+        this.calendarImportValueDrafts.get(calendar.id) ?? ""
+      );
+
+      if (sameStringLists(calendar.frontmatterImportValues ?? [], nextValues)) {
+        continue;
+      }
+
+      await this.plugin.saveCalendar({
+        ...calendar,
+        frontmatterImportValues: nextValues
+      });
+    }
 
     this.close();
     new Notice("Saved frontmatter settings.");
+  }
+
+  private async ensureCalendarAssignmentsLoaded(): Promise<void> {
+    if (this.calendarAssignments !== null) {
+      return;
+    }
+
+    this.calendarAssignments = await this.plugin.listCalendars();
+
+    this.calendarAssignments.forEach((calendar) => {
+      this.calendarImportValueDrafts.set(
+        calendar.id,
+        (calendar.frontmatterImportValues ?? []).join(", ")
+      );
+    });
+  }
+
+  private renderCalendarFilterAssignments(parent: HTMLElement): void {
+    const block = createSetupBlock(
+      parent,
+      "Calendar filter assignments",
+      "Notes without the configured calendar filter are imported into every scanned calendar. Notes with a value are only imported into calendars assigned to that value."
+    );
+
+    const calendars = this.calendarAssignments ?? [];
+
+    if (calendars.length === 0) {
+      block.createDiv({
+        cls: "time-collection-editor__empty",
+        text: "No calendars are available."
+      });
+      return;
+    }
+
+    const list = block.createDiv({
+      cls: "time-frontmatter-calendar-assignment-list"
+    });
+
+    calendars.forEach((calendar) => {
+      const row = list.createDiv({
+        cls: "time-frontmatter-calendar-assignment"
+      });
+
+      const label = row.createDiv({
+        cls: "time-frontmatter-calendar-assignment__label"
+      });
+      label.createDiv({ text: calendar.name });
+      label.createDiv({
+        cls: "time-frontmatter-block-note",
+        text: calendar.id
+      });
+
+      const input = row.createEl("input", {
+        cls: "time-calendar-editor__compact-input"
+      });
+      input.type = "text";
+      input.placeholder = "Example: 1, faerun, campaign-a";
+      input.value = this.calendarImportValueDrafts.get(calendar.id) ?? "";
+      input.setAttr(
+        "aria-label",
+        `Frontmatter calendar filter values for ${calendar.name}`
+      );
+      input.addEventListener("input", () => {
+        this.calendarImportValueDrafts.set(calendar.id, input.value);
+      });
+    });
   }
 }
 
@@ -486,6 +586,7 @@ function sanitizeImportSettings(value: FrontmatterImportSettings): FrontmatterIm
     imageProperty: trimOptional(value.imageProperty),
     weatherPackProperty: trimOptional(value.weatherPackProperty),
     tagProperty: trimOptional(value.tagProperty),
+	calendarProperty: trimOptional(value.calendarProperty),
     syncIdProperty: trimOptional(value.syncIdProperty),
     colorProperty: trimOptional(value.colorProperty),
     recurrenceFrequencyProperty: trimOptional(value.recurrenceFrequencyProperty),
@@ -519,6 +620,7 @@ function sanitizeExportSettings(value: FrontmatterExportSettings): FrontmatterEx
     imageProperty: trimOptional(value.imageProperty),
     weatherPackProperty: trimOptional(value.weatherPackProperty),
     tagProperty: trimOptional(value.tagProperty),
+	calendarProperty: trimOptional(value.calendarProperty),
     syncIdProperty: trimOptional(value.syncIdProperty),
     colorProperty: trimOptional(value.colorProperty),
     recurrenceFrequencyProperty: trimOptional(value.recurrenceFrequencyProperty),
@@ -546,6 +648,36 @@ function cloneExportSettings(value: FrontmatterExportSettings): FrontmatterExpor
 function trimOptional(value: string | undefined): string | undefined {
   const trimmed = value?.trim() ?? "";
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function parseCalendarImportValues(value: string): string[] {
+  const seen = new Set<string>();
+
+  return value
+    .split(/[,\n;]+/g)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .filter((entry) => {
+      const normalized = entry.toLowerCase();
+
+      if (seen.has(normalized)) {
+        return false;
+      }
+
+      seen.add(normalized);
+      return true;
+    });
+}
+
+function sameStringLists(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every(
+    (entry, index) =>
+      entry.trim().toLowerCase() === right[index]?.trim().toLowerCase()
+  );
 }
 
 function normalizeColor(value: string | undefined): string {

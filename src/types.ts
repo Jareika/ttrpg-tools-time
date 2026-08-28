@@ -58,6 +58,7 @@ export interface FrontmatterImportSettings {
   imageProperty?: string;
   weatherPackProperty?: string;
   tagProperty?: string;
+  calendarProperty?: string;
   syncIdProperty?: string;
   colorProperty?: string;
   recurrenceFrequencyProperty?: string;
@@ -82,6 +83,7 @@ export interface FrontmatterExportSettings {
   imageProperty?: string;
   weatherPackProperty?: string;
   tagProperty?: string;
+  calendarProperty?: string;
   syncIdProperty?: string;
   colorProperty?: string;
   recurrenceFrequencyProperty?: string;
@@ -280,6 +282,7 @@ export interface CalendarFile {
   linkedCalendarIds: string[];
   linkedWeatherPackIds: string[];
   weatherEnabled: boolean;
+  frontmatterImportValues?: string[];
   markers: DayMarker[];
   autoGenerateLinkedWeatherReferences?: boolean;
   defaultWeatherPackId?: string;

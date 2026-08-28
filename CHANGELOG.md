@@ -1,5 +1,12 @@
 Changelog
 
+0.9.6
+- Added progressive season-color transitions between adjacent seasons in calendar and day views.
+- Added optional calendar-specific Frontmatter import filtering.
+- Added configurable Frontmatter calendar-filter property names and per-calendar accepted filter values.
+- Frontmatter calendar filters support scalar values, comma-separated values, and YAML lists.
+- Added a scrollbar for timeline events that do not have a linked note.
+
 0.9.5
 - Improved the **Edit weather pack** workflow with a more compact, structured editor layout.
 - Added a live weather preview for monthly weather-pack baselines.

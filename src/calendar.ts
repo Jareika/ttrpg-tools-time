@@ -136,6 +136,7 @@ export const DEFAULT_CALENDAR_FILE: CalendarFile = {
   linkedWeatherPackIds: [],
   weatherEnabled: true,
   defaultWeatherPackId: "general",
+  frontmatterImportValues: [],
   markers: [],
   autoGenerateLinkedWeatherReferences: false,
   description: "Default calendar created on first launch."
@@ -242,6 +243,7 @@ export function normalizeCalendarFile(raw: unknown): CalendarFile {
 	linkedCalendarIds: readStringArray(record.linkedCalendarIds),
     linkedWeatherPackIds: readStringArray(record.linkedWeatherPackIds),
 	weatherEnabled: readBoolean(record.weatherEnabled, true),
+	frontmatterImportValues: readFrontmatterImportValues(record.frontmatterImportValues),
     defaultWeatherPackId:
       readOptionalString(record.defaultWeatherPackId) ??
       DEFAULT_CALENDAR_FILE.defaultWeatherPackId,
@@ -973,6 +975,7 @@ function readFrontmatterImportSettings(raw: unknown): FrontmatterImportSettings 
     imageProperty: readOptionalString(record.imageProperty),
     weatherPackProperty: readOptionalString(record.weatherPackProperty),
     tagProperty: readOptionalString(record.tagProperty),
+	calendarProperty: readOptionalString(record.calendarProperty),
     syncIdProperty: readOptionalString(record.syncIdProperty),
     colorProperty: readOptionalString(record.colorProperty),
     recurrenceFrequencyProperty: readOptionalString(record.recurrenceFrequencyProperty),
@@ -1004,6 +1007,7 @@ function readFrontmatterExportSettings(raw: unknown): FrontmatterExportSettings 
     imageProperty: readOptionalString(record.imageProperty),
     weatherPackProperty: readOptionalString(record.weatherPackProperty),
     tagProperty: readOptionalString(record.tagProperty),
+	calendarProperty: readOptionalString(record.calendarProperty),
     syncIdProperty: readOptionalString(record.syncIdProperty),
     colorProperty: readOptionalString(record.colorProperty),
     recurrenceFrequencyProperty: readOptionalString(record.recurrenceFrequencyProperty),
@@ -1139,6 +1143,21 @@ function readStringArray(value: unknown): string[] {
     .filter((entry) => entry.length > 0);
 }
 
+function readFrontmatterImportValues(value: unknown): string[] {
+  const seen = new Set<string>();
+
+  return readStringArray(value).filter((entry) => {
+    const normalized = entry.toLowerCase();
+
+    if (seen.has(normalized)) {
+      return false;
+    }
+
+    seen.add(normalized);
+    return true;
+  });
+}
+
 function normalizeViewMode(value: unknown): CalendarViewMode {
   const allowed: CalendarViewMode[] = ["week", "month", "year"];
   return allowed.includes(value as CalendarViewMode)
@@ -1233,6 +1252,7 @@ export function cloneCalendarFile(calendar: CalendarFile): CalendarFile {
 	linkedCalendarIds: [...calendar.linkedCalendarIds],
     linkedWeatherPackIds: [...calendar.linkedWeatherPackIds],
 	weatherEnabled: calendar.weatherEnabled,
+	frontmatterImportValues: [...(calendar.frontmatterImportValues ?? [])],
     defaultWeatherPackId: calendar.defaultWeatherPackId,
     timeline: calendar.timeline ? cloneTimelineStyle(calendar.timeline) : undefined,
 	bannerImageRef: calendar.bannerImageRef,
@@ -1577,6 +1597,52 @@ export function getSeasonForDate(
   }
 
   return null;
+}
+
+export function getSeasonColorForDate(
+  definition: FantasyCalendarDefinition,
+  date: FantasyDate
+): string | undefined {
+  const season = getSeasonForDate(definition, date);
+
+  if (!season || definition.seasons.length < 2) {
+    return season?.color;
+  }
+
+  const cycleLength = getSeasonCycleLength(definition);
+  const orderedSeasons = [...definition.seasons].sort(
+    (left, right) => left.startDay - right.startDay
+  );
+  const seasonIndex = orderedSeasons.findIndex(
+    (candidate) => candidate === season || candidate.id === season.id
+  );
+
+  if (seasonIndex < 0) {
+    return season.color;
+  }
+
+  const nextSeason =
+    orderedSeasons[(seasonIndex + 1) % orderedSeasons.length];
+
+  if (!nextSeason || nextSeason.color === season.color) {
+    return season.color;
+  }
+
+  const currentDay = getSeasonDayForDate(definition, date);
+  const seasonLength =
+    mod(season.endDay - season.startDay, cycleLength) + 1;
+  const elapsedDays = mod(currentDay - season.startDay, cycleLength);
+  const progress = Math.min(
+    1,
+    Math.max(0, elapsedDays / Math.max(1, seasonLength))
+  );
+  const currentSeasonWeight = Math.round((1 - progress) * 100);
+
+  if (currentSeasonWeight >= 100) {
+    return season.color;
+  }
+
+  return `color-mix(in srgb, ${season.color} ${currentSeasonWeight}%, ${nextSeason.color})`;
 }
 
 export function getSeasonCycleLength(definition: FantasyCalendarDefinition): number {
@@ -2130,7 +2196,7 @@ export function buildMonthGrid(
       isToday: sameDate(date, todayDate),
       isCursor: sameDate(date, cursorDate),
       markers: getMarkersForDate(markers, date),
-      seasonColor: getSeasonForDate(definition, date)?.color
+      seasonColor: getSeasonColorForDate(definition, date)
     });
   }
 
@@ -2219,7 +2285,7 @@ function createIntercalaryMonthGridCell(
     isToday: sameDate(namedDay.date, todayDate),
     isCursor: sameDate(namedDay.date, cursorDate),
     markers: getMarkersForDate(markers, namedDay.date),
-    seasonColor: getSeasonForDate(definition, namedDay.date)?.color,
+    seasonColor: getSeasonColorForDate(definition, namedDay.date),
     intercalaryDay: {
       date: namedDay.date,
       name: namedDay.rule.name,

@@ -478,6 +478,10 @@ export class TimeTimelineView extends ItemView {
     timelineStyle: ResolvedTimelineStyle
   ): void {
     const card = parent.createDiv({ cls: "time-timeline-grid__single-card" });
+	
+    if (!item.notePath) {
+      this.attachContextMenu(card, item);
+    }
 
     if (item.imageSrc) {
 	  card.addClass("is-with-image");
@@ -536,6 +540,11 @@ export class TimeTimelineView extends ItemView {
   ): void {
     const card = parent.createDiv({ cls: "time-timeline-grid__range-card" });
     card.toggleClass("is-without-image", !item.imageSrc);
+	card.toggleClass("is-without-note", !item.notePath);
+
+    if (!item.notePath) {
+      this.attachContextMenu(card, item);
+    }
 
     if (item.imageSrc) {
       const media = card.createDiv({ cls: "time-timeline-grid__range-media" });
@@ -580,18 +589,18 @@ export class TimeTimelineView extends ItemView {
       date.style.color = timelineStyle.colors.date;
     }
 
-    const overlay = this.buildInteractiveOverlay(card, item.notePath ?? item.event.id, item.title);
-    overlay.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      void this.openTimelineItem(item);
-    });
-    overlay.addEventListener("contextmenu", (event) => {
-      event.preventDefault();
-      this.openItemContextMenu(event, item);
-    });
-
     if (item.notePath) {
+      const overlay = this.buildInteractiveOverlay(card, item.notePath, item.title);
+      overlay.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void this.openTimelineItem(item);
+      });
+      overlay.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        this.openItemContextMenu(event, item);
+      });
+
       this.attachHoverForAnchor(overlay, card, item.notePath);
     }
   }
@@ -656,7 +665,13 @@ export class TimeTimelineView extends ItemView {
     }
 
     const box = grid.createDiv({
-      cls: `tl-box callout time-timeline__box ${item.imageSrc ? "has-media" : "no-media"}`
+      cls: [
+        "tl-box",
+        "callout",
+        "time-timeline__box",
+        item.imageSrc ? "has-media" : "no-media",
+        !item.notePath ? "is-without-note" : ""
+      ].filter(Boolean).join(" ")
     });
 
     box.setCssProps({
@@ -714,23 +729,42 @@ export class TimeTimelineView extends ItemView {
         this.attachHoverForAnchor(overlay, media, item.notePath);
       }
     }
-
-    const boxOverlay = this.buildInteractiveOverlay(box, clickTarget, item.title);
-    boxOverlay.addEventListener("click", (evt) => {
-      evt.preventDefault();
-      evt.stopPropagation();
-      void this.openTimelineItem(item);
-    });
-    boxOverlay.addEventListener("contextmenu", (evt) => {
-      evt.preventDefault();
-      this.openItemContextMenu(evt, item);
-    });
+	
+    if (!item.notePath) {
+      this.attachContextMenu(box, item);
+    }
 
     if (item.notePath) {
+      const boxOverlay = this.buildInteractiveOverlay(
+        box,
+        clickTarget,
+        item.title
+      );
+      boxOverlay.addEventListener("click", (evt) => {
+        evt.preventDefault();
+        evt.stopPropagation();
+        void this.openTimelineItem(item);
+      });
+      boxOverlay.addEventListener("contextmenu", (evt) => {
+        evt.preventDefault();
+        this.openItemContextMenu(evt, item);
+      });
+
       this.attachHoverForAnchor(boxOverlay, box, item.notePath);
     }
 
     return row;
+  }
+  
+  private attachContextMenu(
+    element: HTMLElement,
+    item: TimelineRenderItem
+  ): void {
+    element.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.openItemContextMenu(event, item);
+    });
   }
 
   private buildInteractiveOverlay(

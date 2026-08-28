@@ -7,6 +7,7 @@ import {
   getMonth,
   getMonthsForYear,
   getMarkersForDate,
+  getSeasonColorForDate,
   getSeasonForDate,
   shiftDay
 } from "./calendar";
@@ -148,7 +149,11 @@ export class TimeDayView extends ItemView {
 
     const seasonBar = dateBlock.createDiv({ cls: "time-day__season-bar" });
     if (season) {
-      seasonBar.style.setProperty("--time-season-color", season.color);
+      seasonBar.style.setProperty(
+        "--time-season-color",
+        getSeasonColorForDate(calendar.definition, calendar.state.cursorDate) ??
+          season.color
+      );
       seasonBar.title = season.name;
     }
 
