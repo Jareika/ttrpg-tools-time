@@ -29,6 +29,9 @@ export type IntercalaryDayDisplayPosition =
   | "after-previous-month"
   | "before-next-month";
 export type TimelineGridRowCount = 2 | 3 | 4;
+export type TimelineGridColumnCount = 2 | 3 | 4;
+export type TimelineFilterDateSelectorMode = "buttons" | "dropdown";
+export type TimelineFilterContentOrder = "dates-first" | "tags-first";
 export type NegativeYearDisplayMode = "signed" | "absolute";
 export type LargeYearFormat = "plain" | "abbreviated";
 export type EraYearDisplayMode = "absolute" | "relative";
@@ -127,17 +130,28 @@ export interface CalendarTimelineStyle {
   name?: string;
   align?: TimelineAlign;
   showMoons?: boolean;
+  hoverPreviewImageOnly?: boolean;
   moonSize?: number;
   maxSummaryLines?: number;
   cardWidth?: number;
   cardHeight?: number;
   boxHeight?: number;
   gridRows?: TimelineGridRowCount;
+  gridColumns?: TimelineGridColumnCount;
   gridTileHeight?: number;
   sideGapLeft?: number;
   sideGapRight?: number;
   colors?: TimelineStyleColors;
   monthNames?: string[];
+}
+
+export interface TimelineFilterPaneSettings {
+  showYears: boolean;
+  showMonths: boolean;
+  showEras: boolean;
+  yearSelectorMode: TimelineFilterDateSelectorMode;
+  monthSelectorMode: TimelineFilterDateSelectorMode;
+  contentOrder: TimelineFilterContentOrder;
 }
 
 export interface FantasyTimeOfDay {
@@ -287,6 +301,7 @@ export interface CalendarFile {
   autoGenerateLinkedWeatherReferences?: boolean;
   defaultWeatherPackId?: string;
   timeline?: CalendarTimelineStyle;
+  timelineFilter?: TimelineFilterPaneSettings;
   bannerImageRef?: string;
   description?: string;
 }

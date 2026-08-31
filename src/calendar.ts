@@ -29,6 +29,7 @@ import type {
   TagDefinition,
   TagPackFile,
   TimeAdvanceButtonConfig,
+  TimelineFilterPaneSettings,
   TtrpgToolsTimeSettings
 } from "./types";
 
@@ -252,6 +253,7 @@ export function normalizeCalendarFile(raw: unknown): CalendarFile {
       DEFAULT_CALENDAR_FILE.autoGenerateLinkedWeatherReferences ?? false
     ),
 	timeline: readTimelineStyle(record.timeline),
+	timelineFilter: readTimelineFilterPaneSettings(record.timelineFilter),
 	bannerImageRef: readOptionalString(record.bannerImageRef),
     markers: readMarkers(record.markers),
     description: readOptionalString(record.description)
@@ -848,12 +850,16 @@ function readTimelineStyle(raw: unknown): CalendarTimelineStyle | undefined {
           ? "left"
           : undefined,
     showMoons: record.showMoons === true ? true : undefined,
+    hoverPreviewImageOnly:
+      typeof record.hoverPreviewImageOnly === "boolean"
+        ? record.hoverPreviewImageOnly : undefined,
     moonSize: readOptionalInteger(record.moonSize),
     maxSummaryLines: readOptionalInteger(record.maxSummaryLines),
     cardWidth: readOptionalInteger(record.cardWidth),
     cardHeight: readOptionalInteger(record.cardHeight),
     boxHeight: readOptionalInteger(record.boxHeight),
     gridRows: readTimelineGridRows(record.gridRows),
+	gridColumns: readTimelineGridColumns(record.gridColumns),
     gridTileHeight: readOptionalPositiveInteger(record.gridTileHeight),
     sideGapLeft: readOptionalInteger(record.sideGapLeft),
     sideGapRight: readOptionalInteger(record.sideGapRight),
@@ -913,6 +919,55 @@ function readTimelineGridRows(
   return value === 2 || value === 3 || value === 4
     ? value
     : undefined;
+}
+
+function readTimelineGridColumns(
+  value: unknown
+): CalendarTimelineStyle["gridColumns"] {
+  return value === 2 || value === 3 || value === 4
+    ? value
+    : undefined;
+}
+
+function readTimelineFilterPaneSettings(
+  raw: unknown
+): TimelineFilterPaneSettings | undefined {
+  const record = asRecord(raw);
+
+  const hasExplicitSettings =
+    typeof record.showYears === "boolean" ||
+    typeof record.showMonths === "boolean" ||
+    typeof record.showEras === "boolean" ||
+    record.yearSelectorMode === "buttons" ||
+    record.yearSelectorMode === "dropdown" ||
+    record.monthSelectorMode === "buttons" ||
+    record.monthSelectorMode === "dropdown" ||
+    record.contentOrder === "dates-first" ||
+    record.contentOrder === "tags-first";
+
+  if (!hasExplicitSettings) {
+    return undefined;
+  }
+
+  return {
+    showYears: record.showYears !== false,
+    showMonths:
+      record.showYears !== false &&
+      record.showMonths !== false,
+    showEras: record.showEras !== false,
+    yearSelectorMode:
+      record.yearSelectorMode === "dropdown"
+        ? "dropdown"
+        : "buttons",
+    monthSelectorMode:
+      record.monthSelectorMode === "dropdown"
+        ? "dropdown"
+        : "buttons",
+    contentOrder:
+      record.contentOrder === "tags-first"
+        ? "tags-first"
+        : "dates-first"
+  };
 }
 
 function readTimeAdvanceButtons(raw: unknown): TimeAdvanceButtonConfig[] {
@@ -1064,12 +1119,14 @@ function hasTimelineStyleValues(value: CalendarTimelineStyle): boolean {
     typeof value.name === "string" ||
     typeof value.align === "string" ||
     value.showMoons === true ||
+	typeof value.hoverPreviewImageOnly === "boolean" ||
     typeof value.moonSize === "number" ||
     typeof value.maxSummaryLines === "number" ||
     typeof value.cardWidth === "number" ||
     typeof value.cardHeight === "number" ||
     typeof value.boxHeight === "number" ||
     typeof value.gridRows === "number" ||
+	typeof value.gridColumns === "number" ||
     typeof value.gridTileHeight === "number" ||
     typeof value.sideGapLeft === "number" ||
     typeof value.sideGapRight === "number" ||
@@ -1201,6 +1258,12 @@ function cloneTimelineStyle(style: CalendarTimelineStyle): CalendarTimelineStyle
   };
 }
 
+function cloneTimelineFilterPaneSettings(
+  settings: TimelineFilterPaneSettings
+): TimelineFilterPaneSettings {
+  return { ...settings };
+}
+
 export function cloneCalendarDefinition(
   definition: FantasyCalendarDefinition
 ): FantasyCalendarDefinition {
@@ -1255,6 +1318,8 @@ export function cloneCalendarFile(calendar: CalendarFile): CalendarFile {
 	frontmatterImportValues: [...(calendar.frontmatterImportValues ?? [])],
     defaultWeatherPackId: calendar.defaultWeatherPackId,
     timeline: calendar.timeline ? cloneTimelineStyle(calendar.timeline) : undefined,
+    timelineFilter: calendar.timelineFilter
+      ? cloneTimelineFilterPaneSettings(calendar.timelineFilter) : undefined,
 	bannerImageRef: calendar.bannerImageRef,
     markers: cloneMarkers(calendar.markers),
     autoGenerateLinkedWeatherReferences: calendar.autoGenerateLinkedWeatherReferences

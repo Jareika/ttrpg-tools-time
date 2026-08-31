@@ -202,7 +202,9 @@ Features:
 - Horizontal mixed timeline
 - Horizontal stacked timeline
 - Horizontal Grid mode
+- Vertical Grid mode
 - Tag include / exclude filters
+- Year, month, and era filters
 - Linked-calendar inclusion
 - Today jump button
 - Event cards with:
@@ -223,6 +225,7 @@ Available settings include:
 - timeline title
 - image alignment
 - moon display
+- optional hover previews only when hovering event images
 - moon size
 - summary line count
 - card width
@@ -232,6 +235,10 @@ Available settings include:
   - 2 rows
   - 3 rows
   - 4 rows
+- Grid column count:
+  - 2 columns
+  - 3 columns
+  - 4 columns
 - Grid tile height
 - inner left and right spacing
 - card background color
@@ -255,11 +262,25 @@ Horizontal Grid mode renders:
 - configurable tile size through Timeline Style settings
 - additional layout width only where overlapping ranges require it
 
+Vertical Grid mode renders:
+
+- events from left to right, then continues on the next row
+- one-day events as compact portrait tiles
+- multi-day events as cards expanding downward
+- additional card height only where overlapping events in other columns need
+  a shared visible time span
+- configurable Grid column counts
+- configurable tile dimensions through Timeline Style settings
+
+Multi-day cards use the same portrait media proportions as one-day tiles while
+keeping the text content visually attached below the image.
+
 ---
 
 ## Timeline Filter Pane
 
-The Timeline Filter pane supports tag filtering and linked-calendar selection.
+The Timeline Filter pane supports linked-calendar selection, tag filtering, and
+optional date/era filtering.
 
 ### Tag filtering
 
@@ -275,6 +296,39 @@ When the active calendar has linked calendars, the pane also displays calendar c
 - Click a linked calendar to add it to the standalone timeline
 - Click it again to remove it
 - The active calendar always remains included
+
+### Year and month filtering
+
+- Available years and months are derived from the events currently available in
+  the timeline.
+- A year filter can be shown as buttons or as a dropdown.
+- If exactly one event year exists, its month filter is shown directly.
+- Month filters support multiple selections.
+- **Click** a month to add or remove it.
+- **Right-click** a month to show only that month.
+- Month filters require the year filter to be enabled in the calendar-specific
+  Filter Pane settings.
+
+### Era filtering
+
+- Era chips are shown only for eras containing currently available timeline
+  events.
+- Era selections filter event start dates.
+- When linked calendars are included, eras remain calendar-specific even if
+  multiple calendars use identical era names.
+
+### Calendar-specific Filter Pane settings
+
+Each calendar can configure the standalone Timeline Filter pane:
+
+- show or hide year filters
+- show or hide month filters
+- show or hide era filters
+- choose buttons or a dropdown for year filters
+- choose buttons or a collapsible multi-select dropdown for month filters
+- choose whether date/era controls or tag controls appear first
+
+**Clear filters** resets active tag, era, year, and month filters.
 
 ---
 

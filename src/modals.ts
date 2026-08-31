@@ -31,6 +31,7 @@ import type {
   MoonCycleAnchor,
   MoonPhaseImageDefinition,
   TimelineAlign,
+  TimelineFilterPaneSettings,
   TagPackFile
 } from "./types";
 import type TtrpgToolsTimePlugin from "./main";
@@ -152,6 +153,7 @@ export class CalendarEditorModal extends Modal {
   private readonly selectedWeatherPackIds: Set<string>;
   private autoGenerateLinkedWeatherReferences: boolean;
   private timeline: CalendarTimelineStyle | undefined;
+  private timelineFilter: TimelineFilterPaneSettings | undefined;
 
   constructor(
     plugin: TtrpgToolsTimePlugin,
@@ -268,6 +270,7 @@ export class CalendarEditorModal extends Modal {
     this.selectedWeatherPackIds = new Set(source?.linkedWeatherPackIds ?? []);
     this.autoGenerateLinkedWeatherReferences = source?.autoGenerateLinkedWeatherReferences ?? false;
 	this.timeline = cloneCalendarTimelineStyle(source?.timeline);
+	this.timelineFilter = cloneTimelineFilterPaneSettings(source?.timelineFilter);
   }
 
   onOpen(): void {
@@ -404,6 +407,17 @@ export class CalendarEditorModal extends Modal {
         (tagPackIds) => {
           this.selectedTagPackIds.clear();
           tagPackIds.forEach((id) => this.selectedTagPackIds.add(id));
+          void this.render();
+        }
+      ).open();
+    });
+	
+    createManagerButton(shortcutGrid, "Filter pane", () => {
+      new TimelineFilterPaneSettingsModal(
+        this.app,
+        this.timelineFilter,
+        (nextSettings) => {
+          this.timelineFilter = nextSettings;
           void this.render();
         }
       ).open();
@@ -971,6 +985,7 @@ export class CalendarEditorModal extends Modal {
 	  defaultWeatherPackId: this.defaultWeatherPackId,
 	  autoGenerateLinkedWeatherReferences: this.autoGenerateLinkedWeatherReferences,
 	  timeline: cloneCalendarTimelineStyle(this.timeline),
+	  timelineFilter: cloneTimelineFilterPaneSettings(this.timelineFilter),
       linkedTagPackIds: [...this.selectedTagPackIds],
 	  linkedCalendarIds: [...this.selectedCalendarIds],
 	  linkedWeatherPackIds: [...this.selectedWeatherPackIds],
@@ -1381,6 +1396,166 @@ class CalendarTagPacksModal extends Modal {
   }
 }
 
+class TimelineFilterPaneSettingsModal extends Modal {
+  private showYears: boolean;
+  private showMonths: boolean;
+  private showEras: boolean;
+  private yearSelectorMode: TimelineFilterPaneSettings["yearSelectorMode"];
+  private monthSelectorMode: TimelineFilterPaneSettings["monthSelectorMode"];
+  private contentOrder: TimelineFilterPaneSettings["contentOrder"];
+
+  constructor(
+    app: App,
+    settings: TimelineFilterPaneSettings | undefined,
+    private readonly onSave: (
+      settings: TimelineFilterPaneSettings | undefined
+    ) => void
+  ) {
+    super(app);
+    this.showYears = settings?.showYears !== false;
+    this.showMonths =
+      this.showYears &&
+      settings?.showMonths !== false;
+    this.showEras = settings?.showEras !== false;
+    this.yearSelectorMode = settings?.yearSelectorMode ?? "buttons";
+    this.monthSelectorMode = settings?.monthSelectorMode ?? "buttons";
+    this.contentOrder = settings?.contentOrder ?? "dates-first";
+  }
+
+  onOpen(): void {
+    prepareFlexibleModal(this);
+    this.render();
+  }
+
+  private render(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("time-modal");
+
+    contentEl.createEl("h2", { text: "Timeline filter pane" });
+    contentEl.createEl("p", {
+      cls: "setting-item-description",
+      text: "Configure calendar-specific controls for the standalone timeline filter pane."
+    });
+	
+    new Setting(contentEl)
+      .setName("Show year filter")
+      .setDesc(
+        "Displays the available event years. This must stay enabled when month filtering is used."
+      )
+      .addToggle((toggle) => {
+        toggle.setValue(this.showYears);
+        toggle.onChange((value) => {
+          this.showYears = value;
+
+          if (!value) {
+            this.showMonths = false;
+          }
+
+          this.render();
+        });
+      });
+
+    new Setting(contentEl)
+      .setName("Show month filter")
+      .setDesc(
+        "Displays months for the selected year. Requires the year filter."
+      )
+      .addToggle((toggle) => {
+        toggle.setValue(this.showMonths);
+        toggle.setDisabled(!this.showYears);
+        toggle.onChange((value) => {
+          this.showMonths = this.showYears && value;
+        });
+      });
+
+    new Setting(contentEl)
+      .setName("Show era filter")
+      .setDesc(
+        "Displays eras which contain at least one currently available timeline event."
+      )
+      .addToggle((toggle) => {
+        toggle.setValue(this.showEras);
+        toggle.onChange((value) => {
+          this.showEras = value;
+        });
+      });
+	
+    if (this.showYears) {
+      new Setting(contentEl)
+        .setName("Year selector")
+        .setDesc(
+          "Use buttons for a compact range of years, or a normal dropdown for long historical timelines."
+        )
+        .addDropdown((dropdown) => {
+          dropdown.addOption("buttons", "Buttons");
+          dropdown.addOption("dropdown", "Dropdown");
+          dropdown.setValue(this.yearSelectorMode);
+          dropdown.onChange((value) => {
+            this.yearSelectorMode =
+              value === "dropdown" ? "dropdown" : "buttons";
+          });
+        });
+    }
+
+    if (this.showMonths) {
+      new Setting(contentEl)
+        .setName("Month selector")
+        .setDesc(
+          "Buttons and the collapsible dropdown both support multiple selections. " +
+          "Left-click toggles a month; right-click selects only that month."
+        )
+        .addDropdown((dropdown) => {
+          dropdown.addOption("buttons", "Buttons");
+          dropdown.addOption("dropdown", "Collapsible multi-select dropdown");
+          dropdown.setValue(this.monthSelectorMode);
+          dropdown.onChange((value) => {
+            this.monthSelectorMode =
+              value === "dropdown" ? "dropdown" : "buttons";
+          });
+        });
+    }
+	  
+    new Setting(contentEl)
+      .setName("Filter order")
+      .setDesc(
+        "Choose whether date controls or tag controls appear first. Linked-calendar controls always remain at the top."
+      )
+      .addDropdown((dropdown) => {
+        dropdown.addOption("dates-first", "Dates before tags");
+        dropdown.addOption("tags-first", "Tags before dates");
+        dropdown.setValue(this.contentOrder);
+        dropdown.onChange((value) => {
+          this.contentOrder =
+            value === "tags-first" ? "tags-first" : "dates-first";
+        });
+      });
+
+    const footer = contentEl.createDiv({ cls: "time-modal__footer" });
+
+    new Setting(footer).addButton((button) => {
+      button.setButtonText("Save");
+      button.setCta();
+      button.onClick(() => {
+        this.onSave({
+          showYears: this.showYears,
+          showMonths: this.showYears && this.showMonths,
+          showEras: this.showEras,
+          yearSelectorMode: this.yearSelectorMode,
+          monthSelectorMode: this.monthSelectorMode,
+          contentOrder: this.contentOrder
+        });
+        this.close();
+      });
+    });
+
+    new Setting(footer).addButton((button) => {
+      button.setButtonText("Cancel");
+      button.onClick(() => this.close());
+    });
+  }
+}
+
 class TimelineStyleModal extends Modal {
   private readonly onSave: (timeline: CalendarTimelineStyle | undefined) => void;
   private draft: CalendarTimelineStyle;
@@ -1443,6 +1618,18 @@ class TimelineStyleModal extends Modal {
         toggle.onChange((value) => {
           this.draft.showMoons = value || undefined;
           this.render();
+        });
+      });
+	  
+    new Setting(contentEl)
+      .setName("Hover preview only on images")
+      .setDesc(
+        "When enabled, linked-note hover previews open only while hovering timeline images. Text areas remain clickable but do not open a preview."
+      )
+      .addToggle((toggle) => {
+        toggle.setValue(this.draft.hoverPreviewImageOnly === true);
+        toggle.onChange((value) => {
+          this.draft.hoverPreviewImageOnly = value;
         });
       });
 
@@ -1525,7 +1712,7 @@ class TimelineStyleModal extends Modal {
     );
 	
     new Setting(contentEl)
-      .setName("Grid rows")
+      .setName("Grid rows (horizontal)")
       .setDesc(
         "Number of rows used by horizontal grid mode. Cards fill from top to bottom, then continue in the next column."
       )
@@ -1536,6 +1723,26 @@ class TimelineStyleModal extends Modal {
         dropdown.setValue(String(this.draft.gridRows ?? 2));
         dropdown.onChange((value) => {
           this.draft.gridRows =
+            value === "3"
+              ? 3
+              : value === "4"
+                ? 4
+                : 2;
+        });
+      });
+	  
+    new Setting(contentEl)
+      .setName("Grid columns (vertical)")
+      .setDesc(
+        "Number of columns used by vertical grid mode. Cards fill from left to right, then continue in the next row."
+      )
+      .addDropdown((dropdown) => {
+        dropdown.addOption("2", "2 Columns");
+        dropdown.addOption("3", "3 Columns");
+        dropdown.addOption("4", "4 Columns");
+        dropdown.setValue(String(this.draft.gridColumns ?? 2));
+        dropdown.onChange((value) => {
+          this.draft.gridColumns =
             value === "3"
               ? 3
               : value === "4"
@@ -4539,6 +4746,16 @@ function cloneCalendarTimelineStyle(
   };
 }
 
+function cloneTimelineFilterPaneSettings(
+  settings: TimelineFilterPaneSettings | undefined
+): TimelineFilterPaneSettings | undefined {
+  if (!settings) {
+    return undefined;
+  }
+
+  return { ...settings };
+}
+
 function normalizeCalendarTimelineStyle(
   timeline: CalendarTimelineStyle | undefined
 ): CalendarTimelineStyle | undefined {
@@ -4560,12 +4777,14 @@ function normalizeCalendarTimelineStyle(
           ? "left"
           : undefined,
     showMoons: timeline.showMoons === true ? true : undefined,
+	hoverPreviewImageOnly: timeline.hoverPreviewImageOnly,
     moonSize: normalizePositiveInteger(timeline.moonSize),
     maxSummaryLines: normalizeOptionalInteger(timeline.maxSummaryLines),
     cardWidth: normalizeOptionalInteger(timeline.cardWidth),
     cardHeight: normalizeOptionalInteger(timeline.cardHeight),
     boxHeight: normalizeOptionalInteger(timeline.boxHeight),
     gridRows: normalizeTimelineGridRows(timeline.gridRows),
+	gridColumns: normalizeTimelineGridColumns(timeline.gridColumns),
     gridTileHeight: normalizePositiveInteger(timeline.gridTileHeight),
     sideGapLeft: normalizeOptionalInteger(timeline.sideGapLeft),
     sideGapRight: normalizeOptionalInteger(timeline.sideGapRight),
@@ -4638,17 +4857,27 @@ function normalizeTimelineGridRows(
     : undefined;
 }
 
+function normalizeTimelineGridColumns(
+  value: number | undefined
+): CalendarTimelineStyle["gridColumns"] {
+  return value === 2 || value === 3 || value === 4
+    ? value
+    : undefined;
+}
+
 function hasCalendarTimelineStyleValues(value: CalendarTimelineStyle): boolean {
   return (
     typeof value.name === "string" ||
     typeof value.align === "string" ||
     value.showMoons === true ||
+	typeof value.hoverPreviewImageOnly === "boolean" ||
     typeof value.moonSize === "number" ||
     typeof value.maxSummaryLines === "number" ||
     typeof value.cardWidth === "number" ||
     typeof value.cardHeight === "number" ||
     typeof value.boxHeight === "number" ||
     typeof value.gridRows === "number" ||
+	typeof value.gridColumns === "number" ||
     typeof value.gridTileHeight === "number" ||
     typeof value.sideGapLeft === "number" ||
     typeof value.sideGapRight === "number" ||

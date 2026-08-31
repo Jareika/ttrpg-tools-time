@@ -1,5 +1,22 @@
 Changelog
 
+0.9.7
+- Refined the layout for multi‑day timeline cards, using the same portrait media dimensions as single‑day tiles while keeping the card body visually connected beneath the rounded image edges.
+- Added an option to show hover previews only when hovering over event images.
+- Added a vertical Timeline Grid layout.
+- Vertical Grid fills events from left to right and continues on the next row.
+- Multi-day events expand downward and automatically grow further when overlapping events in other columns require a visible shared time span.
+- Added separate horizontal-grid row and vertical-grid column settings, plus clearer layout choices in the Timeline Insert dialog.
+- Added year and month filtering to the standalone Timeline Filter pane.
+- Timeline date filters only list years and months that contain events.
+- Added calendar-specific Timeline Filter pane settings.
+- Calendar editors can now choose whether timeline year/month filters use buttons or dropdowns.
+- When only one event year exists, the Timeline Filter pane shows its month filters directly.
+- Clear filters now resets timeline tag, year, and month filters.
+- Preserved the Timeline Filter pane scroll position when filters are changed, preventing the pane from jumping back to the top after each selection.
+- Added right-click exclusive month selection for month filter buttons.
+- Added a calendar-specific option to show tag filters before date filters or date filters before tag filters.
+
 0.9.6
 - Added progressive season-color transitions between adjacent seasons in calendar and day views.
 - Added optional calendar-specific Frontmatter import filtering.

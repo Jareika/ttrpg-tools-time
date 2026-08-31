@@ -3582,9 +3582,72 @@ body .status-bar {
   border-left-width: 4px;
 }
 
+.time-timeline-era-filter__button {
+  border-left-width: 4px;
+}
+
 .time-tag-filter__button.is-exclude {
   text-decoration: line-through;
   background: color-mix(in srgb, var(--background-primary) 84%, var(--time-tag-color, #d46b65) 16%);
+}
+
+.time-timeline-date-filter__button.is-include {
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.time-timeline-filter__select-field {
+  width: 100%;
+}
+
+.time-timeline-filter__select {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 30px 0 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  color: var(--text-normal);
+  background: var(--background-primary);
+}
+
+.time-timeline-filter__multi-select {
+  width: 100%;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+}
+
+.time-timeline-filter__multi-select-summary {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  padding: 0 10px;
+  color: var(--text-normal);
+  cursor: pointer;
+  user-select: none;
+}
+
+.time-timeline-filter__multi-select-summary:hover {
+  background: var(--background-modifier-hover);
+}
+
+.time-timeline-filter__multi-select[open] .time-timeline-filter__multi-select-summary {
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.time-timeline-filter__multi-select-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 10px;
+}
+
+.time-timeline-filter__multi-select-options .time-tag-filter__button {
+  flex: 0 1 auto;
 }
 
 .time-timeline-view .simple-timeline {
@@ -3891,6 +3954,90 @@ body .status-bar {
 }
 
 /* ==========================================================================
+   Timeline: vertical grid mode
+   ========================================================================== */
+
+.time-timeline-view .simple-timeline .tl-vertical-grid-scroller {
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 8px;
+}
+
+.time-timeline-view .simple-timeline .tl-vertical-grid-timeline {
+  display: grid;
+  grid-template-columns: repeat(
+    var(--tl-v-grid-cols, 2),
+    var(--tl-v-grid-col-w, 200px)
+  );
+  grid-template-rows: repeat(
+    var(--tl-v-grid-rows, 1),
+    var(--tl-v-grid-row-h, 315px)
+  );
+  grid-auto-rows: var(--tl-v-grid-row-h, 315px);
+  align-items: stretch;
+  justify-content: start;
+  gap: 14px;
+  min-width: max-content;
+  padding: 0 2px 8px;
+}
+
+.time-timeline-view .simple-timeline
+  .time-timeline-grid__item--vertical.time-timeline-grid__item--single {
+  max-width: var(--tl-v-grid-col-w, 200px);
+}
+
+.time-timeline-view .simple-timeline
+  .time-timeline-grid__item--vertical
+  .time-timeline-grid__range-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.time-timeline-view .simple-timeline
+  .time-timeline-grid__item--vertical
+  .time-timeline-grid__range-media {
+  position: relative;
+  inset: auto;
+  z-index: 1;
+  width: 100%;
+  height: var(--tl-v-grid-media-h, 315px);
+  flex: 0 0 var(--tl-v-grid-media-h, 315px);
+  overflow: hidden;
+  border-radius: 11px 11px 0 0;
+}
+
+.time-timeline-view .simple-timeline
+  .time-timeline-grid__item--vertical
+  .time-timeline-grid__range-image {
+  border-radius: inherit;
+}
+
+.time-timeline-view .simple-timeline
+  .time-timeline-grid__item--vertical
+  .time-timeline-grid__range-body {
+  position: relative;
+  z-index: 0;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+  padding: 14px 16px;
+}
+
+.time-timeline-view .simple-timeline
+  .time-timeline-grid__item--vertical
+  .time-timeline-grid__range-card.is-without-image
+  .time-timeline-grid__range-body {
+  padding: 14px 16px;
+}
+
+.time-timeline-view .simple-timeline
+  .time-timeline-grid__item--vertical
+  .time-timeline-grid__range-summary {
+  flex: 1 1 auto;
+}
+
+/* ==========================================================================
    Timeline: horizontal grid mode
    ========================================================================== */
 
@@ -4046,18 +4193,22 @@ body .status-bar {
 }
 
 .time-timeline-view .simple-timeline .time-timeline-grid__range-card {
-  display: grid;
-  grid-template-columns: minmax(120px, var(--tl-grid-media-w, 200px)) minmax(0, 1fr);
+  display: block;
 }
 
 .time-timeline-view .simple-timeline .time-timeline-grid__range-card.is-without-image {
-  grid-template-columns: minmax(0, 1fr);
+  display: block;
 }
 
 .time-timeline-view .simple-timeline .time-timeline-grid__range-media {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 1;
+  width: var(--tl-grid-media-w, 200px);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  border-radius: 11px;
   background: var(--background-modifier-border);
 }
 
@@ -4066,17 +4217,31 @@ body .status-bar {
   height: 100%;
   display: block;
   object-fit: cover;
+  border-radius: inherit;
 }
 
 .time-timeline-view .simple-timeline .time-timeline-grid__range-body {
+  position: relative;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 14px 16px;
+  padding:
+    14px
+    16px
+    14px
+    calc(var(--tl-grid-media-w, 200px) + 16px);
   box-sizing: border-box;
   overflow: hidden;
+}
+
+.time-timeline-view .simple-timeline .time-timeline-grid__range-card.is-without-image
+  .time-timeline-grid__range-body {
+  padding: 14px 16px;
 }
 
 .time-timeline-view .simple-timeline .time-timeline-grid__range-title {
@@ -4189,12 +4354,13 @@ body .status-bar {
     gap: 10px;
   }
 
-  .time-timeline-view .simple-timeline .time-timeline-grid__range-card {
-    grid-template-columns: minmax(100px, var(--tl-grid-media-w, 160px)) minmax(0, 1fr);
-  }
-
   .time-timeline-view .simple-timeline .time-timeline-grid__range-body {
     padding: 12px;
+  }
+  
+  .time-timeline-view .simple-timeline .time-timeline-grid__range-card:not(.is-without-image)
+    .time-timeline-grid__range-body {
+    padding-left: calc(var(--tl-grid-media-w, 160px) + 12px);
   }
 
   .time-timeline-view .simple-timeline .time-timeline-grid__range-title {

@@ -1,8 +1,16 @@
 import { ItemView, Menu, Notice, WorkspaceLeaf } from "obsidian";
 import type TtrpgToolsTimePlugin from "./main";
 import { chooseDeleteEventMode } from "./delete-event-modal";
-import { formatYearLabel, getEraShortLabel, getMonth } from "./calendar";
-import { buildTimelineGridLayout } from "./timeline-grid";
+import {
+  formatYearLabel,
+  getEraForDate,
+  getEraShortLabel,
+  getMonth
+} from "./calendar";
+import {
+  buildTimelineGridLayout,
+  buildVerticalTimelineGridLayout
+} from "./timeline-grid";
 import { syncTimelineSummaryLineClamp } from "./timeline-summary";
 import { resolveMoonsForDate } from "./moons";
 import type {
@@ -12,6 +20,7 @@ import type {
   FantasyDate,
   MoonPhaseData,
   TimelineAlign,
+  TimelineFilterDateSelectorMode,
   TagPackFile
 } from "./types";
 
@@ -39,6 +48,7 @@ type TimelineRenderItem = {
   start: FantasyDate;
   end?: FantasyDate;
   tagRefs: string[];
+  eraRef?: string;
   accentColor?: string;
 };
 
@@ -51,16 +61,26 @@ type TimelineTagInfo = {
   color: string;
 };
 
+type TimelineEraInfo = {
+  eraRef: string;
+  calendarId: string;
+  calendarName: string;
+  label: string;
+  color: string;
+};
+
 type ResolvedTimelineStyle = {
   name: string;
   align: TimelineAlign;
   showMoons: boolean;
+  hoverPreviewImageOnly: boolean;
   moonSize: number;
   maxSummaryLines: number;
   cardWidth: number;
   cardHeight: number;
   boxHeight: number;
   gridRows: 2 | 3 | 4;
+  gridColumns: 2 | 3 | 4;
   gridTileHeight: number;
   gridTileWidth: number;
   sideGapLeft: number;
@@ -73,6 +93,14 @@ type ResolvedTimelineStyle = {
     date?: string;
   };
   monthNames?: string[];
+};
+
+type TimelineFilterScrollSnapshot = {
+  top: number;
+  anchor?: {
+    key: string;
+    offset: number;
+  };
 };
 
 export class TimeTimelineView extends ItemView {
@@ -154,7 +182,9 @@ export class TimeTimelineView extends ItemView {
     );
     const orderedItems = [...allItems].sort(compareTimelineRenderItems);
 	const filters = this.plugin.getTimelineTagFilterSnapshot();
-    const visibleItems = applyTimelineTagFilter(orderedItems, filters);
+    const tagFilteredItems = applyTimelineTagFilter(orderedItems, filters);
+    const eraFilteredItems = applyTimelineEraFilter(tagFilteredItems, filters);
+    const visibleItems = applyTimelineDateFilter(eraFilteredItems, filters);
 	const timelineStyle = resolveTimelineStyle(calendar);
 
     const panel = root.createDiv({ cls: "time-timeline__panel" });
@@ -195,7 +225,7 @@ export class TimeTimelineView extends ItemView {
       const itemSelector =
         layoutMode === "vertical"
           ? ".tl-row"
-          : layoutMode === "grid"
+          : layoutMode === "grid-horizontal" || layoutMode === "grid-vertical"
             ? ".time-timeline-grid__item"
             : ".tl-h-item";
 
@@ -230,20 +260,30 @@ export class TimeTimelineView extends ItemView {
 
     createActionButton(
       toolbar,
-      "Grid",
+      "Grid horizontal",
       () => {
-        void this.plugin.setTimelineLayoutMode("grid");
+        void this.plugin.setTimelineLayoutMode("grid-horizontal");
       },
-      layoutMode === "grid"
+      layoutMode === "grid-horizontal"
     );
+
+    createActionButton(toolbar, "Grid vertical", () => {
+      void this.plugin.setTimelineLayoutMode("grid-vertical");
+    }, layoutMode === "grid-vertical");
 
     createActionButton(toolbar, "Filters", () => {
       void this.plugin.activateTimelineFilterView();
     });
 
-    if (filters.include.length > 0 || filters.exclude.length > 0) {
+    if (
+      filters.include.length > 0 ||
+      filters.exclude.length > 0 ||
+	  filters.eraRefs !== undefined ||
+      filters.year !== undefined ||
+      filters.monthIndices !== undefined
+    ) {
       createActionButton(toolbar, "Clear filters", () => {
-        this.plugin.clearTimelineTagFilters();
+        this.plugin.clearTimelineFilters();
       });
     }
 
@@ -280,8 +320,13 @@ export class TimeTimelineView extends ItemView {
       return;
     }
 	
-    if (layoutMode === "grid") {
+    if (layoutMode === "grid-horizontal") {
       this.renderGridTimeline(timelineRoot, calendar, visibleItems, timelineStyle);
+      return;
+    }
+	
+    if (layoutMode === "grid-vertical") {
+      this.renderVerticalGridTimeline(timelineRoot, visibleItems, timelineStyle);
       return;
     }
 
@@ -471,6 +516,86 @@ export class TimeTimelineView extends ItemView {
       }
     });
   }
+  
+  private renderVerticalGridTimeline(
+    root: HTMLElement,
+    items: TimelineRenderItem[],
+    timelineStyle: ResolvedTimelineStyle
+  ): void {
+    const layout = buildVerticalTimelineGridLayout(
+      items.map((item) => ({
+        value: item,
+        start: item.start,
+        end: item.end
+      })),
+      timelineStyle.gridColumns
+    );
+
+    const scroller = root.createDiv({
+      cls: "tl-vertical-grid-scroller"
+    });
+    const grid = scroller.createDiv({
+      cls: "tl-vertical-grid-timeline"
+    });
+
+    grid.setCssProps({
+      "--tl-v-grid-cols": String(layout.columnCount),
+      "--tl-v-grid-rows": String(Math.max(1, layout.rowCount)),
+      "--tl-v-grid-col-w": `${timelineStyle.gridTileWidth}px`,
+      "--tl-v-grid-row-h": `${timelineStyle.gridTileHeight}px`
+    });
+
+    layout.placements.forEach((placement) => {
+      const item = placement.value;
+      const itemStyle = resolveTimelineItemStyle(item, timelineStyle);
+      const eventEl = grid.createDiv({
+        cls: [
+          "time-timeline-grid__item",
+          "time-timeline-grid__item--vertical",
+          placement.isRange
+            ? "time-timeline-grid__item--range"
+            : "time-timeline-grid__item--single"
+        ].join(" ")
+      });
+
+      eventEl.dataset.tlStartKey = String(ymdSortKey(item.start));
+      eventEl.dataset.tlEndKey = String(ymdSortKey(item.end ?? item.start));
+
+      eventEl.style.setProperty(
+        "grid-column-start",
+        String(placement.column + 1),
+        "important"
+      );
+      eventEl.style.setProperty(
+        "grid-row-start",
+        String(placement.row + 1),
+        "important"
+      );
+      eventEl.style.setProperty(
+        "grid-row-end",
+        `span ${Math.max(1, placement.rowSpan)}`,
+        "important"
+      );
+
+      const accentColor =
+        itemStyle.colors.accent ??
+        item.accentColor ??
+        "var(--background-modifier-border)";
+
+      eventEl.setCssProps({
+        "--tl-bg": itemStyle.colors.bg ?? "var(--background-primary)",
+        "--tl-accent": accentColor,
+        "--tl-hover": itemStyle.colors.hover ?? "var(--interactive-accent)",
+        "--tl-v-grid-media-h": `${timelineStyle.gridTileHeight}px`
+      });
+
+      if (placement.isRange) {
+        this.renderGridRangeCard(eventEl, item, itemStyle);
+      } else {
+        this.renderGridSingleCard(eventEl, item, itemStyle);
+      }
+    });
+  }
 
   private renderGridSingleCard(
     parent: HTMLElement,
@@ -528,7 +653,10 @@ export class TimeTimelineView extends ItemView {
       this.openItemContextMenu(event, item);
     });
 
-    if (item.notePath) {
+    if (
+      item.notePath &&
+      (!timelineStyle.hoverPreviewImageOnly || Boolean(item.imageSrc))
+    ) {
       this.attachHoverForAnchor(overlay, card, item.notePath);
     }
   }
@@ -545,9 +673,11 @@ export class TimeTimelineView extends ItemView {
     if (!item.notePath) {
       this.attachContextMenu(card, item);
     }
+	
+	let media: HTMLElement | null = null;
 
     if (item.imageSrc) {
-      const media = card.createDiv({ cls: "time-timeline-grid__range-media" });
+      media = card.createDiv({ cls: "time-timeline-grid__range-media" });
       media.createEl("img", {
         cls: "time-timeline-grid__range-image",
         attr: {
@@ -590,18 +720,36 @@ export class TimeTimelineView extends ItemView {
     }
 
     if (item.notePath) {
-      const overlay = this.buildInteractiveOverlay(card, item.notePath, item.title);
-      overlay.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        void this.openTimelineItem(item);
-      });
-      overlay.addEventListener("contextmenu", (event) => {
-        event.preventDefault();
-        this.openItemContextMenu(event, item);
-      });
+      const addInteractiveOverlay = (
+        parent: HTMLElement,
+        enableHoverPreview: boolean
+      ): void => {
+        const overlay = this.buildInteractiveOverlay(
+          parent,
+          item.notePath!,
+          item.title
+        );
 
-      this.attachHoverForAnchor(overlay, card, item.notePath);
+        overlay.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          void this.openTimelineItem(item);
+        });
+        overlay.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+          this.openItemContextMenu(event, item);
+        });
+
+        if (enableHoverPreview) {
+          this.attachHoverForAnchor(overlay, parent, item.notePath!);
+        }
+      };
+
+      if (media) {
+        addInteractiveOverlay(media, true);
+      }
+
+      addInteractiveOverlay(body, !timelineStyle.hoverPreviewImageOnly);
     }
   }
 
@@ -750,7 +898,9 @@ export class TimeTimelineView extends ItemView {
         this.openItemContextMenu(evt, item);
       });
 
-      this.attachHoverForAnchor(boxOverlay, box, item.notePath);
+      if (!itemStyle.hoverPreviewImageOnly) {
+        this.attachHoverForAnchor(boxOverlay, box, item.notePath);
+      }
     }
 
     return row;
@@ -1028,6 +1178,8 @@ export class TimeTimelineView extends ItemView {
 
 export class TimeTimelineFilterView extends ItemView {
   private renderToken = 0;
+  private scrollSnapshot: TimelineFilterScrollSnapshot | null = null;
+  private monthSelectorOpen = false;
 
   constructor(leaf: WorkspaceLeaf, private readonly plugin: TtrpgToolsTimePlugin) {
     super(leaf);
@@ -1055,6 +1207,14 @@ export class TimeTimelineFilterView extends ItemView {
   }
 
   refresh(): void {
+    const previousContent = this.contentEl.querySelector<HTMLElement>(
+      ".time-tag-filter__content"
+    );
+
+    this.scrollSnapshot =
+      previousContent
+        ? captureTimelineFilterScroll(previousContent)
+        : this.scrollSnapshot;
     clearEl(this.contentEl);
     this.contentEl.addClass("time-tag-filter-view");
     void this.render();
@@ -1072,20 +1232,45 @@ export class TimeTimelineFilterView extends ItemView {
       return;
     }
 
-    const [allCalendars, tagInfos] = await Promise.all([
-      this.plugin.listCalendars(),
-      loadLinkedTagInfos(this.plugin, [calendar])
+    const allCalendars = await this.plugin.listCalendars();
+    const linkedCalendarIds = new Set(calendar.linkedCalendarIds);
+    const selectedCalendarIds = new Set([
+      calendar.id,
+      ...this.plugin.getTimelineAdditionalCalendarIds()
+    ]);
+    const selectedCalendars = allCalendars.filter(
+      (candidate) =>
+        candidate.id === calendar.id ||
+        (linkedCalendarIds.has(candidate.id) &&
+          selectedCalendarIds.has(candidate.id))
+    );
+
+    const [tagInfos, eventGroups] = await Promise.all([
+      loadLinkedTagInfos(this.plugin, [calendar]),
+      Promise.all(
+        selectedCalendars.map(async (candidate) => ({
+          calendar: candidate,
+          events: await this.plugin.loadTimelineEvents(candidate.id)
+        }))
+      )
     ]);
 
     if (token !== this.renderToken) {
       return;
     }
 
+    const filterSnapshot = this.plugin.getTimelineTagFilterSnapshot();
+    const eventsMatchingTags = applyEventTagFilter(
+      eventGroups.flatMap((group) => group.events),
+      filterSnapshot
+    );
+    const dateAvailability = buildTimelineDateAvailability(eventsMatchingTags);
+	const eraInfos = buildTimelineEraInfos(selectedCalendars, eventsMatchingTags);
+    const filterSettings = resolveTimelineFilterPaneSettings(calendar);
+
     const panel = root.createDiv({ cls: "time-tag-filter__panel" });
     const content = panel.createDiv({ cls: "time-tag-filter__content" });
-    const filterSnapshot = this.plugin.getTimelineTagFilterSnapshot();
 
-    const linkedCalendarIds = new Set(calendar.linkedCalendarIds);
     const linkedCalendars = allCalendars.filter((candidate) =>
       linkedCalendarIds.has(candidate.id)
     );
@@ -1094,7 +1279,8 @@ export class TimeTimelineFilterView extends ItemView {
       const calendarGroup = content.createDiv({
         cls: "time-tag-filter__group"
       });
-      calendarGroup.createEl("h3", {
+      calendarGroup.dataset.timeFilterAnchor = "calendars";
+	  calendarGroup.createEl("h3", {
         cls: "time-tag-filter__group-title",
         text: "Calendars"
       });
@@ -1128,38 +1314,250 @@ export class TimeTimelineFilterView extends ItemView {
         });
       });
     }
-	
-	if (filterSnapshot.include.length > 0 || filterSnapshot.exclude.length > 0) {
+
+    if (
+      filterSnapshot.include.length > 0 ||
+      filterSnapshot.exclude.length > 0 ||
+	  filterSnapshot.eraRefs !== undefined ||
+      filterSnapshot.year !== undefined ||
+      filterSnapshot.monthIndices !== undefined
+    ) {
       const toolbar = content.createDiv({ cls: "time-tag-filter__toolbar" });
       createActionButton(toolbar, "Clear filters", () => {
-        this.plugin.clearTimelineTagFilters();
+        this.plugin.clearTimelineFilters();
       });
     }
 
+    const renderDates = () => {
+      if (!filterSettings.showYears) {
+        return;
+      }
+
+      this.renderDateFilters(
+        content,
+        calendar,
+        dateAvailability,
+        filterSnapshot.year,
+        filterSnapshot.monthIndices,
+        filterSettings.yearSelectorMode,
+        filterSettings.monthSelectorMode,
+        filterSettings.showMonths
+      );
+    };
+	
+    const renderEras = () => {
+      if (!filterSettings.showEras) {
+        return;
+      }
+
+      this.renderEraFilters(
+        content,
+        eraInfos,
+        filterSnapshot.eraRefs ?? []
+      );
+    };
+
+    const renderTags = () => {
+      this.renderTagFilters(content, tagInfos, filterSnapshot);
+    };
+
+    if (filterSettings.contentOrder === "tags-first") {
+      renderTags();
+      renderDates();
+	  renderEras();
+    } else {
+      renderDates();
+	  renderEras();
+      renderTags();
+    }
+
+    this.restoreContentScroll(content, token);
+  }
+
+  private renderDateFilters(
+    parent: HTMLElement,
+    calendar: CalendarFile,
+    availability: TimelineDateAvailability,
+    selectedYear: number | undefined,
+    selectedMonthIndices: number[] | undefined,
+    yearSelectorMode: TimelineFilterDateSelectorMode,
+    monthSelectorMode: TimelineFilterDateSelectorMode,
+    showMonths: boolean
+  ): void {
+    if (availability.years.length === 0) {
+      return;
+    }
+
+    const onlyAvailableYear =
+      availability.years.length === 1
+        ? availability.years[0] ?? null
+        : null;
+
+    if (availability.years.length > 1) {
+      const yearGroup = parent.createDiv({
+        cls: "time-tag-filter__group"
+      });
+      yearGroup.dataset.timeFilterAnchor = "years";
+	  yearGroup.createEl("h3", {
+        cls: "time-tag-filter__group-title",
+        text: "Years"
+      });
+
+      this.renderDateSelector(
+        yearGroup,
+        yearSelectorMode,
+        availability.years.map((year) => ({
+          value: String(year),
+          label: formatYearLabel(calendar.definition, year, "compact"),
+          selected: selectedYear === year,
+          onChoose: () => {
+            this.plugin.setTimelineDateFilter(
+              selectedYear === year ? null : year,
+              []
+            );
+          }
+        })),
+        "All years",
+        selectedYear !== undefined ? String(selectedYear) : "",
+        () => this.plugin.setTimelineDateFilter(null, null)
+      );
+    }
+
+    if (!showMonths) {
+      return;
+    }
+
+    const monthYear = selectedYear ?? onlyAvailableYear;
+    if (monthYear === null || monthYear === undefined) {
+      return;
+    }
+
+    const monthIndices = availability.monthsByYear.get(monthYear) ?? [];
+    if (monthIndices.length === 0) {
+      return;
+    }
+
+    const monthGroup = parent.createDiv({
+      cls: "time-tag-filter__group"
+    });
+    monthGroup.dataset.timeFilterAnchor = "months";
+	monthGroup.createEl("h3", {
+      cls: "time-tag-filter__group-title",
+      text: `Months • ${formatYearLabel(calendar.definition, monthYear, "compact")}`
+    });
+
+    const entries = monthIndices.map((monthIndex) => ({
+      value: String(monthIndex),
+      label: getMonth(calendar.definition, monthIndex, monthYear).name,
+      selected: selectedMonthIndices?.includes(monthIndex) ?? false,
+      onChoose: () => {
+        this.plugin.toggleTimelineMonthFilter(monthYear, monthIndex);
+      },
+      onContextChoose: () => {
+        this.plugin.selectTimelineMonthFilter(monthYear, monthIndex);
+      },
+      contextTitle: "Right-click: show only this month"
+    }));
+
+    if (monthSelectorMode === "dropdown") {
+      this.renderCollapsibleMonthSelector(monthGroup, entries);
+      return;
+    }
+
+    this.renderDateSelector(
+      monthGroup,
+      "buttons",
+      entries,
+      "",
+      "",
+      () => undefined
+    );
+  }
+  
+  private renderEraFilters(
+    parent: HTMLElement,
+    eraInfos: TimelineEraInfo[],
+    selectedEraRefs: string[]
+  ): void {
+    if (eraInfos.length === 0) {
+      return;
+    }
+
+    const selected = new Set(selectedEraRefs);
+    const group = parent.createDiv({
+      cls: "time-tag-filter__group"
+    });
+    group.dataset.timeFilterAnchor = "eras";
+
+    group.createEl("h3", {
+      cls: "time-tag-filter__group-title",
+      text: "Eras"
+    });
+
+    const chips = group.createDiv({
+      cls: "time-tag-filter__chips"
+    });
+
+    eraInfos.forEach((era) => {
+      const button = chips.createEl("button", {
+        cls: "time-tag-filter__button time-timeline-era-filter__button",
+        text: era.label
+      });
+      button.type = "button";
+      button.title = selected.has(era.eraRef)
+        ? `Remove ${era.label} filter`
+        : `Filter timeline by ${era.label}`;
+
+      applyTagButtonState(
+        button,
+        era.color,
+        selected.has(era.eraRef),
+        false
+      );
+
+      button.addEventListener("click", () => {
+        this.plugin.toggleTimelineEra(era.eraRef);
+      });
+    });
+  }
+  
+  private renderTagFilters(
+    parent: HTMLElement,
+    tagInfos: TimelineTagInfo[],
+    filterSnapshot: {
+      include: string[];
+      exclude: string[];
+    }
+  ): void {
     if (tagInfos.length === 0) {
-      const empty = content.createDiv({ cls: "time-calendar__empty" });
+      const empty = parent.createDiv({
+        cls: "time-calendar__empty"
+      });
+      empty.dataset.timeFilterAnchor = "tags-empty";
       empty.createEl("h2", { text: "No linked tags available" });
       empty.createEl("p", {
-        text: "Link one or more tag packs to the active calendar to use tag filtering in the timeline."
+        text: "No linked tags are available. Date filters can still be used when events exist."
       });
       return;
     }
 
-    const filters = filterSnapshot;
-    const included = new Set(filters.include);
-    const excluded = new Set(filters.exclude);
+    const included = new Set(filterSnapshot.include);
+    const excluded = new Set(filterSnapshot.exclude);
 
-    const groups = groupTagsByPack(tagInfos);
-
-    groups.forEach((group) => {
-      const groupEl = content.createDiv({ cls: "time-tag-filter__group" });
+    groupTagsByPack(tagInfos).forEach((group) => {
+      const groupEl = parent.createDiv({
+        cls: "time-tag-filter__group"
+      });
+      groupEl.dataset.timeFilterAnchor = `tag:${group.packId}`;
 
       groupEl.createEl("h3", {
         cls: "time-tag-filter__group-title",
         text: group.packName
       });
 
-      const chips = groupEl.createDiv({ cls: "time-tag-filter__chips" });
+      const chips = groupEl.createDiv({
+        cls: "time-tag-filter__chips"
+      });
 
       group.tags.forEach((tag) => {
         const button = chips.createEl("button", {
@@ -1169,9 +1567,18 @@ export class TimeTimelineFilterView extends ItemView {
 
         button.type = "button";
         button.style.setProperty("--time-tag-color", tag.color);
-        button.title = buildTagButtonTitle(tag, included.has(tag.tagRef), excluded.has(tag.tagRef));
+        button.title = buildTagButtonTitle(
+          tag,
+          included.has(tag.tagRef),
+          excluded.has(tag.tagRef)
+        );
 
-        applyTagButtonState(button, tag.color, included.has(tag.tagRef), excluded.has(tag.tagRef));
+        applyTagButtonState(
+          button,
+          tag.color,
+          included.has(tag.tagRef),
+          excluded.has(tag.tagRef)
+        );
 
         let clickTimer: number | null = null;
 
@@ -1186,9 +1593,9 @@ export class TimeTimelineFilterView extends ItemView {
           }, 220);
         });
 
-        button.addEventListener("dblclick", (evt) => {
-          evt.preventDefault();
-          evt.stopPropagation();
+        button.addEventListener("dblclick", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
 
           if (clickTimer !== null) {
             window.clearTimeout(clickTimer);
@@ -1200,6 +1607,197 @@ export class TimeTimelineFilterView extends ItemView {
       });
     });
   }
+
+  private renderDateSelector(
+    parent: HTMLElement,
+    mode: TimelineFilterDateSelectorMode,
+    entries: Array<{
+      value: string;
+      label: string;
+      selected: boolean;
+      onChoose: () => void;
+      onContextChoose?: () => void;
+      contextTitle?: string;
+    }>,
+    emptyLabel: string,
+    selectedValue: string,
+    onClear: () => void
+  ): void {
+    if (mode === "dropdown") {
+      const field = parent.createDiv({
+        cls: "time-timeline-filter__select-field"
+      });
+      const select = field.createEl("select", {
+        cls: "time-timeline-filter__select"
+      });
+
+      select.createEl("option", {
+        text: emptyLabel,
+        value: ""
+      });
+
+      entries.forEach((entry) => {
+        select.createEl("option", {
+          text: entry.label,
+          value: entry.value
+        });
+      });
+
+      select.value = selectedValue;
+      select.addEventListener("change", () => {
+        if (select.value.length === 0) {
+          onClear();
+          return;
+        }
+
+        entries.find((entry) => entry.value === select.value)?.onChoose();
+      });
+      return;
+    }
+
+    const chips = parent.createDiv({ cls: "time-tag-filter__chips" });
+
+    entries.forEach((entry) => {
+      const button = chips.createEl("button", {
+        cls: "time-tag-filter__button time-timeline-date-filter__button",
+        text: entry.label
+      });
+      button.type = "button";
+      button.title =
+        entry.selected
+          ? `Clear ${entry.label} filter${entry.contextTitle ? ` • ${entry.contextTitle}` : ""}`
+          : `Filter timeline by ${entry.label}${entry.contextTitle ? ` • ${entry.contextTitle}` : ""}`;
+
+      applyDateFilterButtonState(button, entry.selected);
+      button.addEventListener("click", entry.onChoose);
+
+      if (entry.onContextChoose) {
+        button.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          entry.onContextChoose?.();
+        });
+      }
+    });
+  }
+  
+  private renderCollapsibleMonthSelector(
+    parent: HTMLElement,
+    entries: Array<{
+      value: string;
+      label: string;
+      selected: boolean;
+      onChoose: () => void;
+      onContextChoose?: () => void;
+      contextTitle?: string;
+    }>
+  ): void {
+    const selectedEntries = entries.filter((entry) => entry.selected);
+    const summaryText =
+      selectedEntries.length === 0
+        ? "Select months"
+        : selectedEntries.length === 1
+          ? selectedEntries[0]?.label ?? "1 month selected"
+          : `${selectedEntries.length} months selected`;
+
+    const selector = parent.createEl("details", {
+      cls: "time-timeline-filter__multi-select"
+    });
+    selector.open = this.monthSelectorOpen;
+    selector.addEventListener("toggle", () => {
+      this.monthSelectorOpen = selector.open;
+    });
+
+	selector.createEl("summary", {
+      cls: "time-timeline-filter__multi-select-summary",
+      text: summaryText
+    });
+
+    const options = selector.createDiv({
+      cls: "time-timeline-filter__multi-select-options"
+    });
+
+    entries.forEach((entry) => {
+      const button = options.createEl("button", {
+        cls: "time-tag-filter__button time-timeline-date-filter__button",
+        text: entry.label
+      });
+      button.type = "button";
+      button.title =
+        entry.selected
+          ? `Clear ${entry.label} filter • Right-click: show only this month`
+          : `Filter timeline by ${entry.label} • Right-click: show only this month`;
+
+      applyDateFilterButtonState(button, entry.selected);
+      button.addEventListener("click", entry.onChoose);
+
+      if (entry.onContextChoose) {
+        button.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          entry.onContextChoose?.();
+        });
+      }
+    });
+  }
+
+  private restoreContentScroll(content: HTMLElement, token: number): void {
+    const snapshot = this.scrollSnapshot;
+
+    if (!snapshot) {
+      return;
+    }
+
+    const restore = () => {
+      if (token !== this.renderToken || !content.isConnected) {
+        return;
+      }
+
+      const maxScrollTop = Math.max(
+        0,
+        content.scrollHeight - content.clientHeight
+      );
+      content.scrollTop = Math.min(snapshot.top, maxScrollTop);
+
+      if (!snapshot.anchor) {
+        return;
+      }
+
+      const anchor = Array.from(
+        content.querySelectorAll<HTMLElement>("[data-time-filter-anchor]")
+      ).find(
+        (candidate) =>
+          candidate.dataset.timeFilterAnchor === snapshot.anchor?.key
+      );
+
+      if (!anchor) {
+        return;
+      }
+
+      const contentTop = content.getBoundingClientRect().top;
+      const anchorTop = anchor.getBoundingClientRect().top;
+      const delta = anchorTop - contentTop - snapshot.anchor.offset;
+
+      content.scrollTop = Math.min(
+        maxScrollTop,
+        Math.max(0, content.scrollTop + delta)
+      );
+    };
+
+    restore();
+
+    const view = content.ownerDocument.defaultView;
+    if (view) {
+      view.requestAnimationFrame(() => {
+        restore();
+        view.requestAnimationFrame(() => {
+          restore();
+        });
+      });
+
+      view.setTimeout(restore, 0);
+    }
+  } 
 }
 
 function buildTimelineRenderItem(
@@ -1210,6 +1808,7 @@ function buildTimelineRenderItem(
 ): TimelineRenderItem {
   const accentTag = event.tagRefs.find((tagRef) => tagInfoByRef.has(tagRef));
   const accentColor = event.color ?? (accentTag ? tagInfoByRef.get(accentTag)?.color : undefined);
+  const era = getEraForDate(calendar.definition, event.date);
 
   return {
     event,
@@ -1221,6 +1820,7 @@ function buildTimelineRenderItem(
     start: { ...event.date },
     end: event.endDate ? { ...event.endDate } : undefined,
     tagRefs: [...event.tagRefs],
+	eraRef: era ? buildTimelineEraRef(calendar.id, era.id) : undefined,
     accentColor
   };
 }
@@ -1293,12 +1893,169 @@ function applyTimelineTagFilter(
   });
 }
 
+function applyTimelineDateFilter(
+  items: TimelineRenderItem[],
+  filters: {
+    year?: number;
+    monthIndices?: number[];
+  }
+): TimelineRenderItem[] {
+  return items.filter((item) => {
+    if (filters.year !== undefined && item.start.year !== filters.year) {
+      return false;
+    }
+
+    if (
+      filters.monthIndices !== undefined &&
+      !filters.monthIndices.includes(item.start.monthIndex)
+    ) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
+function applyTimelineEraFilter(
+  items: TimelineRenderItem[],
+  filters: { eraRefs?: string[] }
+): TimelineRenderItem[] {
+  const selected = new Set(filters.eraRefs ?? []);
+
+  if (selected.size === 0) {
+    return items;
+  }
+
+  return items.filter(
+    (item) => item.eraRef !== undefined && selected.has(item.eraRef)
+  );
+}
+
+function applyEventTagFilter(
+  events: CalendarEventDefinition[],
+  filters: {
+    include: string[];
+    exclude: string[];
+  }
+): CalendarEventDefinition[] {
+  const included = new Set(filters.include);
+  const excluded = new Set(filters.exclude);
+
+  return events.filter((event) => {
+    if (event.tagRefs.some((tagRef) => excluded.has(tagRef))) {
+      return false;
+    }
+
+    return (
+      included.size === 0 ||
+      event.tagRefs.some((tagRef) => included.has(tagRef))
+    );
+  });
+}
+
+type TimelineDateAvailability = {
+  years: number[];
+  monthsByYear: Map<number, number[]>;
+};
+
+function buildTimelineDateAvailability(
+  events: CalendarEventDefinition[]
+): TimelineDateAvailability {
+  const monthsByYear = new Map<number, Set<number>>();
+
+  events.forEach((event) => {
+    const months = monthsByYear.get(event.date.year) ?? new Set<number>();
+    months.add(event.date.monthIndex);
+    monthsByYear.set(event.date.year, months);
+  });
+
+  return {
+    years: [...monthsByYear.keys()].sort((left, right) => left - right),
+    monthsByYear: new Map(
+      [...monthsByYear.entries()].map(([year, months]) => [
+        year,
+        [...months].sort((left, right) => left - right)
+      ])
+    )
+  };
+}
+
+function buildTimelineEraInfos(
+  calendars: CalendarFile[],
+  events: CalendarEventDefinition[]
+): TimelineEraInfo[] {
+  const calendarById = new Map(
+    calendars.map((calendar) => [calendar.id, calendar] as const)
+  );
+  const colorByCalendarId = new Map(
+    calendars.map((calendar, index) => [
+      calendar.id,
+      TIMELINE_CALENDAR_COLORS[index % TIMELINE_CALENDAR_COLORS.length] ??
+        "#d46b65"
+    ] as const)
+  );
+  const byRef = new Map<string, TimelineEraInfo>();
+
+  events.forEach((event) => {
+    const eventCalendar = calendarById.get(event.calendarId);
+    if (!eventCalendar) {
+      return;
+    }
+
+    const era = getEraForDate(eventCalendar.definition, event.date);
+    if (!era) {
+      return;
+    }
+
+    const eraRef = buildTimelineEraRef(eventCalendar.id, era.id);
+
+    if (byRef.has(eraRef)) {
+      return;
+    }
+
+    const eraLabel = era.shortName === era.name
+      ? era.name
+      : `${era.shortName} — ${era.name}`;
+
+    byRef.set(eraRef, {
+      eraRef,
+      calendarId: eventCalendar.id,
+      calendarName: eventCalendar.name,
+      label:
+        calendars.length > 1
+          ? `${eraLabel} (${eventCalendar.name})`
+          : eraLabel,
+      color: colorByCalendarId.get(eventCalendar.id) ?? "#d46b65"
+    });
+  });
+
+  return [...byRef.values()].sort((left, right) => {
+    const calendarComparison = left.calendarName.localeCompare(
+      right.calendarName,
+      undefined,
+      { sensitivity: "base" }
+    );
+
+    return calendarComparison !== 0
+      ? calendarComparison
+      : left.label.localeCompare(right.label, undefined, {
+          sensitivity: "base"
+        });
+  });
+}
+
 function buildTimelineMetaText(
   calendar: CalendarFile,
   selectedCalendars: CalendarFile[],
   totalItems: number,
   visibleItems: number,
-  filters: { include: string[]; exclude: string[] }
+  filters: {
+    include: string[];
+    exclude: string[];
+	eraRefs?: string[];
+    year?: number;
+    monthIndices?: number[];
+  }
 ): string {
   const parts = [
     selectedCalendars.length === 1
@@ -1313,6 +2070,24 @@ function buildTimelineMetaText(
 
   if (filters.exclude.length > 0) {
     parts.push(`exclude: ${filters.exclude.length}`);
+  }
+  
+  if (filters.eraRefs && filters.eraRefs.length > 0) {
+    parts.push(`eras: ${filters.eraRefs.length}`);
+  }
+  
+  if (filters.year !== undefined) {
+    parts.push(`year: ${formatYearLabel(calendar.definition, filters.year, "compact")}`);
+  }
+
+  if (filters.monthIndices !== undefined) {
+    const monthNames = filters.monthIndices.map((monthIndex) =>
+      getMonth(calendar.definition, monthIndex, filters.year ?? 0).name
+    );
+
+    parts.push(
+      `months: ${monthNames.join(", ")}`
+    );
   }
 
   return parts.join(" • ");
@@ -1355,6 +2130,16 @@ function applyTagButtonState(
   }
 
   button.style.borderColor = color;
+}
+
+function applyDateFilterButtonState(
+  button: HTMLButtonElement,
+  selected: boolean
+): void {
+  button.setCssProps({
+    "--time-tag-color": "var(--interactive-accent)"
+  });
+  button.classList.toggle("is-include", selected);
 }
 
 function createActionButton(
@@ -1463,6 +2248,7 @@ function resolveTimelineStyle(calendar: CalendarFile): ResolvedTimelineStyle {
     name: source?.name?.trim() || "Timeline",
     align: source?.align === "right" ? "right" : "left",
     showMoons: source?.showMoons === true,
+	hoverPreviewImageOnly: source?.hoverPreviewImageOnly === true,
     moonSize: resolvePositiveInteger(source?.moonSize, TL_MOON_SIZE),
     maxSummaryLines: resolvePositiveInteger(
       source?.maxSummaryLines,
@@ -1475,6 +2261,7 @@ function resolveTimelineStyle(calendar: CalendarFile): ResolvedTimelineStyle {
       source?.gridRows === 3 || source?.gridRows === 4
         ? source.gridRows
         : TL_GRID_ROWS,
+	gridColumns: source?.gridColumns === 3 || source?.gridColumns === 4 ? source.gridColumns : 2,
     gridTileHeight,
     gridTileWidth,
 	sideGapLeft: resolveNonNegativeInteger(source?.sideGapLeft, TL_SIDE_GAP_LEFT),
@@ -1510,6 +2297,10 @@ function resolveTimelineItemStyle(
     align: source?.align === "right" ? "right" : source?.align === "left"
       ? "left"
       : fallback.align,
+    hoverPreviewImageOnly:
+      typeof source?.hoverPreviewImageOnly === "boolean"
+        ? source.hoverPreviewImageOnly
+        : fallback.hoverPreviewImageOnly,
     maxSummaryLines: resolvePositiveInteger(
       source?.maxSummaryLines,
       fallback.maxSummaryLines
@@ -1517,7 +2308,11 @@ function resolveTimelineItemStyle(
     cardWidth,
     cardHeight,
     boxHeight: resolvePositiveInteger(source?.boxHeight, fallback.boxHeight),
-    gridTileHeight,
+    gridColumns:
+      source?.gridColumns === 3 || source?.gridColumns === 4
+        ? source.gridColumns
+        : fallback.gridColumns,
+	gridTileHeight,
     gridTileWidth: Math.max(
       1,
       Math.round((cardWidth / cardHeight) * gridTileHeight)
@@ -1648,7 +2443,64 @@ function mod(value: number, length: number): number {
   return ((value % length) + length) % length;
 }
 
+function resolveTimelineFilterPaneSettings(
+  calendar: CalendarFile
+): {
+  showYears: boolean;
+  showMonths: boolean;
+  showEras: boolean;
+  yearSelectorMode: TimelineFilterDateSelectorMode;
+  monthSelectorMode: TimelineFilterDateSelectorMode;
+  contentOrder: "dates-first" | "tags-first";
+} {
+  return {
+    showYears: calendar.timelineFilter?.showYears !== false,
+    showMonths:
+      calendar.timelineFilter?.showYears !== false &&
+      calendar.timelineFilter?.showMonths !== false,
+    showEras: calendar.timelineFilter?.showEras !== false,
+    yearSelectorMode:
+      calendar.timelineFilter?.yearSelectorMode === "dropdown"
+        ? "dropdown"
+        : "buttons",
+    monthSelectorMode:
+      calendar.timelineFilter?.monthSelectorMode === "dropdown"
+        ? "dropdown"
+        : "buttons",
+    contentOrder:
+      calendar.timelineFilter?.contentOrder === "tags-first"
+        ? "tags-first"
+        : "dates-first"
+  };
+}
+
+function buildTimelineEraRef(calendarId: string, eraId: string): string {
+  return `${calendarId}:${eraId}`;
+}
+
 const TIMELINE_CALENDAR_COLORS = ["#d46b65", "#3f8f8a", "#7d6cc4", "#d28a3f"];
+
+function captureTimelineFilterScroll(
+  content: HTMLElement
+): TimelineFilterScrollSnapshot {
+  const contentRect = content.getBoundingClientRect();
+  const anchors = Array.from(
+    content.querySelectorAll<HTMLElement>("[data-time-filter-anchor]")
+  );
+  const visibleAnchor =
+    anchors.find((anchor) => anchor.getBoundingClientRect().bottom > contentRect.top) ??
+    anchors[0];
+
+  return {
+    top: content.scrollTop,
+    anchor: visibleAnchor
+      ? {
+          key: visibleAnchor.dataset.timeFilterAnchor ?? "",
+          offset: visibleAnchor.getBoundingClientRect().top - contentRect.top
+        }
+      : undefined
+  };
+}
 
 function getReadableTextColor(hexColor: string): string {
   const normalized = hexColor.replace("#", "");

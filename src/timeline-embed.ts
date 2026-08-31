@@ -4,7 +4,10 @@ import {
   getEraShortLabel,
   getMonth
 } from "./calendar";
-import { buildTimelineGridLayout } from "./timeline-grid";
+import {
+  buildTimelineGridLayout,
+  buildVerticalTimelineGridLayout
+} from "./timeline-grid";
 import { syncTimelineSummaryLineClamp } from "./timeline-summary";
 import type TtrpgToolsTimePlugin from "./main";
 import type {
@@ -17,7 +20,7 @@ import type {
 } from "./types";
 
 export type TimeTimelineLayout = "cal" | "h";
-export type TimeTimelineHorizontalMode = "mixed" | "stacked" | "grid";
+export type TimeTimelineHorizontalMode = "mixed" | "stacked" | "grid" | "vertical-grid";
 
 interface TimeTimelineBlockOptions {
   layout: TimeTimelineLayout;
@@ -33,6 +36,7 @@ interface TimeTimelineBlockOptions {
   cardHeight?: number;
   boxHeight?: number;
   sideGapLeft?: number;
+  gridColumns?: number;
   sideGapRight?: number;
 }
 
@@ -40,9 +44,11 @@ interface TimeTimelineStylePayload {
   align: TimelineAlign;
   maxSummaryLines: number;
   cardWidth: number;
+  hoverPreviewImageOnly: boolean;
   cardHeight: number;
   boxHeight: number;
   gridRows: 2 | 3 | 4;
+  gridColumns: 2 | 3 | 4;
   gridTileHeight: number;
   gridTileWidth: number;
   sideGapLeft: number;
@@ -105,12 +111,15 @@ export function parseTimelineBlockOptions(
     includeTags: parseStringList(parsed.includeTags),
     excludeTags: parseStringList(parsed.excludeTags),
     jumpToToday: isNormalizedStringValue(parsed.jumpTo, "today"),
-    mode: parsed.mode === "stacked" || parsed.mode === "grid" ? parsed.mode : "mixed",
+    mode: parsed.mode === "stacked" || parsed.mode === "grid" || parsed.mode === "vertical-grid"
+      ? parsed.mode
+      : "mixed",
     align: parsed.align === "right" ? "right" : parsed.align === "left" ? "left" : undefined,
     maxSummaryLines: readOptionalInteger(parsed.maxSummaryLines),
     cardWidth: readOptionalInteger(parsed.cardWidth),
     cardHeight: readOptionalInteger(parsed.cardHeight),
     boxHeight: readOptionalInteger(parsed.boxHeight),
+	gridColumns: readOptionalInteger(parsed.gridColumns),
     sideGapLeft: readOptionalInteger(parsed.sideGapLeft),
     sideGapRight: readOptionalInteger(parsed.sideGapRight)
   };
@@ -246,8 +255,10 @@ function renderPayload(
       const selector =
         payload.layout === "h"
           ? payload.mode === "grid"
+              ? ".time-timeline-grid__item"
+              : ".tl-h-item"
+          : payload.mode === "vertical-grid"
             ? ".time-timeline-grid__item"
-            : ".tl-h-item"
           : ".tl-row";
       const ok = jumpContainerToYmd(timelineRoot, payload.todayDate, selector);
       if (!ok) {
@@ -269,17 +280,22 @@ function renderPayload(
 
   if (payload.layout === "h") {
     renderHorizontalTimeline(timelineRoot, plugin, payload, sourcePath);
+  } else if (payload.mode === "vertical-grid") {
+    renderVerticalGridTimeline(timelineRoot, plugin, payload, sourcePath);
   } else {
     renderCrossTimeline(timelineRoot, plugin, payload, sourcePath);
   }
 
   if (payload.jumpToToday && payload.todayDate) {
-      const selector =
-        payload.layout === "h"
-          ? payload.mode === "grid"
-            ? ".time-timeline-grid__item"
-            : ".tl-h-item"
+    const selector =
+      payload.layout === "h"
+        ? payload.mode === "grid"
+          ? ".time-timeline-grid__item"
+          : ".tl-h-item"
+        : payload.mode === "vertical-grid"
+          ? ".time-timeline-grid__item"
           : ".tl-row";
+
     window.setTimeout(() => {
       jumpContainerToYmd(timelineRoot, payload.todayDate!, selector);
     }, 0);
@@ -466,6 +482,84 @@ function renderGridTimeline(
   });
 }
 
+function renderVerticalGridTimeline(
+  timelineRoot: HTMLElement,
+  plugin: TtrpgToolsTimePlugin,
+  payload: TimeTimelinePublishPayload,
+  sourcePath: string
+): void {
+  const layout = buildVerticalTimelineGridLayout(
+    payload.entries.map((entry) => ({
+      value: entry,
+      start: fromYmd(entry.start),
+      end: entry.end ? fromYmd(entry.end) : undefined
+    })),
+    payload.style.gridColumns
+  );
+
+  const scroller = timelineRoot.createDiv({
+    cls: "tl-vertical-grid-scroller"
+  });
+  const grid = scroller.createDiv({
+    cls: "tl-vertical-grid-timeline"
+  });
+
+  grid.setCssProps({
+    "--tl-v-grid-cols": String(layout.columnCount),
+    "--tl-v-grid-rows": String(Math.max(1, layout.rowCount)),
+    "--tl-v-grid-col-w": `${payload.style.gridTileWidth}px`,
+    "--tl-v-grid-row-h": `${payload.style.gridTileHeight}px`
+  });
+
+  layout.placements.forEach((placement) => {
+    const entry = placement.value;
+    const item = grid.createDiv({
+      cls: [
+        "time-timeline-grid__item",
+        "time-timeline-grid__item--vertical",
+        placement.isRange
+          ? "time-timeline-grid__item--range"
+          : "time-timeline-grid__item--single"
+      ].join(" ")
+    });
+
+    item.dataset.tlStartKey = String(ymdSortKey(entry.start));
+    item.dataset.tlEndKey = String(ymdSortKey(entry.end ?? entry.start));
+
+    item.style.setProperty(
+      "grid-column-start",
+      String(placement.column + 1),
+      "important"
+    );
+    item.style.setProperty(
+      "grid-row-start",
+      String(placement.row + 1),
+      "important"
+    );
+    item.style.setProperty(
+      "grid-row-end",
+      `span ${Math.max(1, placement.rowSpan)}`,
+      "important"
+    );
+
+    item.setCssProps({
+      "--tl-bg": payload.style.colors.bg ?? "var(--background-primary)",
+      "--tl-accent":
+        entry.accentColor ??
+        payload.style.colors.accent ??
+        "var(--background-modifier-border)",
+      "--tl-hover": payload.style.colors.hover ?? "var(--interactive-accent)",
+      "--tl-v-grid-media-h": `${payload.style.gridTileHeight}px`
+    });
+
+    if (placement.isRange) {
+      renderGridRangeCard(item, plugin, payload.style, entry, sourcePath);
+    } else {
+      renderGridSingleCard(item, plugin, payload.style, entry, sourcePath);
+    }
+  });
+}
+
 function renderGridSingleCard(
   parent: HTMLElement,
   plugin: TtrpgToolsTimePlugin,
@@ -507,7 +601,10 @@ function renderGridSingleCard(
 
   if (entry.notePath) {
     const anchor = createNoteAnchor(card, entry.notePath, entry.title);
-    attachHoverForAnchor(plugin, anchor, card, entry.notePath, sourcePath);
+
+    if (!style.hoverPreviewImageOnly || Boolean(imageSrc)) {
+      attachHoverForAnchor(plugin, anchor, card, entry.notePath, sourcePath);
+    }
   }
 }
 
@@ -520,11 +617,13 @@ function renderGridRangeCard(
 ): void {
   const card = parent.createDiv({ cls: "time-timeline-grid__range-card" });
   const imageSrc = entry.img ? resolveImageSrc(plugin, entry.img) : undefined;
+  let media: HTMLElement | null = null;
+  
   card.toggleClass("is-without-image", !imageSrc);
   card.toggleClass("is-without-note", !entry.notePath);
 
   if (imageSrc) {
-    const media = card.createDiv({ cls: "time-timeline-grid__range-media" });
+    media = card.createDiv({ cls: "time-timeline-grid__range-media" });
     media.createEl("img", {
       cls: "time-timeline-grid__range-image",
       attr: {
@@ -564,8 +663,15 @@ function renderGridRangeCard(
   }
 
   if (entry.notePath) {
-    const anchor = createNoteAnchor(card, entry.notePath, entry.title);
-    attachHoverForAnchor(plugin, anchor, card, entry.notePath, sourcePath);
+    if (media) {
+      const mediaAnchor = createNoteAnchor(media, entry.notePath, entry.title);
+      attachHoverForAnchor(plugin, mediaAnchor, media, entry.notePath, sourcePath);
+    }
+
+    const bodyAnchor = createNoteAnchor(body, entry.notePath, entry.title);
+    if (!style.hoverPreviewImageOnly) {
+      attachHoverForAnchor(plugin, bodyAnchor, body, entry.notePath, sourcePath);
+    }
   }
 }
 
@@ -671,7 +777,9 @@ function renderCardRow(
 
   if (entry.notePath) {
     const anchor = createNoteAnchor(box, entry.notePath, entry.title);
-    attachHoverForAnchor(plugin, anchor, box, entry.notePath, sourcePath);
+    if (!style.hoverPreviewImageOnly) {
+      attachHoverForAnchor(plugin, anchor, box, entry.notePath, sourcePath);
+    }
   }
 
   return row;
@@ -910,6 +1018,7 @@ function resolveStyle(
 
   return {
     align,
+	hoverPreviewImageOnly: style?.hoverPreviewImageOnly === true,
     maxSummaryLines: resolvePositiveInt(options.maxSummaryLines, style?.maxSummaryLines, DEFAULT_SUMMARY_LINES),
     cardWidth,
     cardHeight,
@@ -918,6 +1027,12 @@ function resolveStyle(
       style?.gridRows === 3 || style?.gridRows === 4
         ? style.gridRows
         : 2,
+    gridColumns:
+      options.gridColumns === 3 || options.gridColumns === 4
+        ? options.gridColumns
+        : style?.gridColumns === 3 || style?.gridColumns === 4
+          ? style.gridColumns
+          : 2,
     gridTileHeight,
     gridTileWidth,
 	sideGapLeft: resolvePositiveInt(options.sideGapLeft, style?.sideGapLeft, DEFAULT_SIDE_GAP_LEFT),

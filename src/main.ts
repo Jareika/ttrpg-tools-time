@@ -129,10 +129,13 @@ export default class TtrpgToolsTimePlugin extends Plugin {
   private readonly recurrenceIndexCache = new Map<string, EventRecurrenceIndexFile>();
   private fantasyClock: FantasyClockState = { byCalendarId: {} };
   private lastMarkdownLeaf: WorkspaceLeaf | null = null;
-  private timelineLayoutMode: "vertical" | "horizontal" | "grid" = "vertical";
+  private timelineLayoutMode: "vertical" | "horizontal" | "grid-horizontal" | "grid-vertical" = "vertical";
   private readonly timelineIncludedTagRefs = new Set<string>();
   private readonly timelineExcludedTagRefs = new Set<string>();
   private readonly timelineAdditionalCalendarIds = new Set<string>();
+  private readonly timelineIncludedEraRefs = new Set<string>();
+  private timelineSelectedYear: number | null = null;
+  private readonly timelineSelectedMonthIndices = new Set<number>();
   private pendingActiveCalendarStateSaveTimer: number | null = null;
 
   /**
@@ -362,6 +365,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     await this.dataStore.ensureBaseFolders();
     await this.ensureDefaultWeatherPack();
 	this.clearTimelineTagFilters(false);
+	this.clearTimelineEraFilters(false);
 
     const calendars = await this.dataStore.listCalendars();
 
@@ -380,6 +384,7 @@ export default class TtrpgToolsTimePlugin extends Plugin {
 
     this.activeCalendar = active;
 	this.clearTimelineTagFilters(false);
+	this.clearTimelineEraFilters(false);
 	
     if (active) {
       await this.ensureWeatherReferencesForCalendarYear(active, active.state.cursorDate.year);
@@ -1060,6 +1065,8 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     this.activeCalendar = calendar;
 	this.clearTimelineTagFilters(false);
 	this.clearTimelineCalendarFilters(false);
+	this.clearTimelineDateFilters(false);
+	this.clearTimelineEraFilters(false);
     await this.replaceSettings({
       ...this.settings,
       activeCalendarId: calendar.id
@@ -1159,6 +1166,8 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     }
 	this.clearTimelineTagFilters(false);
 	this.clearTimelineCalendarFilters(false);
+	this.clearTimelineDateFilters(false);
+	this.clearTimelineEraFilters(false);
 	
     if (this.activeCalendar?.id === normalized.id) {
       await this.ensureWeatherReferencesForCalendarYear(normalized, normalized.state.cursorDate.year);
@@ -1371,11 +1380,11 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     );
   }
   
-  getTimelineLayoutMode(): "vertical" | "horizontal" | "grid" {
+  getTimelineLayoutMode(): "vertical" | "horizontal" | "grid-horizontal" | "grid-vertical" {
     return this.timelineLayoutMode;
   }
 
-  async setTimelineLayoutMode(mode: "vertical" | "horizontal" | "grid"): Promise<void> {
+  async setTimelineLayoutMode(mode: "vertical" | "horizontal" | "grid-horizontal" | "grid-vertical"): Promise<void> {
     if (this.timelineLayoutMode === mode) {
       return;
     }
@@ -1384,10 +1393,25 @@ export default class TtrpgToolsTimePlugin extends Plugin {
     this.refreshOpenViews();
   }
 
-  getTimelineTagFilterSnapshot(): { include: string[]; exclude: string[] } {
+  getTimelineTagFilterSnapshot(): {
+    include: string[];
+    exclude: string[];
+	eraRefs?: string[];
+    year?: number;
+    monthIndices?: number[];
+  } {
+    const monthIndices = [...this.timelineSelectedMonthIndices]
+      .sort((left, right) => left - right);
+    const eraRefs = [...this.timelineIncludedEraRefs].sort((left, right) =>
+      left.localeCompare(right, undefined, { sensitivity: "base" })
+    );
+
     return {
       include: [...this.timelineIncludedTagRefs],
-      exclude: [...this.timelineExcludedTagRefs]
+      exclude: [...this.timelineExcludedTagRefs],
+	  eraRefs: eraRefs.length > 0 ? eraRefs : undefined,
+      year: this.timelineSelectedYear ?? undefined,
+      monthIndices: monthIndices.length > 0 ? monthIndices : undefined
     };
   }
 
@@ -1397,6 +1421,82 @@ export default class TtrpgToolsTimePlugin extends Plugin {
 
   isTimelineTagExcluded(tagRef: string): boolean {
     return this.timelineExcludedTagRefs.has(tagRef);
+  }
+  
+  isTimelineEraIncluded(eraRef: string): boolean {
+    return this.timelineIncludedEraRefs.has(eraRef);
+  }
+  
+  setTimelineDateFilter(
+    year: number | null,
+    monthIndices: number[] | null
+  ): void {
+    const nextYear =
+      typeof year === "number" && Number.isFinite(year)
+        ? Math.trunc(year)
+        : null;
+    const nextMonthIndices = new Set(
+      nextYear === null
+        ? []
+        : (monthIndices ?? [])
+            .filter((monthIndex) => Number.isFinite(monthIndex))
+            .map((monthIndex) => Math.trunc(monthIndex))
+            .filter((monthIndex) => monthIndex >= 0)
+    );
+
+    if (
+      this.timelineSelectedYear === nextYear &&
+      sameNumberSets(this.timelineSelectedMonthIndices, nextMonthIndices)
+    ) {
+      return;
+    }
+
+    this.timelineSelectedYear = nextYear;
+    this.timelineSelectedMonthIndices.clear();
+    nextMonthIndices.forEach((monthIndex) => {
+      this.timelineSelectedMonthIndices.add(monthIndex);
+    });
+
+    this.refreshOpenViews();
+  }
+
+  toggleTimelineMonthFilter(year: number, monthIndex: number): void {
+    const normalizedYear = Math.trunc(year);
+    const normalizedMonthIndex = Math.trunc(monthIndex);
+
+    if (normalizedMonthIndex < 0) {
+      return;
+    }
+
+    if (this.timelineSelectedYear !== normalizedYear) {
+      this.setTimelineDateFilter(normalizedYear, [normalizedMonthIndex]);
+      return;
+    }
+
+    const nextMonthIndices = new Set(this.timelineSelectedMonthIndices);
+
+    if (nextMonthIndices.has(normalizedMonthIndex)) {
+      nextMonthIndices.delete(normalizedMonthIndex);
+    } else {
+      nextMonthIndices.add(normalizedMonthIndex);
+    }
+
+    this.setTimelineDateFilter(normalizedYear, [...nextMonthIndices]);
+  }
+  
+  selectTimelineMonthFilter(year: number, monthIndex: number): void {
+    const normalizedYear = Math.trunc(year);
+    const normalizedMonthIndex = Math.trunc(monthIndex);
+
+    if (normalizedMonthIndex < 0) {
+      return;
+    }
+
+    this.setTimelineDateFilter(normalizedYear, [normalizedMonthIndex]);
+  }
+
+  clearTimelineMonthFilters(): void {
+    this.setTimelineDateFilter(this.timelineSelectedYear, []);
   }
   
   getTimelineAdditionalCalendarIds(): string[] {
@@ -1444,10 +1544,47 @@ export default class TtrpgToolsTimePlugin extends Plugin {
 
     this.refreshOpenViews();
   }
+  
+  toggleTimelineEra(eraRef: string): void {
+    if (this.timelineIncludedEraRefs.has(eraRef)) {
+      this.timelineIncludedEraRefs.delete(eraRef);
+    } else {
+      this.timelineIncludedEraRefs.add(eraRef);
+    }
+
+    this.refreshOpenViews();
+  }
 
   clearTimelineTagFilters(refresh = true): void {
     this.timelineIncludedTagRefs.clear();
     this.timelineExcludedTagRefs.clear();
+
+    if (refresh) {
+      this.refreshOpenViews();
+    }
+  }
+  
+  clearTimelineEraFilters(refresh = true): void {
+    this.timelineIncludedEraRefs.clear();
+
+    if (refresh) {
+      this.refreshOpenViews();
+    }
+  }
+  
+  clearTimelineDateFilters(refresh = true): void {
+    this.timelineSelectedYear = null;
+    this.timelineSelectedMonthIndices.clear();
+
+    if (refresh) {
+      this.refreshOpenViews();
+    }
+  }
+
+  clearTimelineFilters(refresh = true): void {
+    this.clearTimelineTagFilters(false);
+    this.clearTimelineDateFilters(false);
+	this.clearTimelineEraFilters(false);
 
     if (refresh) {
       this.refreshOpenViews();
@@ -2794,7 +2931,9 @@ export default class TtrpgToolsTimePlugin extends Plugin {
 
     this.activeCalendar = nextActive;
 	this.clearTimelineCalendarFilters(false);
-    await this.replaceSettings({
+    this.clearTimelineDateFilters(false);
+	this.clearTimelineEraFilters(false);
+	await this.replaceSettings({
       ...this.settings,
       activeCalendarId: nextActive?.id ?? null
     });
@@ -3247,4 +3386,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function mod(value: number, length: number): number {
   return ((value % length) + length) % length;
+}
+
+function sameNumberSets(
+  left: Set<number>,
+  right: Set<number>
+): boolean {
+  if (left.size !== right.size) {
+    return false;
+  }
+
+  for (const value of left) {
+    if (!right.has(value)) {
+      return false;
+    }
+  }
+
+  return true;
 }

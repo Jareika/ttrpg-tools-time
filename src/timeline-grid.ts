@@ -13,6 +13,7 @@ export interface TimelineGridPlacement<T> {
   row: number;
   column: number;
   columnSpan: number;
+  rowSpan: number;
   isRange: boolean;
 }
 
@@ -24,6 +25,10 @@ export interface TimelineGridLayout<T> {
 
 interface DraftPlacement<T> extends TimelineGridPlacement<T> {
   sourceIndex: number;
+}
+
+interface ColumnState {
+  tail: number;
 }
 
 interface RowState {
@@ -69,6 +74,7 @@ export function buildTimelineGridLayout<T>(
     row: 0,
     column: 0,
     columnSpan: isRangeDate(entry.start, entry.end) ? 2 : 1,
+	rowSpan: 1,
     isRange: isRangeDate(entry.start, entry.end),
     sourceIndex: entry.sourceIndex
   }));
@@ -92,6 +98,157 @@ export function buildTimelineGridLayout<T>(
     columnCount,
     rowCount
   };
+}
+
+export function buildVerticalTimelineGridLayout<T>(
+  source: TimelineGridSource<T>[],
+  preferredColumns = 2
+): TimelineGridLayout<T> {
+  if (source.length === 0) {
+    return {
+      placements: [],
+      columnCount: 2,
+      rowCount: 0
+    };
+  }
+
+  const columnCount = normalizeRowCount(preferredColumns);
+  const sorted = source
+    .map((entry, sourceIndex) => ({
+      value: entry.value,
+      start: { ...entry.start },
+      end: normalizeEndDate(entry.start, entry.end),
+      sourceIndex
+    }))
+    .sort((left, right) => {
+      const startComparison = compareFantasyDate(left.start, right.start);
+
+      if (startComparison !== 0) {
+        return startComparison;
+      }
+
+      return left.sourceIndex - right.sourceIndex;
+    });
+
+  const drafts: DraftPlacement<T>[] = sorted.map((entry) => ({
+    value: entry.value,
+    start: { ...entry.start },
+    end: { ...entry.end },
+    row: 0,
+    column: 0,
+    columnSpan: 1,
+    rowSpan: isRangeDate(entry.start, entry.end) ? 2 : 1,
+    isRange: isRangeDate(entry.start, entry.end),
+    sourceIndex: entry.sourceIndex
+  }));
+
+  const columns: ColumnState[] = Array.from(
+    { length: columnCount },
+    () => ({ tail: 0 })
+  );
+
+  resolveVerticalGridLayout(drafts, columns);
+
+  const rowCount = Math.max(
+    1,
+    ...drafts.map((placement) => placement.row + placement.rowSpan)
+  );
+
+  return {
+    placements: drafts
+      .sort((left, right) => left.sourceIndex - right.sourceIndex)
+      .map(({ sourceIndex: _sourceIndex, ...placement }) => placement),
+    columnCount,
+    rowCount
+  };
+}
+
+function resolveVerticalGridLayout<T>(
+  drafts: DraftPlacement<T>[],
+  columns: ColumnState[]
+): void {
+  for (let pass = 0; pass < MAX_LAYOUT_PASSES; pass += 1) {
+    assignColumns(drafts, columns);
+
+    const didRangeSpanChange = updateVerticalRangeSpans(drafts);
+
+    if (!didRangeSpanChange) {
+      return;
+    }
+  }
+
+  assignColumns(drafts, columns);
+}
+
+function assignColumns<T>(
+  drafts: DraftPlacement<T>[],
+  columns: ColumnState[]
+): void {
+  columns.splice(
+    0,
+    columns.length,
+    ...Array.from({ length: columns.length }, () => ({ tail: 0 }))
+  );
+
+  drafts.forEach((placement) => {
+    const columnIndex = chooseMostCompactColumn(columns);
+    const column = columns[columnIndex];
+
+    placement.column = columnIndex;
+    placement.row = column.tail;
+    column.tail += placement.rowSpan;
+  });
+}
+
+function updateVerticalRangeSpans<T>(
+  drafts: DraftPlacement<T>[]
+): boolean {
+  let changed = false;
+
+  drafts.forEach((target) => {
+    if (!target.isRange) {
+      return;
+    }
+
+    const nextSpan = getRequiredVerticalRangeSpan(target, drafts);
+
+    if (target.rowSpan !== nextSpan) {
+      target.rowSpan = nextSpan;
+      changed = true;
+    }
+  });
+
+  return changed;
+}
+
+function getRequiredVerticalRangeSpan<T>(
+  target: DraftPlacement<T>,
+  drafts: DraftPlacement<T>[]
+): number {
+  const minimumBottomEdge = target.row + 2;
+
+  const lowestCoveredEdge = drafts.reduce((lowestEdge, candidate) => {
+    const overlapsTarget =
+      candidate !== target &&
+      candidate.column !== target.column &&
+      dateRangesOverlap(
+        target.start,
+        target.end,
+        candidate.start,
+        candidate.end
+      );
+
+    if (!overlapsTarget) {
+      return lowestEdge;
+    }
+
+    return Math.max(
+      lowestEdge,
+      candidate.row + candidate.rowSpan
+    );
+  }, minimumBottomEdge);
+
+  return Math.max(2, lowestCoveredEdge - target.row);
 }
 
 function resolveGridLayout<T>(
@@ -191,6 +348,20 @@ function chooseRowForPlacement(
     rows,
     Array.from({ length: rows.length }, (_entry, index) => index)
   );
+}
+
+function chooseMostCompactColumn(
+  columns: ColumnState[]
+): number {
+  return columns.reduce((best, candidate, index) => {
+    const bestTail = columns[best]?.tail ?? Number.MAX_SAFE_INTEGER;
+
+    if (candidate.tail !== bestTail) {
+      return candidate.tail < bestTail ? index : best;
+    }
+
+    return index < best ? index : best;
+  }, 0);
 }
 
 function chooseMostCompactRow(

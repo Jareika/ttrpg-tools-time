@@ -17,8 +17,7 @@ import type {
 
 export const CONTROL_VIEW_TYPE = "time-control-view";
 
-type TimelineInsertLayout = "cal" | "h";
-type TimelineInsertHorizontalMode = "mixed" | "stacked" | "grid";
+type TimelineInsertPresentation = "vertical" | "horizontal" | "grid-horizontal" | "grid-vertical";
 
 interface TimelineTagInfo {
   packId: string;
@@ -667,8 +666,7 @@ export class WeatherRangeBatchModal extends Modal {
 }
 
 export class TimelineInsertModal extends Modal {
-  private layout: TimelineInsertLayout = "cal";
-  private horizontalMode: TimelineInsertHorizontalMode = "mixed";
+  private presentation: TimelineInsertPresentation = "vertical";
   private titleText = "";
   private jumpToToday = true;
   private readonly selectedCalendarIds = new Set<string>();
@@ -714,33 +712,23 @@ export class TimelineInsertModal extends Modal {
 
     new Setting(contentEl)
       .setName("Layout")
-      .setDesc("Choose the timeline code block type.")
+      .setDesc("Choose how events should be arranged in the embedded timeline.")
       .addDropdown((dropdown) => {
-        dropdown.addOption("cal", "Vertical");
-        dropdown.addOption("h", "Horizontal");
-        dropdown.setValue(this.layout);
+        dropdown.addOption("vertical", "Vertical");
+        dropdown.addOption("horizontal", "Horizontal");
+        dropdown.addOption("grid-horizontal", "Grid horizontal");
+        dropdown.addOption("grid-vertical", "Grid vertical");
+        dropdown.setValue(this.presentation);
         dropdown.onChange((value) => {
-          this.layout = value === "h" ? "h" : "cal";
-		  void this.render();
+          this.presentation =
+            value === "horizontal" ||
+            value === "grid-horizontal" ||
+            value === "grid-vertical"
+              ? value
+              : "vertical";
         });
       });
 	  
-    if (this.layout === "h") {
-      new Setting(contentEl)
-        .setName("Horizontal mode")
-        .setDesc("Mixed joins cards in one row. Stacked groups equal dates. Grid uses portrait day tiles and multi-day range cards.")
-        .addDropdown((dropdown) => {
-          dropdown.addOption("mixed", "Mixed");
-          dropdown.addOption("stacked", "Stacked");
-          dropdown.addOption("grid", "Grid");
-          dropdown.setValue(this.horizontalMode);
-          dropdown.onChange((value) => {
-            this.horizontalMode =
-              value === "stacked" || value === "grid" ? value : "mixed";
-          });
-        });
-    }
-
     new Setting(contentEl)
       .setName("Heading")
       .setDesc("Optional title above the embedded timeline.")
@@ -908,10 +896,22 @@ export class TimelineInsertModal extends Modal {
       new Notice("Please select at least one calendar.");
       return;
     }
+	
+    const layout =
+      this.presentation === "horizontal" ||
+      this.presentation === "grid-horizontal"
+        ? "h"
+        : "cal";
+    const mode =
+      this.presentation === "grid-horizontal"
+        ? "grid"
+        : this.presentation === "grid-vertical"
+          ? "vertical-grid"
+          : "mixed";
 
     const block = buildTimelineYamlBlock({
-      layout: this.layout,
-	  mode: this.horizontalMode,
+      layout,
+      mode,
       title: this.titleText.trim(),
       calendars: selectedCalendarIds,
       includeTags: [...this.includedTagRefs].sort((left, right) =>
@@ -934,8 +934,8 @@ export class TimelineInsertModal extends Modal {
 }
 
 function buildTimelineYamlBlock(input: {
-  layout: TimelineInsertLayout;
-  mode: TimelineInsertHorizontalMode;
+  layout: "cal" | "h";
+  mode: "mixed" | "grid" | "vertical-grid";
   title: string;
   calendars: string[];
   includeTags: string[];
@@ -976,8 +976,10 @@ function buildTimelineYamlBlock(input: {
     lines.push("jumpTo: today");
   }
   
-  if (input.layout === "h" && input.mode !== "mixed") {
-    lines.push(`mode: ${input.mode}`);
+  if (input.mode === "vertical-grid") {
+    lines.push("mode: vertical-grid");
+  } else if (input.layout === "h" && input.mode === "grid") {
+    lines.push("mode: grid");
   }
 
   lines.push("```", "");
