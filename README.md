@@ -12,6 +12,9 @@ All calendar, event, weather, tag-pack, and reference data is stored as readable
 
 - Week, month, and year calendar views
 - Fully custom weekdays and months
+- Configurable fixed weekday-label length in Calendar View:
+  - full weekday names
+  - 1, 2, 3, or 4 characters
 - Custom weekday flow:
   - continuous across months
   - reset at the beginning of every month
@@ -35,9 +38,11 @@ All calendar, event, weather, tag-pack, and reference data is stored as readable
   - signed or absolute negative years
   - abbreviated large years
   - era-relative year numbers
+- Year `0` and negative years are supported throughout calendar dates, events, Frontmatter imports, weather, moons, and recurrence calculations.
 - Optional exact fantasy-time system
 - Per-calendar banner / rail images
 - Bidirectional linked calendars
+- light-theme brightness adjustment for custom Timeline Style box backgrounds
 
 ## Linked calendars
 

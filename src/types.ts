@@ -269,6 +269,7 @@ export interface FantasyCalendarDefinition {
   name: string;
   eraLabel: string;
   weekdays: string[];
+  weekdayAbbreviationLength?: 1 | 2 | 3 | 4;
   months: FantasyMonth[];
   leapMonths: FantasyLeapMonthRule[];
   leapDays: FantasyLeapDayRule[];

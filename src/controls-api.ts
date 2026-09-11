@@ -143,7 +143,7 @@ export function createTimeControlsApi(
     },
     {
       id: "weather.apply-ranges",
-      name: "Wetterbereiche anwenden",
+      name: "Apply weather ranges",
       icon: "cloud-drizzle",
       group: "Weather",
       description: "Apply weather packs to one or more date ranges.",

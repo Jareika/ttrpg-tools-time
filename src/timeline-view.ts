@@ -468,14 +468,20 @@ export class TimeTimelineView extends ItemView {
       const columnSpan = isRange
         ? Math.max(2, placement.columnSpan)
         : 1;
+		
+      const classes = [
+        "time-timeline-grid__item",
+        placement.isRange
+          ? "time-timeline-grid__item--range"
+          : "time-timeline-grid__item--single"
+      ];
+
+      if (itemStyle.colors.bg) {
+        classes.push("has-custom-timeline-box-background");
+      }
 
       const eventEl = grid.createDiv({
-        cls: [
-          "time-timeline-grid__item",
-          placement.isRange
-            ? "time-timeline-grid__item--range"
-            : "time-timeline-grid__item--single"
-        ].join(" ")
+        cls: classes.join(" ")
       });
 
       eventEl.dataset.tlStartKey = String(ymdSortKey(item.start));
@@ -548,14 +554,20 @@ export class TimeTimelineView extends ItemView {
     layout.placements.forEach((placement) => {
       const item = placement.value;
       const itemStyle = resolveTimelineItemStyle(item, timelineStyle);
+      const classes = [
+        "time-timeline-grid__item",
+        "time-timeline-grid__item--vertical",
+        placement.isRange
+          ? "time-timeline-grid__item--range"
+          : "time-timeline-grid__item--single"
+      ];
+
+      if (itemStyle.colors.bg) {
+        classes.push("has-custom-timeline-box-background");
+      }
+
       const eventEl = grid.createDiv({
-        cls: [
-          "time-timeline-grid__item",
-          "time-timeline-grid__item--vertical",
-          placement.isRange
-            ? "time-timeline-grid__item--range"
-            : "time-timeline-grid__item--single"
-        ].join(" ")
+        cls: classes.join(" ")
       });
 
       eventEl.dataset.tlStartKey = String(ymdSortKey(item.start));
@@ -766,6 +778,10 @@ export class TimeTimelineView extends ItemView {
     }
     if (itemStyle.align === "right") {
       rowClasses.push("tl-align-right");
+    }
+	
+    if (itemStyle.colors.bg) {
+      rowClasses.push("has-custom-timeline-box-background");
     }
 
     const row = parent.createDiv({ cls: rowClasses.join(" ") });

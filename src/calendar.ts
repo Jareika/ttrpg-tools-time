@@ -104,6 +104,7 @@ export const DEFAULT_CALENDAR_DEFINITION: FantasyCalendarDefinition = {
   name: "Default Calendar",
   eraLabel: "Era",
   weekdays: [...DEFAULT_WEEKDAYS],
+  weekdayAbbreviationLength: undefined,
   months: cloneMonths(DEFAULT_MONTHS),
   leapMonths: [],
   leapDays: [],
@@ -215,6 +216,7 @@ export function normalizeCalendarFile(raw: unknown): CalendarFile {
     name: readString(rawDefinition.name, readString(record.name, DEFAULT_CALENDAR_FILE.definition.name)),
     eraLabel: readString(rawDefinition.eraLabel, DEFAULT_CALENDAR_FILE.definition.eraLabel),
     weekdays: rawDefinition.weekdays,
+	weekdayAbbreviationLength: rawDefinition.weekdayAbbreviationLength,
     months: rawDefinition.months,
     eras: rawDefinition.eras,
     moons: rawDefinition.moons,
@@ -309,6 +311,9 @@ function normalizeDefinition(raw: unknown): FantasyCalendarDefinition {
     name: readString(record.name, DEFAULT_CALENDAR_DEFINITION.name),
     eraLabel: readString(record.eraLabel, DEFAULT_CALENDAR_DEFINITION.eraLabel),
     weekdays: normalizedWeekdays,
+    weekdayAbbreviationLength: readWeekdayAbbreviationLength(
+      record.weekdayAbbreviationLength
+    ),
     months: normalizedMonths,
     leapMonths: readLeapMonths(record.leapMonths, normalizedMonths),
     leapDays: leapDays.filter((rule) => rule.placement === "append-to-month"),
@@ -815,6 +820,14 @@ function readIntercalaryDayDisplayPosition(
 
 function readMonthWeekdayMode(value: unknown): FantasyCalendarDefinition["monthWeekdayMode"] {
   return value === "reset" ? "reset" : "continuous";
+}
+
+function readWeekdayAbbreviationLength(
+  value: unknown
+): FantasyCalendarDefinition["weekdayAbbreviationLength"] {
+  return value === 1 || value === 2 || value === 3 || value === 4
+    ? value
+    : undefined;
 }
 
 function readYearDisplay(raw: unknown): FantasyYearDisplayConfig {

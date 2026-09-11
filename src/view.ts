@@ -646,11 +646,6 @@ export class TimeCalendarView extends ItemView {
       String(definition.weekdays.length + (showWeekNumbers ? 1 : 0))
     );
 
-    const availableWidth = this.contentEl.clientWidth || parent.clientWidth || 0;
-    const weekdayWidth = showWeekNumbers
-      ? Math.max(0, availableWidth - 48)
-      : availableWidth;
-
     if (showWeekNumbers) {
       weekdayRow.createDiv({ cls: "time-weekday-cell time-weekday-cell--week-number", text: "#" });
     }
@@ -658,8 +653,7 @@ export class TimeCalendarView extends ItemView {
     definition.weekdays.forEach((weekday, index) => {
       const label = this.getWeekdayDisplayLabel(
         weekday,
-        weekdayWidth,
-        definition.weekdays.length
+        definition.weekdayAbbreviationLength
       );
 
       const cell = weekdayRow.createDiv({
@@ -1117,20 +1111,11 @@ export class TimeCalendarView extends ItemView {
   
   private getWeekdayDisplayLabel(
     weekday: string,
-    availableWidth: number,
-    weekdayCount: number
+    abbreviationLength: 1 | 2 | 3 | 4 | undefined
   ): string {
-    const cellWidth = weekdayCount > 0 ? availableWidth / weekdayCount : availableWidth;
-
-    if (cellWidth <= 48) {
-      return abbreviateWeekday(weekday, 2);
-    }
-
-    if (cellWidth <= 72) {
-      return abbreviateWeekday(weekday, 3);
-    }
-
-    return weekday;
+    return abbreviationLength
+      ? abbreviateWeekday(weekday, abbreviationLength)
+      : weekday;
   }
 
   private shouldShowWeekNumbers(): boolean {
@@ -1223,7 +1208,7 @@ function abbreviateWeekday(label: string, maxChars: number): string {
     return compact;
   }
 
-  return compact.slice(0, maxChars);
+  return Array.from(compact).slice(0, maxChars).join("");
 }
 
 function formatEraSuffix(

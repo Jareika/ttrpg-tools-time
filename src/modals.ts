@@ -127,6 +127,7 @@ export class CalendarEditorModal extends Modal {
   private bannerImageRef: string;
   private eras: EraDraft[];
   private weekdays: string[];
+  private weekdayAbbreviationLength: 1 | 2 | 3 | 4 | undefined;
   private months: MonthDraft[];
   private moons: MoonDraft[];
   private namedYears: NamedYearDraft[];
@@ -205,7 +206,8 @@ export class CalendarEditorModal extends Modal {
           }
         ];
     this.weekdays = [...(definition?.weekdays ?? ["RAU", "ZAR", "VEL", "KRA", "LUM"])];
-    this.months = monthDefaults.map((month) => ({ ...month }));
+    this.weekdayAbbreviationLength = definition?.weekdayAbbreviationLength;
+	this.months = monthDefaults.map((month) => ({ ...month }));
     this.moons = (definition?.moons ?? []).map((moon) => ({
       ...moon,
       color: normalizeColor(moon.color),
@@ -491,6 +493,39 @@ export class CalendarEditorModal extends Modal {
       onChange: (checked) => {
         this.yearDisplay.eraYearMode = checked ? "relative" : "absolute";
       }
+    });
+	
+    const weekdayLabelSettings = todayBlock.createDiv({
+      cls: "time-calendar-editor__weekday-label-settings"
+    });
+    weekdayLabelSettings.createDiv({
+      cls: "time-calendar-editor__mini-label",
+      text: "Weekday labels in Calendar View"
+    });
+    weekdayLabelSettings.createDiv({
+      cls: "time-frontmatter-block-note",
+      text: "No selection shows complete weekday names."
+    });
+
+    const weekdayLabelOptions = weekdayLabelSettings.createDiv({
+      cls: "time-calendar-editor__weekday-label-options"
+    });
+
+    ([1, 2, 3, 4] as const).forEach((length) => {
+      createCompactCheckbox(weekdayLabelOptions, {
+        label: `${length} ${length === 1 ? "letter" : "letters"}`,
+        checked: this.weekdayAbbreviationLength === length,
+        onChange: (checked) => {
+          this.weekdayAbbreviationLength =
+            checked
+              ? length
+              : this.weekdayAbbreviationLength === length
+                ? undefined
+                : this.weekdayAbbreviationLength;
+
+          void this.render();
+        }
+      });
     });
 
     const timeBlock = setupGrid.createDiv({
@@ -948,6 +983,7 @@ export class CalendarEditorModal extends Modal {
         eraLabel: sanitizedEras[0]?.shortName ?? "",
         eras: sanitizedEras,
         weekdays: sanitizedWeekdays,
+		weekdayAbbreviationLength: this.weekdayAbbreviationLength,
         months: sanitizedMonths,
         leapMonths: sanitizedLeapMonths,
         leapDays: sanitizedLeapDays,

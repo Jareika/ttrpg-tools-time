@@ -31,6 +31,33 @@ settings:
     step: 1
     format: px
   -
+    id: ttrpg-time-calendar-day-cell-background
+    title: Day-cell background color
+    description: Leave this setting at its reset value to use the active Obsidian theme color.
+    type: variable-themed-color
+    format: hex
+    opacity: false
+    default-light: '#f5f0ec'
+    default-dark: '#2a2a2a'
+  -
+    id: ttrpg-time-calendar-header-background
+    title: Calendar header background color
+    description: Changes the background color from the header box. Leave this setting at its reset value to use the active Obsidian theme color.
+    type: variable-themed-color
+    format: hex
+    opacity: false
+    default-light: '#fffaf5'
+    default-dark: '#202020'
+  -
+    id: ttrpg-time-calendar-scroller-background
+    title: Calendar content background color
+    description: Changes the large scrollable calendar area directly below the calendar header. Leave this setting at its reset value to use the active Obsidian theme color.
+    type: variable-themed-color
+    format: hex
+    opacity: false
+    default-light: '#fffaf5'
+    default-dark: '#202020'
+  -
     id: ttrpg-time-calendar-day-gap
     title: Calendar grid gap
     type: variable-number-slider
@@ -86,6 +113,41 @@ settings:
     max: 52
     step: 1
     format: px
+  -
+    id: ttrpg-time-calendar-month-name-color
+    title: Custom month name color
+    description: Used only when the respective Light or Dark theme source is set to "Use custom month-name color".
+    type: variable-themed-color
+    format: hex
+    opacity: false
+    default-light: '#a94f4a'
+    default-dark: '#efaaa3'
+  -
+    id: ttrpg-time-calendar-month-name-color-light
+    title: Light theme month-name colors
+    description: Choose whether Calendar View uses each calendar month's configured color or the custom month-name color above.
+    type: variable-select
+    default: 'var(--time-month-color, var(--time-heading))'
+    options:
+      -
+        label: Use calendar month colors
+        value: 'var(--time-month-color, var(--time-heading))'
+      -
+        label: Use custom month-name color
+        value: 'var(--ttrpg-time-calendar-month-name-color, var(--time-heading))'
+  -
+    id: ttrpg-time-calendar-month-name-color-dark
+    title: Dark theme month-name colors
+    description: Choose whether Calendar View uses each calendar month's configured color or the custom month-name color above.
+    type: variable-select
+    default: 'var(--time-month-color, var(--time-heading))'
+    options:
+      -
+        label: Use calendar month colors
+        value: 'var(--time-month-color, var(--time-heading))'
+      -
+        label: Use custom month-name color
+        value: 'var(--ttrpg-time-calendar-month-name-color, var(--time-heading))'
   -
     id: ttrpg-time-calendar-rail-settings
     title: Banner / calendar rail
@@ -334,6 +396,22 @@ settings:
       -
         label: Hide
         value: none
+  -
+    id: ttrpg-time-timeline-view
+    title: Timeline view
+    type: heading
+    level: 2
+    collapsed: false
+  -
+    id: ttrpg-time-timeline-light-box-brightness
+    title: Light-theme Timeline box background blend
+    description: In light Obsidian themes, blends custom Timeline Style box backgrounds with the active theme background. 0% = configured box color, 100% = theme background. Dark themes and timelines without a custom box background are unchanged.
+    type: variable-number-slider
+    default: 55
+    min: 0
+    max: 100
+    step: 1
+    format: "%"
 */
 
 /* ==========================================================================
@@ -392,6 +470,18 @@ settings:
   --time-button-bg: var(--background-secondary);
   --time-weather-bg: var(--background-secondary);
   --time-event-bg: color-mix(in srgb, var(--background-secondary) 88%, var(--time-accent) 12%);
+  --time-calendar-header-bg: var(
+    --ttrpg-time-calendar-header-background,
+    var(--time-panel-bg)
+  );
+  --time-calendar-scroller-bg: var(
+    --ttrpg-time-calendar-scroller-background,
+    var(--time-panel-bg)
+  );
+  --time-calendar-day-cell-bg: var(
+    --ttrpg-time-calendar-day-cell-background,
+    var(--time-card-bg)
+  );
 
   --time-border: var(--background-modifier-border);
   --time-shadow: rgba(0, 0, 0, 0.12);
@@ -1215,6 +1305,7 @@ body .status-bar {
 .time-calendar__header {
   padding: 14px 16px 12px;
   border-bottom: 1px solid var(--time-border);
+  background: var(--time-calendar-header-bg);
 }
 
 .time-calendar__brand {
@@ -1252,6 +1343,7 @@ body .status-bar {
   min-height: 0;
   overflow-y: auto;
   padding: 18px 22px 20px;
+  background: var(--time-calendar-scroller-bg);
 }
 
 .time-view-frame--intro {
@@ -1264,7 +1356,7 @@ body .status-bar {
   line-height: 1.1;
   font-weight: 700;
   text-transform: uppercase;
-  color: var(--time-month-color, var(--time-heading));
+  color: var(--time-calendar-month-name-color);
 }
 
 .time-view-title--year {
@@ -1296,7 +1388,31 @@ body .status-bar {
   line-height: 1.1;
   font-weight: 700;
   text-transform: uppercase;
-  color: var(--time-month-color, var(--time-heading));
+  color: var(--time-calendar-month-name-color);
+}
+
+.theme-light
+  .workspace-leaf-content[data-type="time-calendar-view"]
+  .time-view-title:not(.time-view-title--year),
+.theme-light
+  .workspace-leaf-content[data-type="time-calendar-view"]
+  .time-month-section__title {
+  --time-calendar-month-name-color: var(
+    --ttrpg-time-calendar-month-name-color-light,
+    var(--time-month-color, var(--time-heading))
+  );
+}
+
+.theme-dark
+  .workspace-leaf-content[data-type="time-calendar-view"]
+  .time-view-title:not(.time-view-title--year),
+.theme-dark
+  .workspace-leaf-content[data-type="time-calendar-view"]
+  .time-month-section__title {
+  --time-calendar-month-name-color: var(
+    --ttrpg-time-calendar-month-name-color-dark,
+    var(--time-month-color, var(--time-heading))
+  );
 }
 
 .time-month-section__meta {
@@ -1362,7 +1478,7 @@ body .status-bar {
   padding: 8px 8px 6px;
   border-top: 2px solid var(--time-season-color, #a7d36d);
   border-radius: var(--time-day-cell-radius);
-  background: var(--time-card-bg);
+  background: var(--time-calendar-day-cell-bg);
   color: var(--time-strong-text);
   cursor: pointer;
   transition:
@@ -1372,7 +1488,11 @@ body .status-bar {
 }
 
 .time-day-cell:hover {
-  background: color-mix(in srgb, var(--time-card-bg) 90%, var(--time-accent) 10%);
+  background: color-mix(
+    in srgb,
+    var(--time-calendar-day-cell-bg) 90%,
+    var(--time-accent) 10%
+  );
   transform: translateY(-1px);
 }
 
@@ -2417,6 +2537,24 @@ body .status-bar {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.time-calendar-editor__weekday-label-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.time-calendar-editor__weekday-label-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.time-calendar-editor__weekday-label-options
+  .time-calendar-editor__checkbox-row {
+  white-space: nowrap;
 }
 
 .time-calendar-editor__checkbox-row {
@@ -3657,6 +3795,11 @@ body .status-bar {
   --tl-h-col-w: 600px;
   --tl-h-gap: 0px;
   --tl-h-stack-gap: 26px;
+  --time-timeline-light-box-blend: var(
+    --ttrpg-time-timeline-light-box-brightness,
+    55%
+  );
+  --time-timeline-image-hover-overlay-alpha: 24%;
 }
 
 .time-timeline-view .simple-timeline .tl-wrapper.tl-cross-mode {
@@ -3731,6 +3874,17 @@ body .status-bar {
     background-color 0.15s ease,
     border-color 0.15s ease,
     box-shadow 0.15s ease;
+}
+
+.theme-light .time-timeline-view .simple-timeline
+  .tl-row.has-custom-timeline-box-background
+  .tl-box.callout {
+  background: color-mix(
+    in srgb,
+    var(--background-primary)
+      var(--time-timeline-light-box-blend),
+    var(--tl-bg, var(--background-primary))
+  );
 }
 
 .time-timeline-view .simple-timeline .time-timeline__box {
@@ -3864,6 +4018,60 @@ body .status-bar {
   background: var(--tl-hover, var(--interactive-accent));
   border-color: var(--tl-accent, var(--background-modifier-border));
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06), 1px 0 0 rgba(0, 0, 0, 0.06);
+}
+
+.theme-light .time-timeline-view .simple-timeline
+  .tl-row.has-custom-timeline-box-background
+  .tl-media:hover + .tl-box.callout.has-media,
+.theme-light .time-timeline-view .simple-timeline
+  .tl-row.has-custom-timeline-box-background
+  .tl-box.callout:hover {
+  background: color-mix(
+    in srgb,
+    var(--background-primary)
+      var(--time-timeline-light-box-blend),
+    var(--tl-hover, var(--interactive-accent))
+  );
+}
+
+.time-timeline-view .simple-timeline .tl-media::after,
+.time-timeline-view .simple-timeline
+  .time-timeline-grid__single-card.is-with-image::after,
+.time-timeline-view .simple-timeline
+  .time-timeline-grid__range-media::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: transparent;
+  transition: background-color 0.15s ease;
+}
+
+.theme-light .time-timeline-view .simple-timeline
+  .tl-row.has-custom-timeline-box-background
+  .tl-media:hover::after,
+.theme-light .time-timeline-view .simple-timeline
+  .time-timeline-grid__item.has-custom-timeline-box-background:hover
+  .time-timeline-grid__single-card.is-with-image::after,
+.theme-light .time-timeline-view .simple-timeline
+  .time-timeline-grid__item.has-custom-timeline-box-background:hover
+  .time-timeline-grid__range-media::after {
+  /*
+   * Das Bild bleibt sichtbar, erhält beim Hover aber einen dezenten
+   * Overlay in derselben zum Theme hin aufgehellten Hover-Farbe.
+   */
+  background: color-mix(
+    in srgb,
+    color-mix(
+      in srgb,
+      var(--background-primary)
+        var(--time-timeline-light-box-blend),
+      var(--tl-hover, var(--interactive-accent))
+    )
+      var(--time-timeline-image-hover-overlay-alpha),
+    transparent
+  );
 }
 
 .time-timeline-view .simple-timeline a.tl-hover-anchor.internal-link {
@@ -4100,6 +4308,34 @@ body .status-bar {
     transform 0.15s ease;
 }
 
+.theme-light .time-timeline-view .simple-timeline
+  .time-timeline-grid__item.has-custom-timeline-box-background
+  .time-timeline-grid__range-card {
+  background: color-mix(
+    in srgb,
+    var(--background-primary)
+      var(--time-timeline-light-box-blend),
+    var(--tl-bg, var(--background-primary))
+  );
+}
+
+.theme-light .time-timeline-view .simple-timeline
+  .time-timeline-grid__item.has-custom-timeline-box-background
+  .time-timeline-grid__single-card.is-without-image {
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--tl-accent, #d46b65) 18%, transparent),
+      transparent 68%
+    ),
+    color-mix(
+      in srgb,
+      var(--background-primary)
+        var(--time-timeline-light-box-blend),
+      var(--tl-bg, var(--background-primary))
+    );
+}
+
 .time-timeline-view .simple-timeline .time-timeline-grid__item:hover
   .time-timeline-grid__single-card,
 .time-timeline-view .simple-timeline .time-timeline-grid__item:hover
@@ -4108,6 +4344,20 @@ body .status-bar {
   background: var(--tl-hover, var(--interactive-accent));
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.14);
   transform: translateY(-1px);
+}
+
+.theme-light .time-timeline-view .simple-timeline
+  .time-timeline-grid__item.has-custom-timeline-box-background:hover
+  .time-timeline-grid__single-card,
+.theme-light .time-timeline-view .simple-timeline
+  .time-timeline-grid__item.has-custom-timeline-box-background:hover
+  .time-timeline-grid__range-card {
+  background: color-mix(
+    in srgb,
+    var(--background-primary)
+      var(--time-timeline-light-box-blend),
+    var(--tl-hover, var(--interactive-accent))
+  );
 }
 
 .time-timeline-view .simple-timeline .time-timeline-grid__single-image {

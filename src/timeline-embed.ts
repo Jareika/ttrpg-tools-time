@@ -435,14 +435,20 @@ function renderGridTimeline(
     const columnSpan = isRange
       ? Math.max(2, placement.columnSpan)
       : 1;
+	  
+    const classes = [
+      "time-timeline-grid__item",
+      placement.isRange
+        ? "time-timeline-grid__item--range"
+        : "time-timeline-grid__item--single"
+    ];
+
+    if (payload.style.colors.bg) {
+      classes.push("has-custom-timeline-box-background");
+    }
 
     const item = grid.createDiv({
-      cls: [
-        "time-timeline-grid__item",
-        placement.isRange
-          ? "time-timeline-grid__item--range"
-          : "time-timeline-grid__item--single"
-      ].join(" ")
+      cls: classes.join(" ")
     });
 
     item.dataset.tlStartKey = String(ymdSortKey(entry.start));
@@ -513,14 +519,20 @@ function renderVerticalGridTimeline(
 
   layout.placements.forEach((placement) => {
     const entry = placement.value;
+    const classes = [
+      "time-timeline-grid__item",
+      "time-timeline-grid__item--vertical",
+      placement.isRange
+        ? "time-timeline-grid__item--range"
+        : "time-timeline-grid__item--single"
+    ];
+
+    if (payload.style.colors.bg) {
+      classes.push("has-custom-timeline-box-background");
+    }
+
     const item = grid.createDiv({
-      cls: [
-        "time-timeline-grid__item",
-        "time-timeline-grid__item--vertical",
-        placement.isRange
-          ? "time-timeline-grid__item--range"
-          : "time-timeline-grid__item--single"
-      ].join(" ")
+      cls: classes.join(" ")
     });
 
     item.dataset.tlStartKey = String(ymdSortKey(entry.start));
@@ -683,7 +695,13 @@ function renderCardRow(
   sourcePath: string,
   extraRowClasses: string[]
 ): HTMLElement {
-  const row = parent.createDiv({ cls: ["tl-row", ...extraRowClasses].join(" ") });
+  const rowClasses = ["tl-row", ...extraRowClasses];
+
+  if (style.colors.bg) {
+    rowClasses.push("has-custom-timeline-box-background");
+  }
+
+  const row = parent.createDiv({ cls: rowClasses.join(" ") });
   row.dataset.tlStartKey = String(ymdSortKey(entry.start));
   row.dataset.tlEndKey = String(ymdSortKey(entry.end ?? entry.start));
 
